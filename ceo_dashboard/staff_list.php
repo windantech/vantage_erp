@@ -39,8 +39,10 @@ $query = "
         s.department_id,
         s.employment_type,
         s.onboarding_status,
-        s.created_at
+        s.created_at,
+        d.department_name
     FROM staff s
+    LEFT JOIN departments d ON s.department_id = d.id
     $where_clause
     ORDER BY s.created_at DESC
     LIMIT 100
@@ -49,14 +51,8 @@ $query = "
 $result = mysqli_query($conn, $query);
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
-        // Get department name separately
-        $row['department_name'] = '';
-        if ($row['department_id']) {
-            $dept_r = mysqli_query($conn, "SELECT department_name FROM departments WHERE id = " . intval($row['department_id']) . " LIMIT 1");
-            if ($dept_r && $d = mysqli_fetch_assoc($dept_r)) {
-                $row['department_name'] = $d['department_name'];
-            }
-        }
+        // Department name now comes from the JOIN above (no per-row query)
+        $row['department_name'] = $row['department_name'] ?? '';
         // Calculate days
         $row['days_since_submission'] = floor((time() - strtotime($row['created_at'])) / 86400);
         $staff_list[] = $row;

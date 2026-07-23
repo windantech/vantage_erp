@@ -101,18 +101,19 @@ if ($doc_result) {
     }
 }
 
-// Fetch onboarding log
+// Fetch onboarding log (performer name resolved via JOIN, not a per-row query)
 $logs = [];
-$log_result = mysqli_query($conn, "SELECT * FROM staff_onboarding_log WHERE staff_id = $staff_id ORDER BY performed_at DESC LIMIT 20");
+$log_result = mysqli_query($conn, "
+    SELECT l.*, ru.fullname AS performed_by_name
+    FROM staff_onboarding_log l
+    LEFT JOIN registered_users ru ON l.performed_by = ru.id
+    WHERE l.staff_id = $staff_id
+    ORDER BY l.performed_at DESC
+    LIMIT 20
+");
 if ($log_result) {
     while ($row = mysqli_fetch_assoc($log_result)) {
-        $row['performed_by_name'] = '';
-        if ($row['performed_by']) {
-            $perf_result = mysqli_query($conn, "SELECT fullname FROM registered_users WHERE id = " . intval($row['performed_by']) . " LIMIT 1");
-            if ($perf_result && $perf_row = mysqli_fetch_assoc($perf_result)) {
-                $row['performed_by_name'] = $perf_row['fullname'];
-            }
-        }
+        $row['performed_by_name'] = $row['performed_by_name'] ?? '';
         $logs[] = $row;
     }
 }

@@ -54,7 +54,8 @@ if ($department == 'all' || $department == 'virtual') {
         $virtual_where .= " AND c.course_id = '" . mysqli_real_escape_string($conn, $selected_item) . "'";
     }
     if ($selected_year != 'all') {
-        $virtual_where .= " AND YEAR(r.datee) = '" . mysqli_real_escape_string($conn, $selected_year) . "'";
+        $yr = (int)$selected_year;
+        $virtual_where .= " AND r.datee >= '$yr-01-01 00:00:00' AND r.datee < '" . ($yr + 1) . "-01-01 00:00:00'";
     }
     
     $vq = mysqli_query($conn, "
@@ -114,7 +115,8 @@ if ($department == 'all' || $department == 'international') {
         $intl_where .= " AND e.event_id = '" . mysqli_real_escape_string($conn, $selected_item) . "'";
     }
     if ($selected_year != 'all') {
-        $intl_where .= " AND YEAR(tc.date_sent) = '" . mysqli_real_escape_string($conn, $selected_year) . "'";
+        $yr = (int)$selected_year;
+        $intl_where .= " AND tc.date_sent >= '$yr-01-01 00:00:00' AND tc.date_sent < '" . ($yr + 1) . "-01-01 00:00:00'";
     }
     
     $iq = mysqli_query($conn, "
