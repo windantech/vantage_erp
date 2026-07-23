@@ -1,0 +1,46 @@
+[2026-01-21 12:16:27] ========== Starting Email 2 Cron Job ==========
+[2026-01-21 12:16:27] Looking for registrations from: 2026-01-20
+[2026-01-21 12:16:27] --- Processing Virtual Course Registrations ---
+[2026-01-21 12:16:27] Found 18 virtual registrations
+[2026-01-21 12:16:27] Processing: calistuswanyama@gmail.com (Calistus) - Course ID: 25
+[2026-01-21 12:16:27]   SUCCESS: Email sent to calistuswanyama@gmail.com
+[2026-01-21 12:16:32] Processing: Btebre@gmail.com (Benson) - Course ID: 64
+[2026-01-21 12:16:33]   FAILED: Could not send to Btebre@gmail.com
+[2026-01-21 12:16:38] Processing: davidaugustine176@gmail.com (David Augustine) - Course ID: 80
+[2026-01-21 12:16:38]   FAILED: Could not send to davidaugustine176@gmail.com
+[2026-01-21 12:16:43] Processing: midevawajc@gmail.com (Mideva) - Course ID: 25
+[2026-01-21 12:16:44]   SUCCESS: Email sent to midevawajc@gmail.com
+[2026-01-21 12:16:49] Processing: geoffko88@gmail.com (Geoffrey) - Course ID: 5
+[2026-01-21 12:16:49]   FAILED: Could not send to geoffko88@gmail.com
+[2026-01-21 12:16:54] Processing: msooteraondo0220@gmail.com (Tyokula Jacob) - Course ID: 5
+[2026-01-21 12:16:55]   FAILED: Could not send to msooteraondo0220@gmail.com
+[2026-01-21 12:17:00] Processing: justuswesonga@yahoo.com (Dr Justus) - Course ID: 18
+[2026-01-21 12:17:00]   SUCCESS: Email sent to justuswesonga@yahoo.com
+[2026-01-21 12:17:05] Processing: martingruyarloe40@gmail.com (Martin) - Course ID: 41
+[2026-01-21 12:17:06]   FAILED: Could not send to martingruyarloe40@gmail.com
+[2026-01-21 12:17:11] Processing: vantageprojectsdpt@gmail.com (Anne) - Course ID: 25
+[2026-01-21 12:17:11]   SUCCESS: Email sent to vantageprojectsdpt@gmail.com
+[2026-01-21 12:17:16] Processing: lasikatina@gmail.com (Christine) - Course ID: 25
+[2026-01-21 12:17:17]   SUCCESS: Email sent to lasikatina@gmail.com
+[2026-01-21 12:17:22] Processing: lasikatina@gmail.com (Christine) - Course ID: 25
+[2026-01-21 12:17:22]   SUCCESS: Email sent to lasikatina@gmail.com
+[2026-01-21 12:17:27] Processing: dorcasjep64@gmail.com (Dorcas) - Course ID: 15
+[2026-01-21 12:17:27]   WARNING: No Email 2 template found for course ID: 15
+[2026-01-21 12:17:27] Processing: gotieno88@gmail.com (George) - Course ID: 25
+[2026-01-21 12:17:28]   SUCCESS: Email sent to gotieno88@gmail.com
+[2026-01-21 12:17:33] Processing: gotieno88@gmail.com (George) - Course ID: 25
+[2026-01-21 12:17:33]   SUCCESS: Email sent to gotieno88@gmail.com
+[2026-01-21 12:17:38] Processing: evansarasaa@gmail.com (Evans) - Course ID: 83
+[2026-01-21 12:17:39]   FAILED: Could not send to evansarasaa@gmail.com
+[2026-01-21 12:17:44] Processing: amanzsaviour@gmail.com (Amanzuru) - Course ID: 83
+[2026-01-21 12:17:44]   FAILED: Could not send to amanzsaviour@gmail.com
+[2026-01-21 12:17:49] Processing: sabiha_alawy@hotmail.com (Sabiha) - Course ID: 25
+[2026-01-21 12:17:49]   SUCCESS: Email sent to sabiha_alawy@hotmail.com
+[2026-01-21 12:17:54] Processing: windantechnologies@gmail.com (Bidan) - Course ID: 25
+[2026-01-21 12:17:55]   SUCCESS: Email sent to windantechnologies@gmail.com
+[2026-01-21 12:18:00] --- Processing International Event Registrations ---
+[2026-01-21 12:18:00] No international registrations found for 2026-01-20
+[2026-01-21 12:18:00] ========== Cron Job Complete ==========
+[2026-01-21 12:18:00] Total Sent: 10
+[2026-01-21 12:18:00] Total Failed: 8
+[2026-01-21 12:18:00] ==========================================

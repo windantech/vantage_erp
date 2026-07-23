@@ -1,0 +1,6 @@
+{
+    "require": {
+        "symfony/mailer": "^7.2",
+        "symfony/http-client": "^7.2"
+    }
+}

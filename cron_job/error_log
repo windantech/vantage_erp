@@ -1,0 +1,4 @@
+[23-Jun-2026 09:18:54 UTC] PHP Warning:  mysqli::query(): (42S22/1054): Unknown column 'attachment' in 'SELECT' in /home2/vantage/public_html/admin/cron_job/cron_send_scheduled_emails.php on line 159
+[23-Jun-2026 09:18:54 UTC] Schedule #6: template 1494 not found.
+[23-Jun-2026 09:18:54 UTC] PHP Warning:  mysqli::query(): (42S22/1054): Unknown column 'attachment' in 'SELECT' in /home2/vantage/public_html/admin/cron_job/cron_send_scheduled_emails.php on line 159
+[23-Jun-2026 09:18:54 UTC] Schedule #7: template 1565 not found.

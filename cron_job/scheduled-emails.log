@@ -1,0 +1,28 @@
+[2026-06-18 08:35:25] === Cron run started ===
+[2026-06-18 08:35:25] No schedules are due right now. Nothing to send.
+[2026-06-23 09:18:54] === Cron run started ===
+[2026-06-23 09:18:54] Found 2 due schedule(s) to process (max 5 per run).
+[2026-06-23 09:18:54] Schedule #6: type=international, target=216 ('Monitoring and Evaluation Training in Windhoek, Namibia(25th to 27th June 2026)'), template=1494, filter=all, already sent=0/24.
+[2026-06-23 09:18:54]   -> FAILED: template 1494 not found. Marked failed.
+[2026-06-23 09:18:54] Schedule #7: type=virtual, target=1 ('Test Course'), template=1565, filter=all, already sent=0/5.
+[2026-06-23 09:18:54]   -> FAILED: template 1565 not found. Marked failed.
+[2026-06-23 09:18:54] === Cron run finished. Sent 0 email(s) this run. ===
+[2026-06-23 09:20:13] === Cron run started ===
+[2026-06-23 09:20:13] No schedules are due right now. Nothing to send.
+[2026-06-23 09:20:17] === Cron run started ===
+[2026-06-23 09:20:17] No schedules are due right now. Nothing to send.
+[2026-06-23 09:22:05] === Cron run started ===
+[2026-06-23 09:22:05] No schedules are due right now. Nothing to send.
+[2026-06-23 09:24:31] === Cron run started ===
+[2026-06-23 09:24:31] TEST MODE: forcing schedule #7 to run now (reset to pending, sent_count=0).
+[2026-06-23 09:24:31] Found 1 schedule(s) to process (test run of #7).
+[2026-06-23 09:24:31] Schedule #7: type=virtual, target=1 ('Test Course'), template=1565, filter=all, already sent=0/5.
+[2026-06-23 09:24:31]   Template loaded: subject="Test", body 21379 chars.
+[2026-06-23 09:24:31]   Fetched 5 recipient(s) to send in this run.
+[2026-06-23 09:24:31]     sent -> benkiarie@gmail.com
+[2026-06-23 09:24:32]     sent -> bidoom1234@gmail.com
+[2026-06-23 09:24:33]     sent -> bidoom1234@gmail.com
+[2026-06-23 09:24:33]     sent -> bidoom1234@gmail.com
+[2026-06-23 09:24:34]     sent -> windantechnologies@gmail.com
+[2026-06-23 09:24:34]   -> COMPLETED: 5/5 sent.
+[2026-06-23 09:24:34] === Cron run finished. Sent 5 email(s) this run. ===

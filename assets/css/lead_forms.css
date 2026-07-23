@@ -1,0 +1,75 @@
+#dynamicForm label {
+  background-color: #202938 !important;
+  color: #fff !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+  margin-bottom: 0 !important;
+  min-width: 9rem;
+}
+
+#dynamicForm input,
+#dynamicForm select,
+#dynamicForm textarea {
+  border-radius: 0 !important;
+  display: block;
+  width: 100%;
+  height: calc(1.5em + 0.75rem + 2px);
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #6e707e;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 1px solid #d1d3e2;
+  border-radius: 0.35rem;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+#dynamicForm .remove-btn {
+  margin-top: 1rem;
+}
+
+.error {
+  color: red;
+  position: absolute;
+  font-size: 12px;
+  font-style: italic;
+  text-align: end;
+}
+
+.success-message {
+  color: green;
+  margin-left: 10px;
+  font-weight: bold;
+  position: absolute;
+  bottom: -2.5vh;
+  left: 0;
+  font-size: x-small;
+  font-style: italic;
+}
+
+.success-message::before {
+  content: "\2713";
+  margin-right: 5px;
+  color: green;
+}
+
+.failed-message {
+  color: red;
+  margin-left: 10px;
+  font-weight: bold;
+  position: absolute;
+  bottom: -2.5vh;
+  left: 0;
+  font-size: x-small;
+  font-style: italic;
+}
+
+.failed-message::before {
+  content: "\2715";
+  margin-right: 5px;
+  color: red;
+}

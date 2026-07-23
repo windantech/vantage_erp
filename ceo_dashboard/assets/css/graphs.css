@@ -1,0 +1,58 @@
+.chart-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.bar-loader span {
+  display: inline-block;
+  width: 8px;
+  height: 50px;
+  margin: 0 4px;
+  background: #ccc;
+  animation: barAnim 1s infinite ease-in-out;
+}
+
+.bar-loader span:nth-child(2) { animation-delay: 0.2s; }
+.bar-loader span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes barAnim {
+  0%, 40%, 100% { transform: scaleY(0.3); }
+  20% { transform: scaleY(1); }
+}
+
+.line-loader {
+  width: 80%;
+  height: 4px;
+  background: #ddd;
+  position: relative;
+  overflow: hidden;
+}
+
+.line-loader::before {
+  content: '';
+  position: absolute;
+  width: 40%;
+  height: 100%;
+  background: #ccc;
+  animation: lineAnim 1s infinite;
+}
+
+@keyframes lineAnim {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+.pie-loader {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #ddd;
+  border-top-color: #999;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

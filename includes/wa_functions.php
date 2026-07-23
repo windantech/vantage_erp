@@ -1,0 +1,3092 @@
+<?php
+/**
+ * WhatsApp helpers — procedural mysqli, matching the ERP page style
+ * (mysqli_query($conn, ...), mysqli_real_escape_string, mysqli_fetch_assoc).
+ *
+ * Every function takes the live mysqli $conn:
+ *   - admin pages / wa_process.php : $conn from auth.php (via header.php)
+ *   - wa_webhook.php               : $wa_conn from wa_db.php (no session)
+ *
+ * Routing model (same as the ERP's own auth.php):
+ *   course.assigned_to / Event.assigned_to hold registered_users.id (CSV)
+ *   -> FIND_IN_SET(registered_users.id, assigned_to) -> owner (fullname/email)
+ *   -> enrich from staff (system_user_id = registered_users.id) when present.
+ */
+
+if (!function_exists('wa_e')) {
+    function wa_e($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+}
+
+// Defensive defaults so an older/partial wa_config.php can never fatal the app.
+// (wa_config.php is loaded before this file on every entry point; these only
+//  fill in constants the config didn't define.)
+foreach ([
+    'WA_VERIFY_TOKEN'      => '',
+    'WA_DEFAULT_PROVIDER'  => 'claude',
+    'WA_ROLE'              => 44,
+    'WA_PHONE'             => '',
+    'WA_SITE_URL'          => 'https://vantageafricaleaders.com',
+    'WA_DIALOG_URL'        => 'https://waba-v2.360dialog.io',
+    'WA_DIALOG_KEY'        => '',
+    'WA_OPENAI_KEY'        => 'YOUR_OPENAI_API_KEY',
+    'WA_OPENAI_MODEL'      => 'gpt-4o-mini',
+    'WA_OPENAI_URL'        => 'https://api.openai.com',
+    'WA_ANTHROPIC_KEY'     => 'YOUR_ANTHROPIC_API_KEY',
+    'WA_ANTHROPIC_MODEL'   => 'claude-haiku-4-5-20251001',   // fast — important for the webhook window
+    'WA_ANTHROPIC_URL'     => 'https://api.anthropic.com',
+    'WA_ANTHROPIC_VERSION' => '2023-06-01',
+] as $waK => $waV) {
+    if (!defined($waK)) { define($waK, $waV); }
+}
+
+/** Quote a value for SQL, or return the literal NULL when it is null. */
+function wa_sql($conn, $v) {
+    return $v === null ? 'NULL' : "'" . mysqli_real_escape_string($conn, (string)$v) . "'";
+}
+
+// =====================================================================
+// Contacts + messages
+// =====================================================================
+
+function wa_upsert_contact($conn, $waId, $name = null) {
+    $wa   = "'" . mysqli_real_escape_string($conn, $waId) . "'";
+    $nm   = wa_sql($conn, $name);
+    mysqli_query($conn,
+        "INSERT INTO wa_contacts (wa_id, profile_name) VALUES ($wa, $nm)
+         ON DUPLICATE KEY UPDATE
+             profile_name = COALESCE($nm, profile_name),
+             id = LAST_INSERT_ID(id)");
+    return (int)mysqli_insert_id($conn);
+}
+
+function wa_touch_last_inbound($conn, $contactId, $dt) {
+    $contactId = (int)$contactId;
+    $dt = "'" . mysqli_real_escape_string($conn, $dt) . "'";
+    mysqli_query($conn, "UPDATE wa_contacts SET last_inbound_at = $dt WHERE id = $contactId");
+}
+
+function wa_find_contact_by_waid($conn, $waId) {
+    $wa = "'" . mysqli_real_escape_string($conn, $waId) . "'";
+    $res = mysqli_query($conn, "SELECT * FROM wa_contacts WHERE wa_id = $wa LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    return $row ?: null;
+}
+
+/**
+ * Handle STOP / START keywords in an inbound message (WhatsApp opt-out compliance).
+ * On a match it updates the contact, sends a confirmation, and returns the action
+ * taken ('optout' | 'optin') so the caller can skip the normal AI auto-reply.
+ * Returns '' when the message isn't an opt-out/opt-in command.
+ */
+function wa_handle_optout($conn, $contactId, $waId, $body) {
+    // Normalise: lowercase, strip surrounding punctuation/whitespace.
+    $t = strtolower(trim((string)$body));
+    $t = trim(preg_replace('/[^a-z\s]/', '', $t));
+    if ($t === '') { return ''; }
+
+    // Deliberately NOT including bare "yes"/"no" — too common as real replies.
+    $stop  = ['stop', 'unsubscribe', 'unsub', 'cancel', 'optout', 'opt out', 'stop promotions', 'quit'];
+    $start = ['start', 'subscribe', 'unstop', 'optin', 'opt in', 'resume'];
+
+    // Match the whole message (exact) to avoid false positives inside a sentence.
+    if (in_array($t, $stop, true)) {
+        $cid = (int)$contactId;
+        mysqli_query($conn, "UPDATE wa_contacts SET opted_out = 1, opted_out_at = NOW(), opted_in = 0 WHERE id = $cid");
+        wa_send_text($conn, $waId, "You've been unsubscribed and won't receive further broadcasts. Reply START at any time to opt back in.", true);
+        return 'optout';
+    }
+    if (in_array($t, $start, true)) {
+        $cid = (int)$contactId;
+        mysqli_query($conn, "UPDATE wa_contacts SET opted_out = 0, opted_out_at = NULL, opted_in = 1 WHERE id = $cid");
+        wa_send_text($conn, $waId, "You're subscribed again — thanks! Reply STOP anytime to unsubscribe.", true);
+        return 'optin';
+    }
+    return '';
+}
+
+/** Manually set a contact's opt-out flag (supervisor override from the Contacts page). */
+function wa_contact_set_optout($conn, $contactId, $optOut) {
+    $cid = (int)$contactId;
+    if ($cid <= 0) { return; }
+    if ($optOut) {
+        mysqli_query($conn, "UPDATE wa_contacts SET opted_out = 1, opted_out_at = NOW(), opted_in = 0 WHERE id = $cid");
+    } else {
+        mysqli_query($conn, "UPDATE wa_contacts SET opted_out = 0, opted_out_at = NULL, opted_in = 1 WHERE id = $cid");
+    }
+}
+
+/**
+ * Contacts for the management view, with their conversation id (for the chat
+ * link), message count and linked course/event. $filter = all|optedin|optedout.
+ */
+function wa_contacts_list($conn, $search = '', $filter = 'all', $limit = 300) {
+    $limit = (int)$limit;
+    $where = '1=1';
+    if ($filter === 'optedin')      { $where .= ' AND c.opted_in = 1 AND c.opted_out = 0'; }
+    elseif ($filter === 'optedout') { $where .= ' AND c.opted_out = 1'; }
+    if (($search = trim((string)$search)) !== '') {
+        $s = mysqli_real_escape_string($conn, $search);
+        $where .= " AND (c.wa_id LIKE '%$s%' OR c.profile_name LIKE '%$s%')";
+    }
+    $sql = "
+        SELECT c.id, c.wa_id, c.profile_name, c.opted_in, c.opted_out, c.opted_out_at,
+               c.last_inbound_at, c.created_at,
+               cv.id AS conv_id,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.contact_id = c.id) AS msg_count,
+               CASE cv.ref_type
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+               END AS ref_name
+          FROM wa_contacts c
+     LEFT JOIN wa_conversations cv ON cv.contact_id = c.id
+         WHERE $where
+      ORDER BY (c.last_inbound_at IS NULL), c.last_inbound_at DESC, c.id DESC
+         LIMIT $limit";
+    $res = mysqli_query($conn, $sql);
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** Totals for the Contacts filter chips: ['all'=>, 'optedin'=>, 'optedout'=>]. */
+function wa_contacts_counts($conn) {
+    $res = mysqli_query($conn,
+        "SELECT COUNT(*) AS all_ct,
+                SUM(opted_out = 1) AS out_ct,
+                SUM(opted_in = 1 AND opted_out = 0) AS in_ct
+           FROM wa_contacts");
+    $r = $res ? mysqli_fetch_assoc($res) : null;
+    return [
+        'all'      => (int)($r['all_ct'] ?? 0),
+        'optedin'  => (int)($r['in_ct'] ?? 0),
+        'optedout' => (int)($r['out_ct'] ?? 0),
+    ];
+}
+
+// =====================================================================
+// Insights / analytics
+// =====================================================================
+
+/** One-value helper for the KPI queries. */
+function wa_scalar($conn, $sql) {
+    $res = mysqli_query($conn, $sql);
+    $row = $res ? mysqli_fetch_row($res) : null;
+    return $row ? (int)$row[0] : 0;
+}
+
+/** Headline KPIs for the Insights page. $days scopes the message/broadcast window. */
+function wa_insights_summary($conn, $days = 30) {
+    $days = (int)$days;
+    $since = "DATE_SUB(NOW(), INTERVAL $days DAY)";
+    $c = wa_contacts_counts($conn);
+    return [
+        'contacts'     => $c['all'],
+        'opted_in'     => $c['optedin'],
+        'opted_out'    => $c['optedout'],
+        'conversations'=> wa_scalar($conn, "SELECT COUNT(*) FROM wa_conversations"),
+        'escalated'    => wa_scalar($conn, "SELECT COUNT(*) FROM wa_conversations WHERE escalated = 1"),
+        'ai_handled'   => wa_scalar($conn, "SELECT COUNT(*) FROM wa_conversations WHERE handler = 'ai'"),
+        'human_handled'=> wa_scalar($conn, "SELECT COUNT(*) FROM wa_conversations WHERE handler = 'human'"),
+        'in_msgs'      => wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE direction = 'inbound'  AND created_at >= $since"),
+        'out_msgs'     => wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE direction = 'outbound' AND created_at >= $since"),
+        'bcast_runs'   => wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcasts WHERE created_at >= $since"),
+        'bcast_sent'   => wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE broadcast_id IS NOT NULL AND created_at >= $since"),
+        'bcast_reached'=> wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE broadcast_id IS NOT NULL AND status IN ('delivered','read') AND created_at >= $since"),
+        'bcast_read'   => wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE broadcast_id IS NOT NULL AND status = 'read' AND created_at >= $since"),
+        'bcast_failed' => wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages WHERE broadcast_id IS NOT NULL AND status = 'failed' AND created_at >= $since"),
+    ];
+}
+
+/** Inbound/outbound message counts per day for the last $days (oldest first, gaps filled). */
+function wa_insights_daily($conn, $days = 14) {
+    $days = (int)$days;
+    $res = mysqli_query($conn,
+        "SELECT DATE(created_at) AS d,
+                SUM(direction = 'inbound')  AS ins,
+                SUM(direction = 'outbound') AS outs
+           FROM wa_messages
+          WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL " . ($days - 1) . " DAY)
+          GROUP BY DATE(created_at)");
+    $byDay = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $byDay[$r['d']] = ['in' => (int)$r['ins'], 'out' => (int)$r['outs']]; } }
+    $out = [];
+    for ($i = $days - 1; $i >= 0; $i--) {
+        $day = date('Y-m-d', strtotime("-$i day"));
+        $out[] = ['date' => $day, 'in' => $byDay[$day]['in'] ?? 0, 'out' => $byDay[$day]['out'] ?? 0];
+    }
+    return $out;
+}
+
+/** Busiest courses AND onsite events by conversation volume. */
+function wa_insights_top_courses($conn, $limit = 8) {
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT cv.ref_type,
+                CASE cv.ref_type
+                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+                END AS name,
+                COUNT(*) AS ct
+           FROM wa_conversations cv
+          WHERE cv.ref_type IN ('course','event') AND cv.ref_id IS NOT NULL
+          GROUP BY cv.ref_type, cv.ref_id
+          ORDER BY ct DESC
+          LIMIT $limit");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { if ($r['name']) { $rows[] = $r; } } }
+    return $rows;
+}
+
+/** Insert inbound message; de-dups on wa_message_id. Returns true if newly inserted. */
+function wa_save_inbound($conn, $contactId, $m) {
+    $contactId = (int)$contactId;
+    $wamid = wa_sql($conn, $m['wa_message_id'] ?? null);
+    $type  = wa_sql($conn, $m['type'] ?? 'text');
+    $body  = wa_sql($conn, $m['body'] ?? null);
+    $mid   = wa_sql($conn, $m['media_id'] ?? null);
+    $mime  = wa_sql($conn, $m['media_mime'] ?? null);
+    $adid  = wa_sql($conn, $m['referral_ad_id'] ?? null);
+    $ts    = wa_sql($conn, $m['wa_timestamp'] ?? null);
+    $raw   = wa_sql($conn, isset($m['raw_payload']) ? json_encode($m['raw_payload'], JSON_UNESCAPED_UNICODE) : null);
+    mysqli_query($conn,
+        "INSERT IGNORE INTO wa_messages
+            (wa_message_id, contact_id, direction, type, body, media_id, media_mime,
+             referral_ad_id, wa_timestamp, raw_payload)
+         VALUES ($wamid, $contactId, 'inbound', $type, $body, $mid, $mime, $adid, $ts, $raw)");
+    return mysqli_affected_rows($conn) > 0;
+}
+
+function wa_save_outbound($conn, $contactId, $m) {
+    $contactId = (int)$contactId;
+    $wamid  = wa_sql($conn, $m['wa_message_id'] ?? null);
+    $type   = wa_sql($conn, $m['type'] ?? 'text');
+    $body   = wa_sql($conn, $m['body'] ?? null);
+    $mid    = wa_sql($conn, $m['media_id'] ?? null);
+    $mime   = wa_sql($conn, $m['media_mime'] ?? null);
+    $status = wa_sql($conn, $m['status'] ?? 'sent');
+    $raw    = wa_sql($conn, isset($m['raw_payload']) ? json_encode($m['raw_payload'], JSON_UNESCAPED_UNICODE) : null);
+    mysqli_query($conn,
+        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload)
+         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw)");
+    return (int)mysqli_insert_id($conn);
+}
+
+/**
+ * Apply a delivery-status callback (sent -> delivered -> read, or failed) to the
+ * outbound message it references. Only advances the status — a late 'sent' never
+ * overwrites a 'read'. 'failed' always wins. Matches on wa_message_id.
+ */
+function wa_apply_status($conn, $wamid, $status) {
+    $wamid  = trim((string)$wamid);
+    $status = strtolower(trim((string)$status));
+    if ($wamid === '' || $status === '') { return; }
+    $rank = ['sent' => 1, 'delivered' => 2, 'read' => 3, 'failed' => 9];
+    if (!isset($rank[$status])) { return; }
+    $newRank = $rank[$status];
+    $w = "'" . mysqli_real_escape_string($conn, $wamid) . "'";
+    $s = "'" . mysqli_real_escape_string($conn, $status) . "'";
+    // Build a CASE that only moves forward in rank (or is currently NULL).
+    $curRankSql = "CASE `status` WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 WHEN 'failed' THEN 9 ELSE 0 END";
+    mysqli_query($conn,
+        "UPDATE wa_messages SET `status` = $s
+          WHERE wa_message_id = $w AND $curRankSql < $newRank");
+}
+
+/** Oldest-first message thread for a contact. */
+function wa_thread($conn, $contactId, $limit = 100) {
+    $contactId = (int)$contactId;
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT * FROM wa_messages WHERE contact_id = $contactId ORDER BY id DESC LIMIT $limit");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return array_reverse($rows);
+}
+
+// =====================================================================
+// Owners (the staff assignment model)
+// =====================================================================
+
+/** Owners assigned to a course/event. $kind = 'course' | 'event'. */
+function wa_owners($conn, $kind, $refId) {
+    $refId = (int)$refId;
+    if ($kind === 'event') {
+        $table = '`Event`'; $idCol = 'event_id';
+    } else {
+        $table = 'course';  $idCol = 'course_id';
+    }
+    $res = mysqli_query($conn,
+        "SELECT ru.id AS user_id,
+                COALESCE(NULLIF(s.full_name,''), ru.fullname)    AS full_name,
+                COALESCE(NULLIF(s.corporate_email,''), ru.email) AS email,
+                s.job_title
+           FROM {$table} x
+           JOIN registered_users ru ON FIND_IN_SET(ru.id, x.assigned_to) > 0
+      LEFT JOIN staff s ON s.system_user_id = ru.id
+          WHERE x.{$idCol} = {$refId}");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/**
+ * First owner's registered_users.id. A manual assignment (wa_course_owner) wins;
+ * otherwise the ERP's own assignment (course.assigned_to) applies. Returns null
+ * if still unassigned (→ fallback queue, no owner).
+ */
+function wa_first_owner($conn, $kind, $refId) {
+    $ov = wa_owner_override($conn, $kind, (int)$refId);
+    if ($ov !== null) { return $ov; }                      // manual override wins
+    $owners = wa_owners($conn, $kind, $refId);
+    return $owners ? (int)$owners[0]['user_id'] : null;
+}
+
+/** Manually-assigned rep for a course/event (fallback), or null. */
+function wa_owner_override($conn, $kind, $refId) {
+    $k = "'" . mysqli_real_escape_string($conn, $kind) . "'";
+    $rid = (int)$refId;
+    $res = mysqli_query($conn, "SELECT user_id FROM wa_course_owner WHERE ref_type = $k AND ref_id = $rid LIMIT 1");
+    $r = $res ? mysqli_fetch_assoc($res) : null;
+    return $r ? (int)$r['user_id'] : null;
+}
+
+/** Set (or clear, when $userId <= 0) the manual rep for a course/event. */
+function wa_owner_override_set($conn, $kind, $refId, $userId) {
+    $k = "'" . mysqli_real_escape_string($conn, $kind) . "'";
+    $rid = (int)$refId;
+    if ((int)$userId <= 0) {
+        mysqli_query($conn, "DELETE FROM wa_course_owner WHERE ref_type = $k AND ref_id = $rid");
+        return;
+    }
+    $uid = (int)$userId;
+    mysqli_query($conn,
+        "INSERT INTO wa_course_owner (ref_type, ref_id, user_id) VALUES ($k, $rid, $uid)
+         ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)");
+}
+
+/** Display name for a registered_users.id (staff name preferred). */
+function wa_user_name($conn, $userId) {
+    $userId = (int)$userId;
+    $res = mysqli_query($conn,
+        "SELECT COALESCE(NULLIF(s.full_name,''), ru.fullname) AS nm
+           FROM registered_users ru LEFT JOIN staff s ON s.system_user_id = ru.id
+          WHERE ru.id = $userId LIMIT 1");
+    $r = $res ? mysqli_fetch_assoc($res) : null;
+    return $r ? $r['nm'] : null;
+}
+
+/** Staff eligible to own WhatsApp chats (ERP role 44). */
+function wa_role44_users($conn) {
+    $res = mysqli_query($conn,
+        "SELECT id, fullname FROM registered_users WHERE FIND_IN_SET('44', role) ORDER BY fullname");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+// =====================================================================
+// Routing
+// =====================================================================
+
+function wa_active_courses($conn) {
+    $res = mysqli_query($conn,
+        'SELECT course_id AS id, course AS name FROM course WHERE status = 1 ORDER BY course');
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+function wa_course_name($conn, $courseId) {
+    $courseId = (int)$courseId;
+    $res = mysqli_query($conn, "SELECT course FROM course WHERE course_id = $courseId LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    return $row ? $row['course'] : null;
+}
+
+function wa_ad_mapping($conn, $adId) {
+    $ad = "'" . mysqli_real_escape_string($conn, $adId) . "'";
+    $res = mysqli_query($conn, "SELECT ref_type, ref_id FROM wa_ad_map WHERE ad_id = $ad LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    return $row ?: null;
+}
+
+function wa_get_conversation($conn, $contactId) {
+    $contactId = (int)$contactId;
+    $res = mysqli_query($conn, "SELECT * FROM wa_conversations WHERE contact_id = $contactId LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    return $row ?: null;
+}
+
+/**
+ * Guarantee a conversation row exists for a contact so the AI can ALWAYS engage —
+ * even before we've classified a course. Without this, a new contact whose first
+ * message doesn't clearly name a course (e.g. "Hi", "good morning") never gets a
+ * conversation row, so wa_maybe_ai_answer skips with 'no_conversation' and the AI
+ * stays silent for that number forever. Creates a bare handler='ai' row
+ * (ref_type='unknown'); returns the conversation id. No-op if one already exists.
+ */
+function wa_ensure_conversation($conn, $contactId) {
+    $contactId = (int)$contactId;
+    $conv = wa_get_conversation($conn, $contactId);
+    if ($conv) { return (int)$conv['id']; }
+    // contact_id is UNIQUE, so INSERT IGNORE makes a concurrent webhook retry a no-op.
+    mysqli_query($conn,
+        "INSERT IGNORE INTO wa_conversations (contact_id, ref_type, ref_id, handler, last_route_reason, last_message_at)
+         VALUES ($contactId, 'unknown', NULL, 'ai', 'new_contact', NOW())");
+    $id = (int)mysqli_insert_id($conn);
+    if ($id > 0) { return $id; }
+    $conv = wa_get_conversation($conn, $contactId);   // lost the race — read the winner's row
+    return $conv ? (int)$conv['id'] : 0;
+}
+
+/**
+ * Manually set (or clear) a conversation's linked course/event, without touching
+ * the staff assignment or handler. $refType = 'course'|'event'|'' (clear).
+ */
+function wa_set_conversation_ref($conn, $convId, $refType, $refId) {
+    $convId = (int)$convId;
+    if ($convId <= 0) { return; }
+    $valid = in_array($refType, ['course', 'event'], true) && (int)$refId > 0;
+    $rt = $valid ? "'" . $refType . "'" : 'NULL';
+    $ri = $valid ? (int)$refId : 'NULL';
+    mysqli_query($conn,
+        "UPDATE wa_conversations
+            SET ref_type = $rt, ref_id = $ri, last_route_reason = 'manual', last_route_confidence = 1.000
+          WHERE id = $convId");
+}
+
+function wa_assign_conversation($conn, $contactId, $refType, $refId, $userId, $reason = null, $confidence = null) {
+    $contactId = (int)$contactId;
+    $refType   = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $refIdSql  = $refId === null ? 'NULL' : (int)$refId;
+    $userSql   = $userId === null ? 'NULL' : (int)$userId;
+    $reasonSql = wa_sql($conn, $reason);
+    $confSql   = $confidence === null ? 'NULL' : (float)$confidence;
+    mysqli_query($conn,
+        "INSERT INTO wa_conversations
+              (contact_id, ref_type, ref_id, assigned_user_id, handler,
+               last_route_reason, last_route_confidence, last_message_at)
+              VALUES ($contactId, $refType, $refIdSql, $userSql, 'ai', $reasonSql, $confSql, NOW())
+         ON DUPLICATE KEY UPDATE
+              ref_type = VALUES(ref_type), ref_id = VALUES(ref_id),
+              assigned_user_id = VALUES(assigned_user_id),
+              last_route_reason = VALUES(last_route_reason),
+              last_route_confidence = VALUES(last_route_confidence),
+              last_message_at = NOW()");
+}
+
+/** Generic words that must NOT drive a course match (they appear in many names). */
+function wa_stopwords() {
+    return array_flip([
+        // generic course/product words
+        'training','trainings','course','courses','programme','programme','program','programs',
+        'certificate','certification','diploma','masterclass','workshop','seminar','bootcamp',
+        'class','classes','module','professional','advanced','basic','intro','introduction',
+        'fundamentals','online','virtual','event','events','practical','senior','level',
+        // generic english / chat filler
+        'the','and','for','with','you','your','our','are','can','get','how','what','about',
+        'more','info','information','interested','interest','want','need','hello','hallo','hi',
+        'please','would','like','know','tell','looking','join','apply','from','this','that',
+        'am','is','in','on','of','to','it','me','my','we','do','does','an','a',
+    ]);
+}
+
+/**
+ * Keyword course inference (EN/SW), ignoring generic words so common tokens like
+ * "training" can't mis-route. Returns ['course_id'=>?int,'confidence'=>float].
+ */
+function wa_classify_course($message, $courses) {
+    $stop = wa_stopwords();
+    $msg = ' ' . wa_normalize($message) . ' ';
+    $scores = [];
+    foreach ($courses as $c) {
+        $hits = 0;
+        foreach (explode(' ', wa_normalize((string)$c['name'])) as $w) {
+            if (mb_strlen($w) < 3 || isset($stop[$w])) { continue; }   // skip generic tokens
+            if (strpos($msg, ' ' . $w . ' ') !== false) { $hits++; }
+        }
+        if ($hits > 0) { $scores[(int)$c['id']] = $hits; }
+    }
+    if (!$scores) { return ['course_id' => null, 'confidence' => 0.0]; }
+    arsort($scores);
+    $ids = array_keys($scores);
+    $top = $ids[0];
+    $confidence = (count($ids) === 1)
+        ? 0.9
+        : ($scores[$ids[0]] > $scores[$ids[1]] ? 0.75 : 0.35);   // tie => low, forces confirm/AI
+    return ['course_id' => $top, 'confidence' => $confidence];
+}
+
+/**
+ * Match a message to a specific in-person training EVENT by its location/city
+ * (e.g. "Eswatini", "Mbabane") or a distinctive word in its title. Skips academic
+ * (ACADEMIC#) and past events. Returns ['event_id'=>?int, 'confidence'=>float].
+ */
+function wa_classify_event($conn, $text) {
+    $stop = wa_stopwords();
+    $msg = ' ' . wa_normalize($text) . ' ';
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title, location FROM `Event`
+          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%'
+            AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
+                 OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())");
+    if (!$res) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $scores = [];
+    while ($e = mysqli_fetch_assoc($res)) {
+        $hits = 0;
+        // Location tokens are the strong signal (a city/country the client named).
+        foreach (explode(' ', wa_normalize((string)$e['location'])) as $w) {
+            if (mb_strlen($w) < 4 || isset($stop[$w])) { continue; }
+            if (strpos($msg, ' ' . $w . ' ') !== false) { $hits += 2; }
+        }
+        // A distinctive title word adds a little (e.g. an unusual programme name).
+        foreach (explode(' ', wa_normalize((string)$e['event_title'])) as $w) {
+            if (mb_strlen($w) < 5 || isset($stop[$w])) { continue; }
+            if (strpos($msg, ' ' . $w . ' ') !== false) { $hits += 1; }
+        }
+        if ($hits > 0) { $scores[(int)$e['event_id']] = $hits; }
+    }
+    if (!$scores) { return ['event_id' => null, 'confidence' => 0.0]; }
+    arsort($scores);
+    $ids = array_keys($scores);
+    $conf = (count($ids) === 1)
+        ? 0.9
+        : ($scores[$ids[0]] > $scores[$ids[1]] ? 0.8 : 0.4);   // tie between events -> low
+    return ['event_id' => $ids[0], 'confidence' => $conf];
+}
+
+/** True if the given provider has a real (non-placeholder) API key in wa_config.php. */
+function wa_provider_ready($provider) {
+    if ($provider === 'openai') {
+        return WA_OPENAI_KEY && strpos(WA_OPENAI_KEY, 'YOUR_') !== 0;
+    }
+    return WA_ANTHROPIC_KEY && strpos(WA_ANTHROPIC_KEY, 'YOUR_') !== 0;
+}
+
+/** Pull the first {...} JSON object out of a model reply. */
+function wa_json_extract($text) {
+    $s = strpos((string)$text, '{');
+    $e = strrpos((string)$text, '}');
+    if ($s === false || $e === false || $e < $s) { return null; }
+    $d = json_decode(substr($text, $s, $e - $s + 1), true);
+    return is_array($d) ? $d : null;
+}
+
+/**
+ * AI course inference — matches on meaning (e.g. "M&E" -> Monitoring & Evaluation).
+ * Only runs when the active provider has a key. Returns ['course_id'=>?int,'confidence'=>float].
+ */
+function wa_ai_classify_course($conn, $text, $courses) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['course_id' => null, 'confidence' => 0.0]; }
+
+    $lines = [];
+    foreach ($courses as $c) { $lines[] = (int)$c['id'] . ': ' . $c['name']; }
+    $system = 'You route a prospective student\'s WhatsApp message to exactly one course from the '
+            . 'provided list. Match on meaning, not just shared words (e.g. "M&E" means Monitoring '
+            . 'and Evaluation). If no course clearly fits, use null. '
+            . 'Reply with ONLY JSON: {"course_id": <id or null>, "confidence": <0-1>}.';
+    $user = "Courses:\n" . implode("\n", $lines) . "\n\nMessage: \"" . $text . "\"";
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 150]);
+    if (empty($res['ok'])) { return ['course_id' => null, 'confidence' => 0.0]; }
+
+    $data = wa_json_extract($res['text']);
+    if (!$data) { return ['course_id' => null, 'confidence' => 0.0]; }
+
+    $cid = (isset($data['course_id']) && $data['course_id'] !== null) ? (int)$data['course_id'] : null;
+    $valid = false;
+    foreach ($courses as $c) { if ((int)$c['id'] === $cid) { $valid = true; break; } }
+    if (!$valid) { return ['course_id' => null, 'confidence' => 0.0]; }
+
+    $conf = isset($data['confidence']) ? (float)$data['confidence'] : 0.6;
+    return ['course_id' => $cid, 'confidence' => max(0.0, min(1.0, $conf))];
+}
+
+function wa_normalize($s) {
+    $s = mb_strtolower(trim($s));
+    $s = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s) ?? $s;
+    return trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
+}
+
+/**
+ * Route an inbound message to a course/event owner.
+ * @return array {action, reason, ref_type, ref_id, ref_name, assigned_user_id, confirm_prompt?}
+ */
+function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
+    $contactId = wa_upsert_contact($conn, $waId, $name);
+    // Always have a conversation so the AI can engage even when we can't yet classify
+    // the topic (otherwise unclassified new contacts get no row -> no AI reply, ever).
+    wa_ensure_conversation($conn, $contactId);
+    $conv = wa_get_conversation($conn, $contactId);
+    $returning = $conv && $conv['ref_id'] !== null;
+
+    // Signal 1: ad referral
+    if ($adId !== null && $adId !== '') {
+        $ad = wa_ad_mapping($conn, $adId);
+        if ($ad) {
+            $uid = wa_first_owner($conn, $ad['ref_type'], (int)$ad['ref_id']);
+            if ($uid !== null) {
+                wa_assign_conversation($conn, $contactId, $ad['ref_type'], (int)$ad['ref_id'], $uid, 'ad_referral', 1.0);
+                return wa_route_result($conn, 'assigned', 'ad_referral', $ad['ref_type'], (int)$ad['ref_id'], $uid);
+            }
+        }
+    }
+
+    // Signal 1b: a specific in-person EVENT named by its location (e.g. "Eswatini").
+    // Routes the chat to that Event so it answers from the full event knowledge
+    // (venue, dates, price, outline). Applies to new and returning contacts.
+    $evGuess = wa_classify_event($conn, $text);
+    if ($evGuess['event_id'] !== null && $evGuess['confidence'] >= 0.60) {
+        $eid = (int)$evGuess['event_id'];
+        if (!$returning || (int)$conv['ref_id'] !== $eid || $conv['ref_type'] !== 'event') {
+            $uid = wa_first_owner($conn, 'event', $eid);
+            wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, 'event_location', $evGuess['confidence']);
+            return wa_route_result($conn, 'assigned', 'event_location', 'event', $eid, $uid);
+        }
+        // already on this event — keep it
+        $uid = $conv['assigned_user_id'] !== null ? (int)$conv['assigned_user_id'] : null;
+        return wa_route_result($conn, 'kept', 'continuing', 'event', $eid, $uid);
+    }
+
+    $courses = wa_active_courses($conn);
+    if (!$courses) {
+        return ['action' => 'unassigned', 'reason' => 'no_courses', 'ref_type' => 'unknown',
+                'ref_id' => null, 'ref_name' => null, 'assigned_user_id' => null];
+    }
+
+    // Signal 2: keyword inference, with an AI fallback when the keyword guess is weak.
+    $guess = wa_classify_course($text, $courses);
+    $courseId = $guess['course_id'];
+    $conf = $guess['confidence'];
+    $method = 'inferred';                       // keyword by default
+    if ($courseId === null || $conf < 0.60) {
+        $ai = wa_ai_classify_course($conn, $text, $courses);   // no-op if no AI key
+        if ($ai['course_id'] !== null && $ai['confidence'] >= 0.60) {
+            $courseId = $ai['course_id'];
+            $conf = $ai['confidence'];
+            $method = 'ai_inferred';
+        }
+    }
+
+    if ($returning) {
+        $cur = (int)$conv['ref_id'];
+        // Same course, nothing detected, or too weak a signal -> stay on the current
+        // topic (a bare "how much?" keeps whatever we were already discussing).
+        if ($courseId === null || $courseId === $cur || $conf < 0.60) {
+            $uid = $conv['assigned_user_id'] !== null ? (int)$conv['assigned_user_id'] : null;
+            return wa_route_result($conn, 'kept', 'continuing', $conv['ref_type'], $cur, $uid);
+        }
+        // A different course is clearly the new subject -> follow the switch so the AI
+        // answers from the RIGHT knowledge base (the owner + thread labels follow too).
+        // We no longer stall on a "should I connect you?" confirmation that was never
+        // actually sent: the AI's grounded reply about the new course is the confirmation.
+        $uid = wa_first_owner($conn, 'course', (int)$courseId);
+        wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, $uid, $method . '_switch', $conf);
+        return wa_route_result($conn, 'reassigned', $method . '_switch', 'course', (int)$courseId, $uid);
+    }
+
+    if ($courseId !== null && $conf >= 0.60) {
+        $uid = wa_first_owner($conn, 'course', (int)$courseId);
+        if ($uid !== null) {
+            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, $uid, $method, $conf);
+            return wa_route_result($conn, 'assigned', $method, 'course', (int)$courseId, $uid);
+        }
+        wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, null, $method . '_no_owner', $conf);
+        return wa_route_result($conn, 'assigned_unowned', 'inferred_no_owner', 'course', (int)$courseId, null);
+    }
+    return wa_route_confirm($conn, $courseId, false);
+}
+
+function wa_route_result($conn, $action, $reason, $refType, $refId, $uid) {
+    return [
+        'action' => $action, 'reason' => $reason, 'ref_type' => $refType, 'ref_id' => $refId,
+        // Resolve by ref_type so event conversations don't get looked up as courses.
+        'ref_name' => $refId !== null ? wa_ref_name($conn, $refType, (int)$refId) : null,
+        'assigned_user_id' => $uid,
+    ];
+}
+
+function wa_route_confirm($conn, $courseId, $switching) {
+    $name = $courseId !== null ? wa_course_name($conn, $courseId) : null;
+    $prompt = $name
+        ? ($switching
+            ? "It sounds like you're now asking about our {$name} — should I connect you to that instead?"
+            : "Sounds like you're interested in our {$name} — is that right?")
+        : 'Which of our courses are you interested in?';
+    return ['action' => 'needs_confirmation', 'reason' => $switching ? 'ambiguous_switch' : 'low_confidence',
+            'ref_type' => 'unknown', 'ref_id' => null, 'ref_name' => null, 'assigned_user_id' => null,
+            'confirm_prompt' => $prompt];
+}
+
+// =====================================================================
+// Settings (wa_settings table)
+// =====================================================================
+
+function wa_setting_get($conn, $key, $default = null) {
+    $k = "'" . mysqli_real_escape_string($conn, $key) . "'";
+    $res = mysqli_query($conn, "SELECT `value` FROM wa_settings WHERE `key` = $k LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    return $row ? (string)$row['value'] : $default;
+}
+
+function wa_setting_set($conn, $key, $value) {
+    $k = "'" . mysqli_real_escape_string($conn, $key) . "'";
+    $v = "'" . mysqli_real_escape_string($conn, $value) . "'";
+    mysqli_query($conn,
+        "INSERT INTO wa_settings (`key`, `value`) VALUES ($k, $v)
+         ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
+}
+
+function wa_active_provider($conn) {
+    $p = wa_setting_get($conn, 'ai_provider', WA_DEFAULT_PROVIDER);
+    return in_array($p, ['claude', 'openai'], true) ? $p : 'claude';
+}
+
+// =====================================================================
+// Templates + broadcast
+// =====================================================================
+
+function wa_templates_list($conn) {
+    $res = mysqli_query($conn, "SELECT * FROM wa_templates ORDER BY name, language");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+function wa_template_save($conn, $name, $language, $category, $body, $status) {
+    $n = "'" . mysqli_real_escape_string($conn, $name) . "'";
+    $l = "'" . mysqli_real_escape_string($conn, $language) . "'";
+    $c = wa_sql($conn, $category);
+    $b = wa_sql($conn, $body);
+    $s = "'" . mysqli_real_escape_string($conn, $status) . "'";
+    mysqli_query($conn,
+        "INSERT INTO wa_templates (name, language, category, body, status) VALUES ($n, $l, $c, $b, $s)
+         ON DUPLICATE KEY UPDATE category = VALUES(category), body = VALUES(body), status = VALUES(status)");
+}
+
+function wa_template_delete($conn, $name, $language) {
+    $n = "'" . mysqli_real_escape_string($conn, $name) . "'";
+    $l = "'" . mysqli_real_escape_string($conn, $language) . "'";
+    mysqli_query($conn, "DELETE FROM wa_templates WHERE name = $n AND language = $l");
+}
+
+/** Number of {{n}} body variables in a template body. */
+function wa_template_var_count($body) {
+    if (!preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string)$body, $m)) { return 0; }
+    return count(array_unique($m[1]));
+}
+
+/**
+ * Contacts to broadcast to. $filter = 'all' | 'optedin' | 'course'.
+ * Returns [ ['wa_id'=>..,'name'=>..], ... ].
+ */
+function wa_broadcast_audience($conn, $filter, $refId = 0) {
+    $refId = (int)$refId;
+    $join = '';
+    // Never broadcast to anyone who has opted out — regardless of the filter.
+    $where = "c.wa_id <> '' AND c.opted_out = 0";
+    // 'course'/'event' filter contacts to those whose conversation is linked to
+    // that course or onsite event (refId is the course_id / event_id).
+    if ($filter === 'optedin') {
+        $where .= ' AND c.opted_in = 1';
+    } elseif (($filter === 'course' || $filter === 'event') && $refId > 0) {
+        $join = " JOIN wa_conversations cv ON cv.contact_id = c.id AND cv.ref_type = '$filter' AND cv.ref_id = $refId";
+    }
+    $res = mysqli_query($conn, "SELECT DISTINCT c.wa_id, c.profile_name FROM wa_contacts c $join WHERE $where ORDER BY c.id");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = ['wa_id' => $r['wa_id'], 'name' => $r['profile_name'] ?: '']; } }
+    return $rows;
+}
+
+/** Record the start of a broadcast run. Returns the new broadcast id. */
+function wa_broadcast_create($conn, $template, $language, $audience, $courseId, $total, $createdBy) {
+    $t   = "'" . mysqli_real_escape_string($conn, $template) . "'";
+    $l   = "'" . mysqli_real_escape_string($conn, $language ?: 'en') . "'";
+    $a   = "'" . mysqli_real_escape_string($conn, $audience ?: 'all') . "'";
+    $cid = ((int)$courseId > 0) ? (int)$courseId : 'NULL';
+    $tot = (int)$total;
+    $by  = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
+    mysqli_query($conn,
+        "INSERT INTO wa_broadcasts (template, language, audience, course_id, total, created_by)
+         VALUES ($t, $l, $a, $cid, $tot, $by)");
+    return (int)mysqli_insert_id($conn);
+}
+
+/** Tag an already-sent outbound message as belonging to a broadcast (by wa_message_id). */
+function wa_broadcast_tag_message($conn, $broadcastId, $wamid) {
+    $bid = (int)$broadcastId;
+    if ($bid <= 0 || !$wamid) { return; }
+    $w = "'" . mysqli_real_escape_string($conn, (string)$wamid) . "'";
+    mysqli_query($conn, "UPDATE wa_messages SET broadcast_id = $bid WHERE wa_message_id = $w");
+}
+
+/**
+ * Broadcast runs with derived delivery counts. Each run's per-recipient status
+ * is aggregated from wa_messages (status: sent -> delivered -> read / failed).
+ */
+function wa_broadcasts_list($conn, $limit = 50) {
+    $limit = (int)$limit;
+    $sql = "
+        SELECT b.*,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id) AS attempted,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'failed')    AS failed,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'delivered') AS delivered,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'read')      AS read_ct,
+               (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'sent')      AS sent_only,
+               CASE b.audience
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
+               END AS course_name
+          FROM wa_broadcasts b
+      ORDER BY b.id DESC
+         LIMIT $limit";
+    $res = mysqli_query($conn, $sql);
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** A single broadcast run with its derived delivery counts (or null). */
+function wa_broadcast_get($conn, $id) {
+    $id = (int)$id;
+    $res = mysqli_query($conn,
+        "SELECT b.*,
+                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id) AS attempted,
+                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'failed')    AS failed,
+                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'delivered') AS delivered,
+                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'read')      AS read_ct,
+                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'sent')      AS sent_only,
+                CASE b.audience
+                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
+                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
+                END AS course_name
+           FROM wa_broadcasts b WHERE b.id = $id LIMIT 1");
+    return $res ? mysqli_fetch_assoc($res) : null;
+}
+
+/**
+ * Per-recipient rows for a broadcast: number, name, status, time and (for
+ * failures) the reason pulled from the stored 360dialog response.
+ * $statusFilter = '' (all) | 'failed' | 'read' | 'delivered' | 'sent'.
+ */
+function wa_broadcast_recipients($conn, $id, $statusFilter = '') {
+    $id = (int)$id;
+    $where = "m.broadcast_id = $id";
+    if (in_array($statusFilter, ['failed', 'read', 'delivered', 'sent'], true)) {
+        $where .= " AND m.status = '" . $statusFilter . "'";
+    }
+    $res = mysqli_query($conn,
+        "SELECT m.status, m.created_at, m.raw_payload, c.wa_id, c.profile_name
+           FROM wa_messages m
+           JOIN wa_contacts c ON c.id = m.contact_id
+          WHERE $where
+       ORDER BY (m.status = 'failed') DESC, m.id ASC");
+    $rows = [];
+    if ($res) {
+        while ($r = mysqli_fetch_assoc($res)) {
+            $reason = '';
+            if (($r['status'] ?? '') === 'failed' && !empty($r['raw_payload'])) {
+                $p = json_decode($r['raw_payload'], true);
+                $reason = $p['response']['error']['message']
+                    ?? ($p['response']['error']['error_data']['details'] ?? ($p['response']['errors'][0]['detail'] ?? ''));
+            }
+            $rows[] = [
+                'wa_id'  => $r['wa_id'],
+                'name'   => $r['profile_name'] ?: '',
+                'status' => $r['status'] ?: 'sent',
+                'time'   => $r['created_at'],
+                'reason' => $reason,
+            ];
+        }
+    }
+    return $rows;
+}
+
+/**
+ * Send a template to a whole resolved audience, server-side (used by the cron
+ * runner). Resolves the audience NOW (so opt-outs are honoured at send time),
+ * opens a wa_broadcasts run, sends to each recipient with {name} substitution,
+ * tags each message, and returns the run id + counts.
+ */
+function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $courseId, $createdBy) {
+    $lang = $lang ?: 'en';
+    $vars = is_array($vars) ? $vars : [];
+    $list = wa_broadcast_audience($conn, $audience, $courseId);
+    $total = count($list);
+    $bid = wa_broadcast_create($conn, $template, $lang, $audience, $courseId, $total, $createdBy);
+    $sent = 0; $failed = 0;
+    foreach ($list as $item) {
+        $waId = $item['wa_id'] ?? '';
+        $nm   = $item['name'] ?? '';
+        if ($waId === '') { continue; }
+        $params = array_map(function ($v) use ($nm) {
+            return str_replace('{name}', $nm !== '' ? $nm : 'there', (string)$v);
+        }, $vars);
+        $components = $params
+            ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
+            : [];
+        $r = wa_send_template($conn, $waId, $template, $lang, $components);
+        if (!empty($r['ok'])) { $sent++; wa_broadcast_tag_message($conn, $bid, $r['wa_message_id'] ?? ''); }
+        else { $failed++; }
+        usleep(120000);   // ~8/sec, gentle on the rate limit
+    }
+    return ['ok' => true, 'broadcast_id' => $bid, 'total' => $total, 'sent' => $sent, 'failed' => $failed];
+}
+
+/** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
+function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy) {
+    $t   = "'" . mysqli_real_escape_string($conn, $template) . "'";
+    $l   = "'" . mysqli_real_escape_string($conn, $lang ?: 'en') . "'";
+    $a   = "'" . mysqli_real_escape_string($conn, $audience ?: 'all') . "'";
+    $cid = ((int)$courseId > 0) ? (int)$courseId : 'NULL';
+    $v   = "'" . mysqli_real_escape_string($conn, json_encode(array_values((array)$vars), JSON_UNESCAPED_UNICODE)) . "'";
+    $sa  = "'" . mysqli_real_escape_string($conn, $scheduledAt) . "'";
+    $by  = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
+    mysqli_query($conn,
+        "INSERT INTO wa_scheduled_broadcasts (template, language, audience, course_id, vars, scheduled_at, created_by)
+         VALUES ($t, $l, $a, $cid, $v, $sa, $by)");
+    return (int)mysqli_insert_id($conn);
+}
+
+/** Scheduled broadcasts for the management list (most recent / soonest first). */
+function wa_scheduled_list($conn, $limit = 100) {
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT s.*, CASE s.audience
+                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = s.course_id)
+                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = s.course_id)
+                END AS course_name
+           FROM wa_scheduled_broadcasts s
+       ORDER BY (s.status = 'pending') DESC, s.scheduled_at DESC
+          LIMIT $limit");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** Cancel a pending scheduled broadcast. */
+function wa_scheduled_cancel($conn, $id) {
+    $id = (int)$id;
+    mysqli_query($conn, "UPDATE wa_scheduled_broadcasts SET status = 'cancelled' WHERE id = $id AND status = 'pending'");
+    return mysqli_affected_rows($conn) > 0;
+}
+
+/**
+ * Execute all due scheduled broadcasts (called by wa_cron.php). Claims each row
+ * atomically (pending -> sending) so overlapping cron runs never double-send.
+ * Returns a summary array.
+ */
+function wa_run_due_scheduled($conn, $limit = 5) {
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT id FROM wa_scheduled_broadcasts
+          WHERE status = 'pending' AND scheduled_at <= NOW()
+       ORDER BY scheduled_at ASC LIMIT $limit");
+    $ids = [];
+    if ($res) { while ($r = mysqli_fetch_row($res)) { $ids[] = (int)$r[0]; } }
+
+    $done = [];
+    foreach ($ids as $id) {
+        // Atomically claim it; skip if another run already grabbed it.
+        mysqli_query($conn, "UPDATE wa_scheduled_broadcasts SET status = 'sending', run_at = NOW() WHERE id = $id AND status = 'pending'");
+        if (mysqli_affected_rows($conn) < 1) { continue; }
+
+        $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM wa_scheduled_broadcasts WHERE id = $id LIMIT 1"));
+        if (!$row) { continue; }
+        try {
+            $vars = json_decode((string)$row['vars'], true) ?: [];
+            $r = wa_broadcast_execute($conn, $row['template'], $row['language'], $vars,
+                                      $row['audience'], $row['course_id'], $row['created_by']);
+            $bid = (int)$r['broadcast_id']; $sent = (int)$r['sent']; $failed = (int)$r['failed']; $total = (int)$r['total'];
+            mysqli_query($conn,
+                "UPDATE wa_scheduled_broadcasts
+                    SET status = 'sent', broadcast_id = $bid, total = $total, sent = $sent, failed = $failed, error = NULL
+                  WHERE id = $id");
+            $done[] = ['id' => $id, 'sent' => $sent, 'failed' => $failed, 'total' => $total];
+        } catch (Throwable $e) {
+            $err = "'" . mysqli_real_escape_string($conn, substr($e->getMessage(), 0, 240)) . "'";
+            mysqli_query($conn, "UPDATE wa_scheduled_broadcasts SET status = 'failed', error = $err WHERE id = $id");
+            error_log('[wa-cron] scheduled ' . $id . ' failed: ' . $e->getMessage());
+            $done[] = ['id' => $id, 'error' => $e->getMessage()];
+        }
+    }
+    return ['ok' => true, 'ran' => count($done), 'runs' => $done];
+}
+
+// ---- Canned quick replies -------------------------------------------------
+
+/** All quick replies for the management page, with their course/event name (global first). */
+function wa_quick_replies_list($conn) {
+    $res = mysqli_query($conn,
+        "SELECT q.*,
+                CASE q.ref_type
+                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = q.ref_id)
+                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = q.ref_id)
+                END AS ref_name
+           FROM wa_quick_replies q
+       ORDER BY (q.ref_type IS NOT NULL), q.ref_type, ref_name, q.sort, q.title");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/**
+ * Quick replies to show on a chat: the global ones plus the ones scoped to
+ * this conversation's course/event (the scoped ones first, so they're leftmost).
+ */
+function wa_quick_replies_for($conn, $refType, $refId) {
+    $refId = (int)$refId;
+    $cond = 'ref_type IS NULL';
+    if (in_array($refType, ['course', 'event'], true) && $refId > 0) {
+        $cond .= " OR (ref_type = '" . $refType . "' AND ref_id = $refId)";
+    }
+    $res = mysqli_query($conn,
+        "SELECT * FROM wa_quick_replies WHERE $cond ORDER BY (ref_type IS NULL), sort, title");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+function wa_quick_reply_save($conn, $id, $title, $body, $sort = 0, $refType = '', $refId = 0) {
+    $title = trim((string)$title); $body = trim((string)$body);
+    if ($title === '' || $body === '') { return false; }
+    $t = "'" . mysqli_real_escape_string($conn, $title) . "'";
+    $b = "'" . mysqli_real_escape_string($conn, $body) . "'";
+    $s = (int)$sort;
+    $valid = in_array($refType, ['course', 'event'], true) && (int)$refId > 0;
+    $rt = $valid ? "'" . $refType . "'" : 'NULL';
+    $ri = $valid ? (int)$refId : 'NULL';
+    if ((int)$id > 0) {
+        $id = (int)$id;
+        mysqli_query($conn, "UPDATE wa_quick_replies SET title = $t, body = $b, sort = $s, ref_type = $rt, ref_id = $ri WHERE id = $id");
+    } else {
+        mysqli_query($conn, "INSERT INTO wa_quick_replies (title, body, sort, ref_type, ref_id) VALUES ($t, $b, $s, $rt, $ri)");
+    }
+    return true;
+}
+
+function wa_quick_reply_delete($conn, $id) {
+    $id = (int)$id;
+    mysqli_query($conn, "DELETE FROM wa_quick_replies WHERE id = $id");
+}
+
+/** AI-draft a template body from a plain-English description. */
+function wa_ai_template_draft($conn, $description) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    $system =
+        "You write WhatsApp message TEMPLATES (for Meta approval) for Vantage Africa School of Leadership, a "
+        . "leadership-training organisation. From the user's description, write a concise, professional template "
+        . "body. Use numbered placeholders {{1}}, {{2}} for personalised parts (name, course, date, amount). "
+        . "Avoid content Meta would reject (no misleading claims, no forbidden categories). Also choose a category "
+        . "(MARKETING, UTILITY or AUTHENTICATION) and suggest a short lowercase snake_case name. "
+        . "Reply with ONLY JSON: {\"name\":\"...\",\"category\":\"MARKETING|UTILITY|AUTHENTICATION\",\"body\":\"...\"}.";
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => (string)$description]], ['json' => true, 'max_tokens' => 500]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $d = wa_json_extract($res['text']);
+    if (!$d) { return ['ok' => false, 'error' => 'parse']; }
+    return ['ok' => true, 'name' => $d['name'] ?? '', 'category' => strtoupper($d['category'] ?? 'MARKETING'), 'body' => trim((string)($d['body'] ?? ''))];
+}
+
+/** Submit a template to Meta (via 360dialog) for approval; store it locally. */
+function wa_template_submit($conn, $name, $language, $category, $body) {
+    $payload = [
+        'name'       => $name,
+        'language'   => $language,
+        'category'   => strtoupper($category ?: 'MARKETING'),
+        'components' => [['type' => 'BODY', 'text' => $body]],
+    ];
+    $resp = wa_http_post(rtrim(WA_DIALOG_URL, '/') . '/v1/configs/templates',
+        ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY], $payload);
+    $data = $resp['body'];
+    if ($resp['status'] >= 200 && $resp['status'] < 300) {
+        $s = strtolower($data['status'] ?? 'pending');
+        $status = in_array($s, ['approved', 'pending', 'rejected'], true) ? $s : 'pending';
+        wa_template_save($conn, $name, $language, $category, $body, $status);
+        return ['ok' => true, 'status' => $status];
+    }
+    error_log('[wa-tpl] submit ' . $resp['status'] . ' ' . substr(json_encode($data), 0, 400));
+    wa_template_save($conn, $name, $language, $category, $body, 'pending');   // keep the draft
+    $err = $data['error']['message'] ?? ($data['errors'][0]['detail'] ?? ($data['meta']['developer_message'] ?? ('HTTP ' . $resp['status'])));
+    return ['ok' => false, 'error' => $err];
+}
+
+/** Pull current template statuses from Meta (via 360dialog) into wa_templates. */
+function wa_templates_sync($conn) {
+    $resp = wa_http_get(rtrim(WA_DIALOG_URL, '/') . '/v1/configs/templates', 30, ['D360-API-KEY: ' . WA_DIALOG_KEY]);
+    if ($resp['status'] < 200 || $resp['status'] >= 300) {
+        error_log('[wa-tpl] sync ' . $resp['status'] . ' ' . substr($resp['body'], 0, 400));
+        // Surface 360dialog's actual message so the cause is visible (suspended
+        // channel, wrong key type, etc.) instead of a bare status code.
+        $d = json_decode($resp['body'], true);
+        $msg = '';
+        if (is_array($d)) {
+            $msg = $d['error']['message'] ?? $d['message'] ?? ($d['errors'][0]['detail'] ?? ($d['meta']['developer_message'] ?? ''));
+        }
+        if ($msg === '') { $msg = trim(strip_tags((string)$resp['body'])); }
+        return ['ok' => false, 'error' => 'http_' . $resp['status'] . ($msg !== '' ? ': ' . substr($msg, 0, 300) : '')];
+    }
+    $j = json_decode($resp['body'], true);
+    $list = $j['waba_templates'] ?? $j['templates'] ?? ((is_array($j) && isset($j[0])) ? $j : []);
+    if (!is_array($list)) { return ['ok' => false, 'error' => 'parse']; }
+    $n = 0;
+    foreach ($list as $t) {
+        $name = $t['name'] ?? null;
+        if (!$name) { continue; }
+        $lang = is_array($t['language'] ?? null) ? ($t['language']['code'] ?? 'en') : ($t['language'] ?? 'en');
+        $status = strtolower($t['status'] ?? 'pending');
+        $status = in_array($status, ['approved', 'pending', 'rejected'], true) ? $status : 'pending';
+        $cat = strtolower($t['category'] ?? '');
+        $body = '';
+        foreach (($t['components'] ?? []) as $c) {
+            if (strtoupper($c['type'] ?? '') === 'BODY') { $body = $c['text'] ?? ''; }
+        }
+        wa_template_save($conn, $name, $lang, $cat, $body, $status);
+        $n++;
+    }
+    return ['ok' => true, 'updated' => $n];
+}
+
+/**
+ * Sync templates from the Hub at most once per $maxAge seconds (default 5 min),
+ * so the Templates list and Broadcast dropdown stay current without an API call
+ * on every page load. Records the last attempt so a failing key doesn't retry
+ * every request. Returns the sync result, or null when skipped (still fresh).
+ */
+function wa_templates_autosync($conn, $maxAge = 300) {
+    if (!defined('WA_DIALOG_KEY') || !WA_DIALOG_KEY || strpos(WA_DIALOG_KEY, 'YOUR_') === 0) { return null; }
+    $last = (int)wa_setting_get($conn, 'templates_synced_at', '0');
+    if ($last > 0 && (time() - $last) < (int)$maxAge) { return null; }
+    // Stamp the attempt up-front so a slow/failing endpoint won't retry every load.
+    wa_setting_set($conn, 'templates_synced_at', (string)time());
+    return wa_templates_sync($conn);
+}
+
+// =====================================================================
+// 24h window + sending (360dialog)
+// =====================================================================
+
+function wa_within_window($lastInbound) {
+    return $lastInbound && (time() - strtotime($lastInbound)) < 24 * 3600;
+}
+
+/** Send a free-form text reply (enforces the 24h window unless $force). Records outbound. */
+function wa_send_text($conn, $waId, $body, $force = false) {
+    // Sandbox capture mode: the test console sets $GLOBALS['WA_CAPTURE'] to an
+    // array; outbound text is recorded there instead of sent over 360dialog.
+    if (isset($GLOBALS['WA_CAPTURE']) && is_array($GLOBALS['WA_CAPTURE'])) {
+        $GLOBALS['WA_CAPTURE'][] = $body;
+        return ['ok' => true, 'captured' => true];
+    }
+    $contact = wa_find_contact_by_waid($conn, $waId);
+    $contactId = $contact['id'] ?? wa_upsert_contact($conn, $waId);
+    if (!$force && !wa_within_window($contact['last_inbound_at'] ?? null)) {
+        return ['ok' => false, 'error' => 'outside_24h_window'];
+    }
+    $payload = [
+        'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
+        'to' => $waId, 'type' => 'text', 'text' => ['preview_url' => false, 'body' => $body],
+    ];
+    return wa_dialog_dispatch($conn, (int)$contactId, 'text', $body, $payload);
+}
+
+function wa_send_template($conn, $waId, $name, $lang = 'en', $components = []) {
+    $contact = wa_find_contact_by_waid($conn, $waId);
+    $contactId = $contact['id'] ?? wa_upsert_contact($conn, $waId);
+    $template = ['name' => $name, 'language' => ['code' => $lang]];
+    if ($components) { $template['components'] = $components; }
+    $payload = [
+        'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
+        'to' => $waId, 'type' => 'template', 'template' => $template,
+    ];
+    return wa_dialog_dispatch($conn, (int)$contactId, 'template', "[template:{$name}/{$lang}]", $payload);
+}
+
+/** Upload a local file to 360dialog. Returns ['ok', 'id'] or ['ok'=>false,'error']. */
+function wa_upload_media($filePath, $mime) {
+    $ch = curl_init(rtrim(WA_DIALOG_URL, '/') . '/media');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => [
+            'messaging_product' => 'whatsapp',
+            'type' => $mime,
+            'file' => new CURLFile($filePath, $mime, basename($filePath)),
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 120,
+        CURLOPT_HTTPHEADER => ['D360-API-KEY: ' . WA_DIALOG_KEY],
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $j = json_decode((string)$raw, true);
+    if ($status >= 200 && $status < 300 && !empty($j['id'])) { return ['ok' => true, 'id' => $j['id']]; }
+    error_log('[wa-media] upload ' . $status . ' ' . substr((string)$raw, 0, 200));
+    return ['ok' => false, 'error' => 'upload_' . $status];
+}
+
+/**
+ * Upload + send a media message (image/video/audio/document), record outbound.
+ * Enforces the 24h window (free-form). Returns ['ok', ...].
+ */
+function wa_send_media($conn, $waId, $filePath, $mime, $filename, $caption = '') {
+    $contact = wa_find_contact_by_waid($conn, $waId);
+    $contactId = $contact['id'] ?? wa_upsert_contact($conn, $waId);
+    if (!wa_within_window($contact['last_inbound_at'] ?? null)) {
+        return ['ok' => false, 'error' => 'outside_24h_window'];
+    }
+    $up = wa_upload_media($filePath, $mime);
+    if (empty($up['ok'])) { return ['ok' => false, 'error' => $up['error'] ?? 'upload_failed']; }
+    $mediaId = $up['id'];
+
+    if (strpos($mime, 'image/') === 0)      { $type = 'image'; }
+    elseif (strpos($mime, 'video/') === 0)  { $type = 'video'; }
+    elseif (strpos($mime, 'audio/') === 0)  { $type = 'audio'; }
+    else                                    { $type = 'document'; }
+
+    $obj = ['id' => $mediaId];
+    if ($caption !== '') { $obj['caption'] = $caption; }
+    if ($type === 'document') { $obj['filename'] = $filename; }
+    $payload = [
+        'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
+        'to' => $waId, 'type' => $type, $type => $obj,
+    ];
+    $resp = wa_http_post(rtrim(WA_DIALOG_URL, '/') . '/messages',
+        ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY], $payload);
+    $data = $resp['body'];
+    $wamid = $data['messages'][0]['id'] ?? null;
+    $ok = $resp['status'] >= 200 && $resp['status'] < 300 && $wamid !== null;
+
+    wa_save_outbound($conn, (int)$contactId, [
+        'wa_message_id' => $wamid, 'type' => $type,
+        'body' => $caption !== '' ? $caption : $filename,
+        'media_id' => $mediaId, 'media_mime' => $mime,
+        'status' => $ok ? 'sent' : 'failed',
+        'raw_payload' => ['request' => $payload, 'response' => $data, 'http' => $resp['status']],
+    ]);
+    if ($ok) { return ['ok' => true, 'wa_message_id' => $wamid]; }
+    return ['ok' => false, 'error' => $data['error']['message'] ?? ('HTTP ' . $resp['status'])];
+}
+
+function wa_dialog_dispatch($conn, $contactId, $type, $body, $payload) {
+    $resp = wa_http_post(
+        rtrim(WA_DIALOG_URL, '/') . '/messages',
+        ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY],
+        $payload
+    );
+    $data = $resp['body'];
+    $wamid = $data['messages'][0]['id'] ?? null;
+    $ok = $resp['status'] >= 200 && $resp['status'] < 300 && $wamid !== null;
+    wa_save_outbound($conn, $contactId, [
+        'wa_message_id' => $wamid, 'type' => $type, 'body' => $body,
+        'status' => $ok ? 'sent' : 'failed',
+        'raw_payload' => ['request' => $payload, 'response' => $data, 'http' => $resp['status']],
+    ]);
+    if ($ok) { return ['ok' => true, 'wa_message_id' => $wamid]; }
+    return ['ok' => false, 'error' => $data['error']['message'] ?? ('HTTP ' . $resp['status'])];
+}
+
+/**
+ * Retry a previously-failed outbound message (the WhatsApp API fails intermittently).
+ * Re-POSTs the exact 360dialog request we stored on the failed attempt (so text,
+ * template AND media all work — media re-uses the still-valid uploaded media id).
+ * Updates the SAME row in place so the bubble simply flips failed -> sent, keeping
+ * the thread clean. Returns {ok, status, wa_message_id?} or {ok:false, error}.
+ */
+function wa_resend_message($conn, $msgId) {
+    $msgId = (int)$msgId;
+    $res = mysqli_query($conn,
+        "SELECT m.*, c.wa_id, c.last_inbound_at
+           FROM wa_messages m
+           JOIN wa_contacts c ON c.id = m.contact_id
+          WHERE m.id = $msgId AND m.direction = 'outbound' LIMIT 1");
+    $m = $res ? mysqli_fetch_assoc($res) : null;
+    if (!$m) { return ['ok' => false, 'error' => 'not_found']; }
+    if (($m['status'] ?? '') !== 'failed') { return ['ok' => false, 'error' => 'not_failed']; }
+
+    // Prefer the exact original request; fall back to rebuilding a text payload.
+    $raw = json_decode((string)($m['raw_payload'] ?? ''), true);
+    $payload = (is_array($raw) && !empty($raw['request'])) ? $raw['request'] : null;
+    if (!$payload && $m['type'] === 'text') {
+        $payload = [
+            'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
+            'to' => $m['wa_id'], 'type' => 'text',
+            'text' => ['preview_url' => false, 'body' => (string)$m['body']],
+        ];
+    }
+    if (!$payload) { return ['ok' => false, 'error' => 'cannot_rebuild']; }
+
+    // Free-form (text/media) still needs the 24h window; templates may go anytime.
+    if ($m['type'] !== 'template' && !wa_within_window($m['last_inbound_at'])) {
+        return ['ok' => false, 'error' => 'outside_24h_window'];
+    }
+
+    $resp  = wa_http_post(rtrim(WA_DIALOG_URL, '/') . '/messages',
+        ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY], $payload);
+    $data  = $resp['body'];
+    $wamid = $data['messages'][0]['id'] ?? null;
+    $ok    = $resp['status'] >= 200 && $resp['status'] < 300 && $wamid !== null;
+
+    $status  = $ok ? 'sent' : 'failed';
+    $wamSql  = wa_sql($conn, $wamid);
+    $statSql = wa_sql($conn, $status);
+    $rawSql  = wa_sql($conn, json_encode(
+        ['request' => $payload, 'response' => $data, 'http' => $resp['status'], 'resent' => true],
+        JSON_UNESCAPED_UNICODE));
+    mysqli_query($conn,
+        "UPDATE wa_messages SET wa_message_id = $wamSql, status = $statSql, raw_payload = $rawSql
+          WHERE id = $msgId");
+
+    if ($ok) { return ['ok' => true, 'status' => $status, 'wa_message_id' => $wamid]; }
+    return ['ok' => false, 'error' => $data['error']['message'] ?? ('HTTP ' . $resp['status'])];
+}
+
+// =====================================================================
+// AI providers (Claude + OpenAI)
+// =====================================================================
+
+/**
+ * Call the active (or named) provider.
+ * @return array {ok:bool, text:string, error?:string}
+ */
+function wa_ai_complete($provider, $system, $messages, $opts = []) {
+    $max = (int)($opts['max_tokens'] ?? 1024);
+    $timeout = (int)($opts['timeout'] ?? 25);   // longer for big outputs (KB editing)
+    // Optional vision: $opts['image'] = ['mime'=>'image/png','data'=>'<base64>'] gets
+    // attached to the LAST user turn so the model can look at an uploaded example.
+    $image = (!empty($opts['image']['data']) && !empty($opts['image']['mime'])) ? $opts['image'] : null;
+    // Optional PDF (Claude only): $opts['document'] = ['mime'=>'application/pdf','data'=>base64].
+    $document = (!empty($opts['document']['data']) && !empty($opts['document']['mime'])) ? $opts['document'] : null;
+    if ($provider === 'openai') {
+        $chat = array_merge([['role' => 'system', 'content' => $system]], $messages);
+        if ($image) {
+            for ($i = count($chat) - 1; $i >= 0; $i--) {
+                if (($chat[$i]['role'] ?? '') === 'user') {
+                    $txt = is_string($chat[$i]['content']) ? $chat[$i]['content'] : '';
+                    $chat[$i]['content'] = [
+                        ['type' => 'text', 'text' => $txt],
+                        ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $image['mime'] . ';base64,' . $image['data']]],
+                    ];
+                    break;
+                }
+            }
+        }
+        $payload = ['model' => WA_OPENAI_MODEL, 'max_tokens' => $max, 'messages' => $chat];
+        if (!empty($opts['json'])) { $payload['response_format'] = ['type' => 'json_object']; }
+        $resp = wa_http_post(rtrim(WA_OPENAI_URL, '/') . '/v1/chat/completions',
+            ['Content-Type: application/json', 'Authorization: Bearer ' . WA_OPENAI_KEY], $payload, $timeout);
+        $d = $resp['body'];
+        if ($resp['status'] < 200 || $resp['status'] >= 300) {
+            return ['ok' => false, 'text' => '', 'error' => $d['error']['message'] ?? ('HTTP ' . $resp['status'])];
+        }
+        return ['ok' => true, 'text' => trim((string)($d['choices'][0]['message']['content'] ?? ''))];
+    }
+
+    // Claude (Anthropic Messages API). No temperature/thinking (would 400 on opus-4-8).
+    if ($image || $document) {
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            if (($messages[$i]['role'] ?? '') === 'user') {
+                $txt = is_string($messages[$i]['content']) ? $messages[$i]['content'] : '';
+                $blocks = [['type' => 'text', 'text' => $txt]];
+                if ($image) {
+                    $blocks[] = ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $image['mime'], 'data' => $image['data']]];
+                }
+                if ($document) {
+                    $blocks[] = ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => $document['mime'], 'data' => $document['data']]];
+                }
+                $messages[$i]['content'] = $blocks;
+                break;
+            }
+        }
+    }
+    $payload = ['model' => WA_ANTHROPIC_MODEL, 'max_tokens' => $max, 'system' => $system, 'messages' => $messages];
+    $resp = wa_http_post(rtrim(WA_ANTHROPIC_URL, '/') . '/v1/messages', [
+        'Content-Type: application/json',
+        'x-api-key: ' . WA_ANTHROPIC_KEY,
+        'anthropic-version: ' . WA_ANTHROPIC_VERSION,
+    ], $payload, $timeout);
+    $d = $resp['body'];
+    if ($resp['status'] < 200 || $resp['status'] >= 300) {
+        return ['ok' => false, 'text' => '', 'error' => $d['error']['message'] ?? ('HTTP ' . $resp['status'])];
+    }
+    if (($d['stop_reason'] ?? null) === 'refusal') {
+        return ['ok' => false, 'text' => '', 'error' => 'model_refusal'];
+    }
+    $text = '';
+    foreach ($d['content'] ?? [] as $b) {
+        if (($b['type'] ?? '') === 'text') { $text .= $b['text'] ?? ''; }
+    }
+    return ['ok' => true, 'text' => trim($text)];
+}
+
+// =====================================================================
+// Knowledge base + AI responder
+// =====================================================================
+
+/** Course/event/programme display name for routing/AI context. */
+function wa_ref_name($conn, $refType, $refId) {
+    if ($refId === null) { return null; }
+    if ($refType === 'event') {
+        $refId = (int)$refId;
+        $res = mysqli_query($conn, "SELECT event_title FROM `Event` WHERE event_id = $refId LIMIT 1");
+        $r = $res ? mysqli_fetch_assoc($res) : null;
+        return $r ? $r['event_title'] : null;
+    }
+    if ($refType === 'program') {
+        $p = wa_program_get($conn, (int)$refId);
+        return $p ? $p['name'] : null;
+    }
+    return wa_course_name($conn, (int)$refId);
+}
+
+/** Active events (status = 1). */
+function wa_active_events($conn) {
+    $res = mysqli_query($conn,
+        'SELECT event_id AS id, event_title AS name FROM `Event` WHERE status = 1 ORDER BY start_on DESC');
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** True if an Event row is an intake-based academic programme — flagged by a
+ *  location marker 'ACADEMIC#<qualification>' (e.g. ACADEMIC#certificate). These
+ *  are open year-round (register anytime), not date-bound like location events. */
+function wa_event_is_academic($location) {
+    return stripos(ltrim((string)$location), 'ACADEMIC#') === 0;
+}
+
+/** How one Event session reads in a catalogue. Academic (intake-based) rows show
+ *  their qualification + "register anytime" (no country/date); location-based
+ *  events show the country and dates. */
+function wa_event_display($location, $when) {
+    $loc = trim((string)$location);
+    if (wa_event_is_academic($loc)) {
+        $qual = trim(substr($loc, strpos($loc, '#') + 1));
+        $qual = $qual !== '' ? ucwords(str_replace(['_', '-'], ' ', $qual)) : 'Academic programme';
+        return $qual . ' — online, intake-based (register anytime)';
+    }
+    $loc = $loc !== '' ? $loc : 'venue TBC';
+    return $loc . ($when !== '' ? ' (' . $when . ')' : '');
+}
+
+/**
+ * Compact catalogue of active, upcoming international trainings (the `Event` table
+ * = our in-person trainings held in various countries). Injected into EVERY AI
+ * prompt so the bot can answer "do you have <topic> training in <country>?" with
+ * the real answer, instead of deflecting to "let me check with the team". '' if
+ * none. Past events (end_on before today) are dropped so it stays current.
+ */
+function wa_events_catalog($conn, $limit = 40) {
+    $limit = (int)$limit;
+    // Keep active events that haven't clearly finished. Tolerant of legacy zero /
+    // NULL dates so a mis-dated but active training is still shown to the AI.
+    // Academic programmes (location 'ACADEMIC#…') are intake-based — always shown.
+    // Location-based events keep the "not clearly finished" filter (tolerant of
+    // legacy zero/NULL dates).
+    $res = mysqli_query($conn,
+        "SELECT event_title, location, start_on, end_on
+           FROM `Event`
+          WHERE status = 1
+            AND (location LIKE 'ACADEMIC#%'
+                 OR end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
+                 OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
+          ORDER BY (location LIKE 'ACADEMIC#%') DESC,
+                   (start_on IS NULL OR start_on = '0000-00-00'), start_on ASC
+          LIMIT $limit");
+    if (!$res || mysqli_num_rows($res) === 0) { return ''; }
+    $lines = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $when = '';
+        $start = (string)($r['start_on'] ?? '');
+        $end   = (string)($r['end_on'] ?? '');
+        $isReal = function ($d) { return $d !== '' && strpos($d, '0000-00-00') !== 0; };
+        if ($isReal($start)) {
+            try {
+                $when = (new DateTime($start))->format('j M Y');
+                if ($isReal($end)) { $when .= ' – ' . (new DateTime($end))->format('j M Y'); }
+            } catch (Throwable $e) { $when = ''; }
+        }
+        $lines[] = '• ' . trim((string)$r['event_title']) . ' — '
+            . wa_event_display($r['location'] ?? '', $when);
+    }
+    return implode("\n", $lines);
+}
+
+/**
+ * Pull a registration URL out of free-text knowledge-base content. Prefers a URL
+ * that sits on a line mentioning register/enrol/apply/sign-up/book; otherwise the
+ * first URL present. '' if none.
+ */
+function wa_extract_register_url($kb) {
+    if (trim((string)$kb) === '') { return ''; }
+    if (preg_match('/(?:regist|enrol|apply|sign[\s-]?up|\bbook\b|\bjoin\b)[^\n]*?(https?:\/\/[^\s<>()]+)/i', $kb, $m)) {
+        return rtrim($m[1], '.,;:)');
+    }
+    if (preg_match('/(https?:\/\/[^\s<>()]+)/i', $kb, $m)) {
+        return rtrim($m[1], '.,;:)');
+    }
+    return '';
+}
+
+/**
+ * The public registration link for a course/event. PRIMARY source is the course's
+ * own knowledge base (a "Registration link: https://…" line, or any URL in it).
+ * Falls back to the global 'register_url' template setting (supports {type}/{id}
+ * placeholders), then the site home page.
+ */
+function wa_register_link($conn, $refType, $refId) {
+    // 1) From the knowledge base (raw text is authoritative).
+    $link = wa_extract_register_url(wa_knowledge_get($conn, $refType, (int)$refId));
+    if ($link !== '') { return $link; }
+    // 2) Global fallback template, else the site home page.
+    $tpl  = trim((string)wa_setting_get($conn, 'register_url', ''));
+    $base = defined('WA_SITE_URL') ? rtrim(WA_SITE_URL, '/') : '';
+    if ($tpl === '') { return $base; }
+    if (strpos($tpl, '{') === false) { return rtrim($tpl, '/'); }   // plain URL, no placeholders
+    return strtr($tpl, ['{type}' => (string)$refType, '{id}' => (string)(int)$refId]);
+}
+
+// Built-in schedule for the Certified M&E Professional Course outline, so the AI
+// can answer schedule/agenda questions immediately (a fresh scan overrides this).
+if (!defined('WA_OUTLINE_DEFAULT_TEXT')) {
+    define('WA_OUTLINE_DEFAULT_TEXT',
+"COURSE OUTLINE / SCHEDULE — Certified M&E Professional Course (in-person training events).\n"
+. "There are TWO DISTINCT PHASES — never merge them, and never invent a different structure (e.g. do NOT say '5 weeks', '3 days per week', or that the training is a weekly evening class — that describes only Phase 2):\n"
+. "\nPHASE 1 — IN-PERSON TRAINING: 3 FULL DAYS, classes 8:30 AM to 5:00 PM each day. A practical, hands-on training where every participant builds a complete M&E Plan for their own project.\n"
+. "Day topics across the 3 days: registration & introductions; M&E Demystified; Data Management & data quality; Key Concepts in M&E (baseline, indicator, target, goal, objective, output, inputs, results, outcomes, impact, activities, assumptions; effectiveness, efficiency, validity, reliability, sustainability, reporting, feedback); Formulating Goals, Objectives & Objectively Verifiable Indicators (OVIs); M&E Frameworks & designing a Logframe; Performance Monitoring & Evaluation Plans; Performance Results Report; Developing a Complete M&E Plan; Theory of Change; Earned Value Analysis; Participatory M&E; M&E and AI; review of participants' M&E Plans; graduation & award of certificates.\n"
+. "Pre-training online topics (right after registration): the Rationale for M&E; Case-Study Selection; Overview of Project Management; M&E in the Global/Continental Arena.\n"
+. "\nPHASE 2 — 3-MONTH ONLINE FOLLOW-UP: about 3 months, ONE ~1.5-hour session per week (normally Tuesday evening; Zoom link shared). This is the ONLY part that is a weekly evening session.\n"
+. "Weekly topics: 1 Data Analysis & Visualization; 2 Advanced Indicator Development; 3 M&E in the age of AI; 4 M&E Consulting; 5 Impact Harvesting; 6 Advanced Data Management Techniques; 7 Theory-Based Evaluation; 8 Results-Based Management; 9 Advanced Participatory M&E; 10 Advanced Reporting & Communication; 11 Advanced Impact Evaluation; 12 Induction into the Vantage Africa M&E Professionals Association (VAMEPA).\n"
+. "\nCompletion: attend the 3-day physical training (or join virtually); develop a complete M&E Plan; complete the required e-learning lessons and quizzes; and clear the fees. Two certificates (M&E and Proposal Writing) are issued on completion.");
+}
+
+/** The one course-outline link shared by ALL training events. Configurable via the
+ *  'event_outline_url' setting; defaults to the current Drive outline. */
+function wa_event_outline_url($conn) {
+    return trim((string)wa_setting_get($conn, 'event_outline_url',
+        'https://drive.google.com/file/d/1iGnMBGLw_lLdazONUBW6GS8KMKyVE_47/view?usp=drive_link'));
+}
+
+/** The schedule/agenda text of the shared course outline. Uses the scanned value
+ *  ('event_outline_text' setting) if present, otherwise a built-in default so the
+ *  AI can always answer schedule questions even before a scan. */
+function wa_event_outline_text($conn) {
+    $set = trim((string)wa_setting_get($conn, 'event_outline_text', ''));
+    if ($set !== '') { return $set; }
+    return WA_OUTLINE_DEFAULT_TEXT;
+}
+
+/** The shared course outline (link + schedule) applies to EVENT chats only —
+ *  not courses or programmes. */
+function wa_outline_applies($refType, $refName = '') {
+    return $refType === 'event';
+}
+
+/** Pull a Google-Drive file id out of a share/view/uc URL. '' if not a Drive URL. */
+function wa_drive_file_id($url) {
+    if (preg_match('#/file/d/([A-Za-z0-9_-]{10,})#', (string)$url, $m)) { return $m[1]; }
+    if (preg_match('#[?&]id=([A-Za-z0-9_-]{10,})#', (string)$url, $m)) { return $m[1]; }
+    return '';
+}
+
+/** Download a (publicly shared) Google-Drive PDF's raw bytes, or '' on failure. */
+function wa_fetch_drive_pdf($url, $timeout = 40) {
+    $id = wa_drive_file_id($url);
+    if ($id === '') {
+        $r = wa_http_get((string)$url, $timeout);
+        $b = ($r['status'] >= 200 && $r['status'] < 300) ? (string)$r['body'] : '';
+        return strncmp($b, '%PDF', 4) === 0 ? $b : '';
+    }
+    $dl = 'https://drive.google.com/uc?export=download&id=' . $id;
+    $r  = wa_http_get($dl, $timeout);
+    $b  = ($r['status'] >= 200 && $r['status'] < 300) ? (string)$r['body'] : '';
+    if (strncmp($b, '%PDF', 4) === 0) { return $b; }
+    // Large-file interstitial: grab the confirm token and retry once.
+    if ($b !== '' && preg_match('#confirm=([0-9A-Za-z_-]+)#', $b, $m)) {
+        $r2 = wa_http_get($dl . '&confirm=' . $m[1], $timeout);
+        $b2 = ($r2['status'] >= 200 && $r2['status'] < 300) ? (string)$r2['body'] : '';
+        if (strncmp($b2, '%PDF', 4) === 0) { return $b2; }
+    }
+    return '';
+}
+
+/**
+ * Scan the shared course-outline PDF and cache its schedule/agenda as plain text
+ * (setting 'event_outline_text') so the live AI can answer schedule questions.
+ * Claude only (uses PDF document input). @return {ok, text?} or {ok:false,error}.
+ */
+function wa_outline_import($conn) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    if ($provider !== 'claude') { return ['ok' => false, 'error' => 'needs_claude']; }
+    $pdf = wa_fetch_drive_pdf(wa_event_outline_url($conn));
+    if ($pdf === '') { return ['ok' => false, 'error' => 'no_pdf']; }
+    if (strlen($pdf) > 25 * 1024 * 1024) { return ['ok' => false, 'error' => 'too_large']; }
+
+    $system = "You extract the SCHEDULE/AGENDA from a training course outline PDF. Output PLAIN TEXT: the full "
+        . "programme structure — days (and dates if shown), session times, and the topics/modules covered in each "
+        . "session or day. Be faithful and complete; no preamble or commentary.";
+    $res = wa_ai_complete($provider, $system,
+        [['role' => 'user', 'content' => 'Extract the complete schedule, session times and topics from this course outline.']],
+        ['max_tokens' => 4000, 'timeout' => 120, 'document' => ['mime' => 'application/pdf', 'data' => base64_encode($pdf)]]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $text = trim((string)$res['text']);
+    if ($text === '') { return ['ok' => false, 'error' => 'empty']; }
+    wa_setting_set($conn, 'event_outline_text', $text);
+    wa_setting_set($conn, 'event_outline_text_at', date('Y-m-d H:i:s'));
+    return ['ok' => true, 'text' => $text];
+}
+
+/** Which training programme an event is linked to (its "general database"), or 0. */
+function wa_event_program_get($conn, $eventId) {
+    return (int)wa_setting_get($conn, 'event_program:' . (int)$eventId, '0');
+}
+function wa_event_program_set($conn, $eventId, $programId) {
+    wa_setting_set($conn, 'event_program:' . (int)$eventId, (string)(int)$programId);
+}
+
+/** Human date range for an Event row. '' when no real dates. */
+function wa_event_when_range($start, $end) {
+    $isReal = function ($d) { $d = (string)$d; return $d !== '' && strpos($d, '0000-00-00') !== 0; };
+    if (!$isReal($start)) { return ''; }
+    try {
+        $w = (new DateTime((string)$start))->format('j M Y');
+        if ($isReal($end)) { $w .= ' – ' . (new DateTime((string)$end))->format('j M Y'); }
+        return $w;
+    } catch (Throwable $e) { return ''; }
+}
+
+/**
+ * Build a specific event's knowledge base from its details + the general database
+ * of the training programme it's linked to (M&E, Data Analysis, ...). Pulls the
+ * event name/dates from the Event table, folds in the programme's general info and
+ * the shared course-outline link, saves it as the event's KB, and remembers the
+ * programme link. @return array {ok, text?} or {ok:false, error}
+ */
+function wa_event_kb_build($conn, $eventId, $programId, $city, $hotel, $cost, $regLink) {
+    $eventId = (int)$eventId; $programId = (int)$programId;
+    if ($eventId <= 0) { return ['ok' => false, 'error' => 'no_event']; }
+    $name = wa_ref_name($conn, 'event', $eventId);
+    if (!$name) { return ['ok' => false, 'error' => 'unknown_event']; }
+
+    $r  = mysqli_query($conn, "SELECT start_on, end_on, location, COALESCE(early_amount,0) AS early_amount FROM `Event` WHERE event_id = $eventId LIMIT 1");
+    $ev = $r ? (mysqli_fetch_assoc($r) ?: []) : [];
+    $dates = wa_event_when_range($ev['start_on'] ?? '', $ev['end_on'] ?? '');
+
+    // Pull what we can straight from the system; the caller's form values override.
+    $dbCity = trim((string)($ev['location'] ?? ''));
+    if (strpos($dbCity, 'ACADEMIC#') === 0) { $dbCity = ''; }        // marker, not a place
+    $dbAmt  = (float)($ev['early_amount'] ?? 0);
+    $dbCost = $dbAmt > 0 ? ('USD ' . rtrim(rtrim(number_format($dbAmt, 2), '0'), '.')) : '';
+    $dbReg  = wa_register_link($conn, 'event', $eventId);            // KB link, else register_url setting
+
+    $city    = trim((string)$city)    !== '' ? trim((string)$city)    : $dbCity;
+    $hotel   = trim((string)$hotel);
+    $cost    = trim((string)$cost)    !== '' ? trim((string)$cost)    : $dbCost;
+    $regLink = trim((string)$regLink) !== '' ? trim((string)$regLink) : $dbReg;
+    $outline = wa_event_outline_url($conn);
+
+    $prog   = $programId > 0 ? wa_program_get($conn, $programId) : null;
+    $genName = $prog['name'] ?? '';
+    $genKb   = $programId > 0 ? trim((string)wa_knowledge_get($conn, 'program', $programId)) : '';
+    if ($programId > 0) { wa_event_program_set($conn, $eventId, $programId); }
+
+    $specs = "Event name: {$name}\n"
+        . ($genName !== '' ? "Training programme: {$genName}\n" : '')
+        . ($city    !== '' ? "City / country: {$city}\n" : '')
+        . ($hotel   !== '' ? "Hotel / venue: {$hotel}\n" : '')
+        . ($dates   !== '' ? "Dates: {$dates}\n" : '')
+        . ($cost    !== '' ? "Cost / fee: {$cost}\n" : '')
+        . ($regLink !== '' ? "Registration link: {$regLink}\n" : '')
+        . "Course outline link: {$outline}\n";
+
+    $provider = wa_active_provider($conn);
+    // No AI key (or programme has no general info) → template it directly.
+    if (!wa_provider_ready($provider)) {
+        $kb = "=== 1. EVENT BASICS ===\n" . $specs
+            . ($genKb !== '' ? "\n=== 2. PROGRAMME INFO ===\n" . $genKb . "\n" : '');
+        wa_knowledge_set($conn, 'event', $eventId, $kb);
+        return ['ok' => true, 'text' => $kb];
+    }
+
+    $system = "You build a plain-text knowledge base for ONE specific in-person training EVENT, used by a WhatsApp "
+        . "admissions advisor at Vantage Africa School of Leadership. Combine the GENERAL PROGRAMME INFO (shared by "
+        . "all events of this programme — what it covers, outcomes, who it's for) with the EVENT SPECIFICS (this "
+        . "event's name, city, hotel, dates, cost, registration link, outline link). Output PLAIN TEXT under clearly "
+        . "labelled '=== N. SECTION NAME ===' headings — at least: 1. EVENT BASICS (name, city, hotel, dates), "
+        . "2. COST & REGISTRATION (cost, the registration link, and the course outline link), and sections for what "
+        . "the programme covers and its outcomes drawn from the general info. Rules: use ONLY the facts provided — "
+        . "never invent fees, dates, hotels or links; keep the registration and outline links EXACTLY as given; no "
+        . "markdown code fences, no preamble.";
+    $user = "GENERAL PROGRAMME INFO" . ($genName !== '' ? " (\"{$genName}\")" : '') . ":\n"
+        . ($genKb !== '' ? $genKb : "(none provided)") . "\n\nEVENT SPECIFICS:\n" . $specs;
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['max_tokens' => 3000, 'timeout' => 90]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $kb = trim(preg_replace('/^```[a-z]*\s*\n?|\n?```\s*$/i', '', trim((string)$res['text'])));
+    if ($kb === '') { return ['ok' => false, 'error' => 'empty_result']; }
+    wa_knowledge_set($conn, 'event', $eventId, $kb);
+    return ['ok' => true, 'text' => $kb];
+}
+
+/** The training programme an event belongs to: the explicit link if set, else the
+ *  first programme whose keywords match the event title. 0 if none. */
+function wa_event_program_for($conn, $eventId, $eventName = '') {
+    $pid = wa_event_program_get($conn, (int)$eventId);
+    if ($pid > 0) { return $pid; }
+    if ($eventName === '') { $eventName = (string)wa_ref_name($conn, 'event', (int)$eventId); }
+    foreach (wa_programs_list($conn, true) as $p) {
+        foreach (wa_program_keywords_arr($p) as $kw) {
+            if ($kw !== '' && stripos($eventName, $kw) !== false) { return (int)$p['id']; }
+        }
+    }
+    return 0;
+}
+
+/**
+ * The knowledge an event chat answers from: the event's live DB details (name,
+ * city/venue, dates, cost, registration link) + its linked training programme's
+ * general knowledge (e.g. M&E Trainings) + any notes saved on the event itself.
+ * $ownOverride: use this text as the event's own notes instead of the saved KB
+ * (the sandbox passes the editor's current text). Returns plain text.
+ */
+function wa_event_effective_kb($conn, $eventId, $ownOverride = null) {
+    $eventId = (int)$eventId;
+    $name = (string)wa_ref_name($conn, 'event', $eventId);
+
+    $r  = mysqli_query($conn, "SELECT start_on, end_on, location, COALESCE(early_amount,0) AS early_amount FROM `Event` WHERE event_id = $eventId LIMIT 1");
+    $ev = $r ? (mysqli_fetch_assoc($r) ?: []) : [];
+    $dates = wa_event_when_range($ev['start_on'] ?? '', $ev['end_on'] ?? '');
+    $city  = trim((string)($ev['location'] ?? '')); if (strpos($city, 'ACADEMIC#') === 0) { $city = ''; }
+    $amt   = (float)($ev['early_amount'] ?? 0);
+    $cost  = $amt > 0 ? ('USD ' . rtrim(rtrim(number_format($amt, 2), '0'), '.')) : '';
+    $reg   = wa_register_link($conn, 'event', $eventId);
+
+    $specs = "=== THIS EVENT (in-person M&E training) ===\n"
+        . ($name !== '' ? "Event: {$name}\n" : '')
+        . ($city !== '' ? "City / venue location: {$city}\n" : '')
+        . ($dates !== '' ? "Start date: {$dates}\n" : '')
+        . "Duration & schedule (state it EXACTLY like this; do NOT invent weeks, 'days per week', or evening times "
+        . "for the in-person part):\n"
+        . "  - PHASE 1 — the in-person event is 3 FULL DAYS, classes 8:30 AM to 5:00 PM each day (a hands-on "
+        . "training where you build a complete M&E plan).\n"
+        . "  - PHASE 2 — after the 3 physical days, the CMEP programme continues online for about 3 months, with "
+        . "ONE ~1.5-hour session per week (normally Tuesday evening). The weekly-evening format applies ONLY to "
+        . "this online phase, NOT to the 3 physical days.\n"
+        . "  - CRITICAL: there is NO '5-week' programme, NO 'X-week' schedule, and NO 'Monday/Tuesday/Wednesday' "
+        . "evening-class pattern for this in-person event. If any such schedule (e.g. '5 weeks', 'Mon/Tue/Wed', "
+        . "'8:00-9:30 PM') appears anywhere in the knowledge, it belongs to a different online/virtual programme — "
+        . "IGNORE it completely for this event. Never tell a client this event is a 5-week programme.\n"
+        . ($cost !== '' ? "Cost / fee: {$cost}\n" : '')
+        . ($reg  !== '' ? "Registration link: {$reg}\n" : '');
+
+    $own = $ownOverride !== null ? trim((string)$ownOverride) : trim((string)wa_knowledge_get_ai($conn, 'event', $eventId));
+
+    $pid   = wa_event_program_for($conn, $eventId, $name);
+    $genKb = '';
+    if ($pid > 0) {
+        $genKb = trim((string)wa_knowledge_get_ai($conn, 'program', $pid));
+        if ($genKb === '') { $genKb = trim((string)wa_knowledge_get($conn, 'program', $pid)); }
+    }
+
+    $parts = [$specs];
+    if ($own !== '')   { $parts[] = "=== EVENT NOTES ===\n" . $own; }
+    if ($genKb !== '') { $parts[] = "=== M&E PROGRAMME — GENERAL INFO (what the training covers) ===\n" . $genKb; }
+    $out = trim(implode("\n", $parts));
+    // Scrub the wrong (virtual-programme) course-outline link if it lingers in any KB —
+    // events must only ever use the configured events outline.
+    $out = preg_replace('#https?://\S*13YfH2JH-cPu_ANk4wZuCF6wuYJ18ctLO\S*#i', '', $out);
+    return trim($out);
+}
+
+// =====================================================================
+// Training programmes (themes) — e.g. M&E, Data Analysis, Academic Programs.
+// Each has its own KB (ref_type='program'); its country/location/dates are read
+// LIVE from the Event table by matching keywords against event titles.
+// =====================================================================
+
+/** All programmes (optionally active only), newest first. */
+function wa_programs_list($conn, $activeOnly = false) {
+    wa_kb_ensure_schema($conn);
+    $where = $activeOnly ? 'WHERE status = 1' : '';
+    $res = mysqli_query($conn, "SELECT * FROM wa_programs $where ORDER BY name ASC");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** One programme by id, or null. */
+function wa_program_get($conn, $id) {
+    wa_kb_ensure_schema($conn);
+    $id = (int)$id;
+    $res = mysqli_query($conn, "SELECT * FROM wa_programs WHERE id = $id LIMIT 1");
+    return $res ? (mysqli_fetch_assoc($res) ?: null) : null;
+}
+
+/** Create/update a programme. Returns the id. */
+function wa_program_save($conn, $id, $name, $keywords, $status = 1) {
+    wa_kb_ensure_schema($conn);
+    $id = (int)$id;
+    $n = wa_sql($conn, trim((string)$name));
+    $k = wa_sql($conn, trim((string)$keywords));
+    $s = $status ? 1 : 0;
+    if ($id > 0) {
+        mysqli_query($conn, "UPDATE wa_programs SET name = $n, keywords = $k, status = $s WHERE id = $id");
+        return $id;
+    }
+    mysqli_query($conn, "INSERT INTO wa_programs (name, keywords, status) VALUES ($n, $k, $s)
+        ON DUPLICATE KEY UPDATE keywords = VALUES(keywords), status = VALUES(status)");
+    return (int)mysqli_insert_id($conn) ?: (int)(mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT id FROM wa_programs WHERE name = $n LIMIT 1"))['id'] ?? 0);
+}
+
+/** Delete a programme and its KB. */
+function wa_program_delete($conn, $id) {
+    $id = (int)$id;
+    mysqli_query($conn, "DELETE FROM wa_programs WHERE id = $id");
+    mysqli_query($conn, "DELETE FROM wa_knowledge WHERE ref_type = 'program' AND ref_id = $id");
+}
+
+/** Keywords to match a programme's events by. Explicit keywords if set, else the
+ *  programme name broken into meaningful tokens. */
+function wa_program_keywords_arr($program) {
+    $kw = trim((string)($program['keywords'] ?? ''));
+    if ($kw !== '') {
+        $parts = array_filter(array_map('trim', explode(',', $kw)), function ($s) { return $s !== ''; });
+        if ($parts) { return array_values($parts); }
+    }
+    // Fall back to the name's own words (drop tiny/generic ones).
+    $stop = wa_stopwords();
+    $out = [];
+    foreach (explode(' ', wa_normalize((string)($program['name'] ?? ''))) as $w) {
+        if (mb_strlen($w) >= 3 && !isset($stop[$w])) { $out[] = $w; }
+    }
+    return $out ?: [trim((string)($program['name'] ?? ''))];
+}
+
+/** Upcoming Event rows whose title matches a programme's keywords. Each row as
+ *  ['location'=>..,'when'=>..]. Reuses the tolerant date window. */
+function wa_program_events($conn, $program, $limit = 20) {
+    $limit = (int)$limit;
+    $kws = wa_program_keywords_arr($program);
+    $likes = [];
+    foreach ($kws as $kw) {
+        $kw = mysqli_real_escape_string($conn, $kw);
+        if ($kw !== '') { $likes[] = "event_title LIKE '%$kw%'"; }
+    }
+    if (!$likes) { return []; }
+    $match = '(' . implode(' OR ', $likes) . ')';
+    // Academic programmes (location 'ACADEMIC#…') are intake-based — always
+    // listed regardless of date. Location-based events keep the upcoming filter.
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title, location, start_on, end_on
+           FROM `Event`
+          WHERE status = 1 AND $match
+            AND (location LIKE 'ACADEMIC#%'
+                 OR end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
+                 OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
+          ORDER BY (location LIKE 'ACADEMIC#%') DESC,
+                   (start_on IS NULL OR start_on = '0000-00-00'), start_on ASC
+          LIMIT $limit");
+    if (!$res) { return []; }
+    $out = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $when = '';
+        $start = (string)($r['start_on'] ?? '');
+        $end   = (string)($r['end_on'] ?? '');
+        $isReal = function ($d) { return $d !== '' && strpos($d, '0000-00-00') !== 0; };
+        if ($isReal($start)) {
+            try {
+                $when = (new DateTime($start))->format('j M Y');
+                if ($isReal($end)) { $when .= ' – ' . (new DateTime($end))->format('j M Y'); }
+            } catch (Throwable $e) { $when = ''; }
+        }
+        $out[] = ['event_id' => (int)($r['event_id'] ?? 0),
+                  'location' => trim((string)($r['location'] ?? '')), 'when' => $when,
+                  'title' => trim((string)$r['event_title'])];
+    }
+    return $out;
+}
+
+/**
+ * Grouped programme catalogue for the AI prompt: each active programme, its KB,
+ * and its LIVE upcoming sessions (country + dates) from the Event table. Replaces
+ * the old flat "list every event" catalogue. '' if no programmes are defined
+ * (callers fall back to wa_events_catalog()).
+ */
+function wa_programs_catalog($conn) {
+    $progs = wa_programs_list($conn, true);
+    if (!$progs) { return ''; }
+    $blocks = [];
+    foreach ($progs as $p) {
+        $block = $p['name'];
+        $kb = wa_knowledge_get_ai($conn, 'program', (int)$p['id']);
+        if (trim($kb) !== '') {
+            if (mb_strlen($kb) > 1200) { $kb = mb_substr($kb, 0, 1200) . '…'; }
+            $block .= "\n" . $kb;
+        }
+        $sessions = [];
+        foreach (wa_program_events($conn, $p) as $e) {
+            $line = wa_event_display($e['location'], $e['when']);
+            // This session's OWN registration link (from that event's knowledge),
+            // so a location-specific request (e.g. Eswatini) gets the right link —
+            // NOT the programme's general one.
+            $sLink = ((int)$e['event_id'] > 0)
+                ? wa_extract_register_url(wa_knowledge_get($conn, 'event', (int)$e['event_id'])) : '';
+            if ($sLink !== '') { $line .= ' — register: ' . $sLink; }
+            $sessions[] = $line;
+        }
+        $block .= "\nSessions / availability (use a session's OWN register link for that location): "
+                . ($sessions ? implode('; ', $sessions) : 'none scheduled yet — dates on request');
+        $blocks[] = $block;
+    }
+    return implode("\n\n", $blocks);
+}
+
+/**
+ * Every active academic/online course (Event rows marked 'ACADEMIC#…'), listed by
+ * title + qualification. These are intake-based (enrol anytime) and do NOT depend
+ * on a programme keyword match — so the AI always knows the full academic
+ * offering and never denies a course we actually run. '' if none.
+ */
+function wa_academic_catalog($conn, $limit = 80) {
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title, location FROM `Event`
+          WHERE status = 1 AND location LIKE 'ACADEMIC#%'
+          ORDER BY event_title ASC LIMIT $limit");
+    if (!$res || mysqli_num_rows($res) === 0) { return ''; }
+    $blocks = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $loc  = (string)($r['location'] ?? '');
+        $qual = trim(substr($loc, strpos($loc, '#') + 1));
+        $qual = $qual !== '' ? ucwords(str_replace(['_', '-'], ' ', $qual)) : '';
+        $line = '• ' . trim((string)$r['event_title'])
+              . ($qual !== '' ? ' — ' . $qual : '')
+              . ' (online, intake-based — enrol anytime)';
+        // Include the course's OWN knowledge base (fees, content, how it works) so
+        // the AI can answer about it even when the chat is scoped to another course.
+        $kb = wa_knowledge_get_ai($conn, 'event', (int)$r['event_id']);
+        if (trim($kb) !== '') {
+            if (mb_strlen($kb) > 900) { $kb = mb_substr($kb, 0, 900) . '…'; }
+            $line .= "\n  " . str_replace("\n", "\n  ", trim($kb));   // indent under the course
+        }
+        $blocks[] = $line;
+    }
+    return implode("\n", $blocks);
+}
+
+/**
+ * The full trainings context injected into the AI prompt: themed programmes (with
+ * their KB + live location sessions) AND the standalone list of academic/online
+ * courses. Falls back to the flat event list only when neither exists.
+ */
+function wa_trainings_catalog($conn) {
+    $parts = [];
+    $progs = wa_programs_catalog($conn);
+    if ($progs !== '') { $parts[] = $progs; }
+    $acad = wa_academic_catalog($conn);
+    if ($acad !== '') { $parts[] = "ACADEMIC / ONLINE COURSES (intake-based — we enrol people into these anytime):\n" . $acad; }
+    if (!$parts) { return wa_events_catalog($conn); }
+    return implode("\n\n", $parts);
+}
+
+/**
+ * Idempotently ensure the two-piece KB columns + the learnings queue exist, so a
+ * missed manual migration never breaks a save. Cheap and safe to call often
+ * (ADD COLUMN / CREATE TABLE IF NOT EXISTS). Runs once per request.
+ */
+function wa_kb_ensure_schema($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_knowledge`
+        ADD COLUMN IF NOT EXISTS `body_ai` MEDIUMTEXT DEFAULT NULL AFTER `body`,
+        ADD COLUMN IF NOT EXISTS `ai_updated_at` TIMESTAMP NULL DEFAULT NULL AFTER `body_ai`");
+    // Allow 'program' (a training theme) as a KB subject alongside course/event.
+    @mysqli_query($conn, "ALTER TABLE `wa_knowledge`
+        MODIFY COLUMN `ref_type` ENUM('course','event','program') NOT NULL");
+    // Training programmes (themes) — e.g. M&E, Data Analysis, Academic Programs.
+    // Their country/location/dates come live from the Event table via keywords.
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_programs` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `name` VARCHAR(190) NOT NULL,
+        `keywords` VARCHAR(500) DEFAULT NULL,
+        `status` TINYINT(1) NOT NULL DEFAULT 1,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_wa_program_name` (`name`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_kb_learnings` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `ref_type` ENUM('course','event') NOT NULL,
+        `ref_id` INT UNSIGNED NOT NULL,
+        `conversation_id` INT UNSIGNED DEFAULT NULL,
+        `contact_id` INT UNSIGNED DEFAULT NULL,
+        `message_id` BIGINT UNSIGNED DEFAULT NULL,
+        `body` MEDIUMTEXT NOT NULL,
+        `status` ENUM('pending','approved','dismissed') NOT NULL DEFAULT 'pending',
+        `created_by` INT UNSIGNED DEFAULT NULL,
+        `reviewed_by` INT UNSIGNED DEFAULT NULL,
+        `reviewed_at` DATETIME DEFAULT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_wa_kb_learn_ref` (`ref_type`, `ref_id`, `status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+/** Raw KB text (what a human typed/edited). Shown in the editor. '' if none. */
+function wa_knowledge_get($conn, $refType, $refId) {
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $rid = (int)$refId;
+    $res = mysqli_query($conn, "SELECT body FROM wa_knowledge WHERE ref_type = $rt AND ref_id = $rid LIMIT 1");
+    $r = $res ? mysqli_fetch_assoc($res) : null;
+    return $r ? (string)$r['body'] : '';
+}
+
+/** The KB text the LIVE AI answers from: the processed bullets when present,
+ *  else the raw text (so it still works before the first processing runs). */
+function wa_knowledge_get_ai($conn, $refType, $refId) {
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $rid = (int)$refId;
+    $res = @mysqli_query($conn, "SELECT body, body_ai FROM wa_knowledge WHERE ref_type = $rt AND ref_id = $rid LIMIT 1");
+    if (!$res) {   // body_ai column not present yet -> fall back to raw
+        return wa_knowledge_get($conn, $refType, $refId);
+    }
+    $r = mysqli_fetch_assoc($res);
+    if (!$r) { return ''; }
+    $ai = trim((string)($r['body_ai'] ?? ''));
+    return $ai !== '' ? $ai : (string)$r['body'];
+}
+
+/**
+ * Store the raw KB text, then (re)generate the AI-processed bullet version so the
+ * live AI always answers from a clean, structured copy. If the AI is unavailable
+ * the raw text is still saved and used (body_ai left as-is / empty).
+ */
+function wa_knowledge_set($conn, $refType, $refId, $body) {
+    wa_kb_ensure_schema($conn);
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $rid = (int)$refId;
+    $b = wa_sql($conn, $body);
+    mysqli_query($conn,
+        "INSERT INTO wa_knowledge (ref_type, ref_id, body) VALUES ($rt, $rid, $b)
+         ON DUPLICATE KEY UPDATE body = VALUES(body)");
+    wa_knowledge_reprocess($conn, $refType, $refId);
+}
+
+/** Regenerate body_ai from the current raw body via the AI. No-op if no provider
+ *  or empty raw. Returns true when body_ai was updated. */
+function wa_knowledge_reprocess($conn, $refType, $refId) {
+    wa_kb_ensure_schema($conn);
+    $raw = wa_knowledge_get($conn, $refType, $refId);
+    if (trim($raw) === '') { return false; }
+    $name = wa_ref_name($conn, $refType, (int)$refId) ?: 'this programme';
+    $processed = wa_kb_process($conn, $raw, $name);
+    if ($processed === '') { return false; }   // AI down -> keep raw as the answer source
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $rid = (int)$refId;
+    mysqli_query($conn,
+        "UPDATE wa_knowledge SET body_ai = " . wa_sql($conn, $processed) . ", ai_updated_at = NOW()
+          WHERE ref_type = $rt AND ref_id = $rid");
+    return true;
+}
+
+/** Distil raw KB text into clean, labelled bullets for easy AI referencing.
+ *  Preserves facts AND any rule sections (Escalation / Do-Not-Say). '' on failure. */
+function wa_kb_process($conn, $raw, $name) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ''; }
+    $system =
+        "You tidy a knowledge base for a WhatsApp admissions advisor at Vantage Africa School of Leadership. "
+        . "Reformat the notes below about \"{$name}\" into clean, scannable PLAIN-TEXT bullet points grouped "
+        . "under short labels (e.g. Overview, Fees, Deposit, Installments, Duration, Schedule, Delivery, "
+        . "Requirements, Certification, FAQs). Rules: (1) Use ONLY facts present in the notes — never invent "
+        . "fees, dates or figures. (2) Do not drop any fact. (3) Merge duplicates and fix obvious typos. "
+        . "(4) Keep any 'Escalation', 'Do-Not-Say', 'Tone' or 'Objections' guidance VERBATIM under its own "
+        . "heading — these are rules for the AI, not customer text. (5) No preamble or sign-off, just the bullets.";
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => "Notes:\n" . $raw]],
+                          ['max_tokens' => 1100, 'timeout' => 90]);
+    return empty($res['ok']) ? '' : trim((string)$res['text']);
+}
+
+// ---- "Learn from the team" review queue ----
+
+/** Capture something a human told a client, tied to the chat's course/event, for
+ *  supervisor review. Skips trivial/short replies. Returns the new id or 0. */
+function wa_kb_learning_add($conn, $refType, $refId, $convId, $contactId, $messageId, $body, $createdBy = null) {
+    wa_kb_ensure_schema($conn);
+    if (!in_array($refType, ['course', 'event'], true) || (int)$refId <= 0) { return 0; }
+    $body = trim((string)$body);
+    // Ignore greetings / one-liners that carry no course knowledge.
+    if (mb_strlen($body) < 25) { return 0; }
+    if (preg_match('/^\s*(hi|hello|hey|thanks|thank you|ok|okay|noted|sure|great|welcome|karibu)\b[.! ]*$/i', $body)) { return 0; }
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $stmt = mysqli_prepare($conn,
+        "INSERT INTO wa_kb_learnings (ref_type, ref_id, conversation_id, contact_id, message_id, body, created_by)
+         VALUES ($rt, ?, ?, ?, ?, ?, ?)");
+    $rid = (int)$refId; $cv = $convId !== null ? (int)$convId : null; $ct = $contactId !== null ? (int)$contactId : null;
+    $mid = $messageId !== null ? (int)$messageId : null; $cb = $createdBy !== null ? (int)$createdBy : null;
+    mysqli_stmt_bind_param($stmt, 'iiiisi', $rid, $cv, $ct, $mid, $body, $cb);
+    mysqli_stmt_execute($stmt);
+    $id = (int)mysqli_insert_id($conn);
+    mysqli_stmt_close($stmt);
+    return $id;
+}
+
+/** Pending learnings for a course/event (newest first). */
+function wa_kb_learnings_pending($conn, $refType, $refId) {
+    wa_kb_ensure_schema($conn);
+    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
+    $rid = (int)$refId;
+    $res = mysqli_query($conn,
+        "SELECT l.*, COALESCE(NULLIF(s.full_name,''), ru.fullname) AS author
+           FROM wa_kb_learnings l
+      LEFT JOIN registered_users ru ON ru.id = l.created_by
+      LEFT JOIN staff s ON s.system_user_id = l.created_by
+          WHERE l.ref_type = $rt AND l.ref_id = $rid AND l.status = 'pending'
+          ORDER BY l.id DESC");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** Approve a learning: append it to the raw KB (visible/editable) and regenerate
+ *  the processed bullets so the AI picks it up. Returns true on success. */
+function wa_kb_learning_approve($conn, $learningId, $reviewerId = null) {
+    wa_kb_ensure_schema($conn);
+    $id = (int)$learningId;
+    $res = mysqli_query($conn, "SELECT * FROM wa_kb_learnings WHERE id = $id AND status = 'pending' LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    if (!$row) { return false; }
+    $refType = $row['ref_type']; $refId = (int)$row['ref_id'];
+    $raw = wa_knowledge_get($conn, $refType, $refId);
+    $add = "• " . trim((string)$row['body']);
+    $section = "Learned from the team:";
+    if (strpos($raw, $section) !== false) {
+        $newRaw = rtrim($raw) . "\n" . $add;
+    } else {
+        $newRaw = rtrim($raw) . ($raw !== '' ? "\n\n" : '') . $section . "\n" . $add;
+    }
+    // Save raw + reprocess (wa_knowledge_set handles both).
+    wa_knowledge_set($conn, $refType, $refId, $newRaw);
+    $rv = $reviewerId !== null ? (int)$reviewerId : 'NULL';
+    mysqli_query($conn,
+        "UPDATE wa_kb_learnings SET status = 'approved', reviewed_by = $rv, reviewed_at = NOW() WHERE id = $id");
+    return true;
+}
+
+/** Dismiss a learning without touching the KB. */
+function wa_kb_learning_dismiss($conn, $learningId, $reviewerId = null) {
+    wa_kb_ensure_schema($conn);
+    $id = (int)$learningId;
+    $rv = $reviewerId !== null ? (int)$reviewerId : 'NULL';
+    mysqli_query($conn,
+        "UPDATE wa_kb_learnings SET status = 'dismissed', reviewed_by = $rv, reviewed_at = NOW()
+          WHERE id = $id AND status = 'pending'");
+    return true;
+}
+
+/**
+ * Apply a natural-language edit command to a knowledge base and return the FULL
+ * updated text — e.g. "set the fee to USD 350", "add a 20% early-bird discount",
+ * "remove the onsite venue section". The caller decides whether to save it.
+ * @return array {ok, text?} or {ok:false, error}
+ */
+function wa_kb_command($conn, $refType, $refId, $currentKb, $command) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    $command = trim((string)$command);
+    if ($command === '') { return ['ok' => false, 'error' => 'no_command']; }
+
+    $name = '';
+    if (in_array($refType, ['course', 'event'], true) && (int)$refId > 0) {
+        $name = wa_ref_name($conn, $refType, (int)$refId);
+    }
+    $cur = trim((string)$currentKb);
+
+    $system = "You maintain a plain-text knowledge base for the WhatsApp admissions assistant at Vantage Africa "
+        . "School of Leadership" . ($name ? " for the programme \"{$name}\"" : "") . ". You are given the CURRENT "
+        . "knowledge base and an EDIT INSTRUCTION. Apply ONLY that instruction and return the COMPLETE updated "
+        . "knowledge base.\n"
+        . "Rules:\n"
+        . "- Keep all existing content and structure (including any numbered sections and the section 7/8 rules) "
+        . "unless the instruction says to change or remove it.\n"
+        . "- Change ONLY what the instruction asks; do not reword or reorganise unrelated lines.\n"
+        . "- When adding a fact (fee, deposit, discount, date, FAQ, etc.), put it under the most appropriate "
+        . "section, creating a labelled line if needed.\n"
+        . "- Never invent facts that are not in the instruction or already present.\n"
+        . "- Output PLAIN TEXT only — the full updated knowledge base, with no markdown fences and no commentary.";
+    $user = "CURRENT KNOWLEDGE BASE:\n" . ($cur !== '' ? $cur : "(empty)") . "\n\nEDIT INSTRUCTION:\n" . $command;
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]], ['max_tokens' => 8000, 'timeout' => 90]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $text = trim((string)$res['text']);
+    $text = preg_replace('/^```[a-z]*\s*\n?|\n?```\s*$/i', '', $text);   // strip stray code fences
+    $text = trim($text);
+    if ($text === '') { return ['ok' => false, 'error' => 'empty_result']; }
+    return ['ok' => true, 'text' => $text];
+}
+
+/** Parse an uploaded image from a base64 data: URL into ['mime','data'] for the AI
+ *  (or null). Accepts png/jpeg/webp/gif, caps at ~6MB of base64. */
+function wa_image_from_dataurl($dataUrl) {
+    $dataUrl = (string)$dataUrl;
+    if ($dataUrl === '') { return null; }
+    if (!preg_match('#^data:(image/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=\s]+)$#i', $dataUrl, $m)) {
+        return null;
+    }
+    $mime = strtolower($m[1]);
+    if ($mime === 'image/jpg') { $mime = 'image/jpeg'; }
+    $b64 = preg_replace('/\s+/', '', $m[2]);
+    if ($b64 === '' || strlen($b64) > 6 * 1024 * 1024) { return null; }   // ~4.5MB image
+    return ['mime' => $mime, 'data' => $b64];
+}
+
+/**
+ * Conversational KB editor. The staff member chats to change the knowledge; each
+ * turn the AI either ASKS a clarifying question or APPLIES the edit (and we save
+ * it). Reads the current KB from the DB each turn so multi-step edits build on
+ * each other. $history: [['role'=>'user'|'assistant','content'=>...], ...].
+ * $image: optional ['mime','data'(base64)] example the model can look at.
+ * @return array {ok, action:'ask'|'edit', message, kb?, location?} or {ok:false, error}
+ */
+function wa_kb_chat($conn, $refType, $refId, $history, $image = null) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    if (!in_array($refType, ['course', 'event', 'program'], true) || (int)$refId <= 0) {
+        return ['ok' => false, 'error' => 'no_ref'];
+    }
+    $name = wa_ref_name($conn, $refType, (int)$refId);
+    $cur  = trim((string)wa_knowledge_get($conn, $refType, (int)$refId));
+
+    $transcript = '';
+    foreach ((array)$history as $h) {
+        $c = trim((string)($h['content'] ?? ''));
+        if ($c === '') { continue; }
+        $role = (($h['role'] ?? '') === 'assistant') ? 'Editor' : 'Staff';
+        $transcript .= $role . ': ' . $c . "\n";
+    }
+    $hasImage = (!empty($image['data']) && !empty($image['mime']));
+    if ($transcript === '' && !$hasImage) { return ['ok' => false, 'error' => 'no_history']; }
+    if ($transcript === '') { $transcript = "Staff: (see the attached image)\n"; }
+
+    $system = "You are a knowledge-base editor for the WhatsApp admissions assistant at Vantage Africa School of "
+        . "Leadership" . ($name ? " for the programme \"{$name}\"" : "") . ". A staff member edits the knowledge "
+        . "base by chatting with you. DEFAULT TO ACTING — make the change; only ask a question as a last resort. "
+        . "On each turn choose ONE:\n"
+        . "- EDIT (strongly prefer this): apply the change and return the COMPLETE updated knowledge base plus a "
+        . "one-line confirmation of exactly what you changed AND WHERE — always name the section heading (e.g. "
+        . "\"Updated the fee under '2. PRICING & PAYMENT'.\"). Make reasonable assumptions instead of asking; if you "
+        . "assumed something, SAY SO in the confirmation so the staff member can correct it in their next message. "
+        . "Do NOT ask which section (you decide), and do NOT ask for confirmation before applying.\n"
+        . "- ASK (rare — last resort): only when a REQUIRED fact is missing that you cannot reasonably infer and "
+        . "only the staff member knows (e.g. an exact new fee, date or amount they didn't state). Ask at most ONE "
+        . "short, specific question, and only if you truly cannot make a sensible edit without it. For "
+        . "behavioural/coaching changes you should almost NEVER need to ask — craft the rule and apply it.\n"
+        . "The staff member gives TWO kinds of change:\n"
+        . "1) FACTS — fees, deposit, dates, schedule, requirements, etc. Edit the relevant factual section.\n"
+        . "2) COACHING — they describe how the AI should or should NOT respond to clients (tone, exact wording, how "
+        . "to handle an objection like price, when to hand off), usually because they've SEEN the AI answer a "
+        . "client poorly. Turn that into a concise, durable RULE and add or update it under the right rules section: "
+        . "'=== 8. TONE & DO-NOT-SAY ===' (wording, always-say / never-say), '=== 6. OBJECTIONS & HESITATIONS ===' "
+        . "(handling pushback), '=== 7. ESCALATION ===' (when to involve a human), or add a Q/A under "
+        . "'=== 5. FREQUENTLY ASKED QUESTIONS ==='. The live AI reads sections 6-8 as RULES and follows them, so "
+        . "phrase coaching as a standing instruction, not a one-off note. Recording coaching the staff member gives "
+        . "you is allowed and is NOT 'inventing facts'. If the wording is rough, improve it yourself and apply it "
+        . "rather than asking.\n"
+        . "IMPROVE, don't just transcribe: rewrite the staff member's recommendation into a clear, specific, "
+        . "well-phrased rule that fits this knowledge base's style and is directly actionable for the AI — fix "
+        . "vague or rough wording and make it concrete using THIS programme's real details from the knowledge (its "
+        . "format, audience, fees, schedule, trainer, etc.). First SCAN the current knowledge: if related guidance "
+        . "already exists, refine or merge with it instead of duplicating or contradicting it, and flag any clash "
+        . "with an existing fact. When you ASK, make the question SPECIFIC TO THIS PROGRAMME using what's in the "
+        . "knowledge — never a generic question.\n"
+        . "Rules: keep all existing content and structure unless told otherwise; change only what's asked; NEVER "
+        . "invent facts (fees, deposits, discounts, dates) the staff member hasn't given you; keep the knowledge as "
+        . "plain text (no markdown code fences). Keep everything organised under clearly LABELLED section headings "
+        . "written as '=== N. SECTION NAME ===' (use the standard 8 sections where they fit; create a new labelled "
+        . "section if none suits the change) so sections are easy to locate.\n"
+        . "The staff member may ATTACH AN IMAGE showing an example (a screenshot of a poor AI reply, a page "
+        . "layout, a document, or how something should look). Read the image and use it to understand the change "
+        . "they want — describe what you took from it in your confirmation.\n"
+        . "CURRENT KNOWLEDGE BASE:\n" . ($cur !== '' ? $cur : "(empty)") . "\n\n"
+        . "Respond with ONLY JSON: {\"action\":\"ask\"|\"edit\", \"message\":\"<what to say to the staff member>\", "
+        . "\"kb\":\"<the FULL updated knowledge base — ONLY when action is edit>\", "
+        . "\"location\":\"<the exact section heading where the change is, ONLY when action is edit>\"}.";
+    $user = "Conversation so far:\n" . $transcript . "\nRespond now as JSON.";
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 8000, 'timeout' => 90,
+                           'image' => $hasImage ? $image : null]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $data = wa_json_extract($res['text']);
+    if (!$data) { return ['ok' => false, 'error' => 'bad_response']; }
+
+    $action  = (($data['action'] ?? '') === 'edit') ? 'edit' : 'ask';
+    $message = trim((string)($data['message'] ?? ''));
+    $kb = null;
+    if ($action === 'edit') {
+        $kb = isset($data['kb']) ? trim((string)$data['kb']) : '';
+        $kb = trim(preg_replace('/^```[a-z]*\s*\n?|\n?```\s*$/i', '', $kb));
+        if ($kb === '') {
+            $action = 'ask';
+            if ($message === '') { $message = 'Could you clarify the exact change you want?'; }
+        } else {
+            wa_knowledge_set($conn, $refType, (int)$refId, $kb);   // persist immediately
+        }
+    }
+    $location = trim((string)($data['location'] ?? ''));
+    if ($message === '') { $message = ($action === 'edit') ? 'Done — I updated the knowledge base.' : 'What would you like to change?'; }
+    return [
+        'ok' => true, 'action' => $action, 'message' => $message,
+        'kb' => ($action === 'edit' ? $kb : null),
+        'location' => ($action === 'edit' ? $location : ''),
+    ];
+}
+
+// ---- Website -> KB draft (AI) ----
+
+/** Simple GET fetch (follows redirects). Returns ['status','body','mime']. */
+function wa_http_get($url, $timeout = 20, $headers = []) {
+    $ch = curl_init($url);
+    $opts = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 4,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_USERAGENT      => 'VantageWA/1.0',
+    ];
+    if ($headers) { $opts[CURLOPT_HTTPHEADER] = $headers; }
+    curl_setopt_array($ch, $opts);
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $mime = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+    return ['status' => $status, 'body' => is_string($body) ? $body : '', 'mime' => $mime];
+}
+
+/** Download a WhatsApp/360dialog media file by its media id. Returns ['ok','body','mime']. */
+function wa_fetch_media($mediaId) {
+    $auth = ['D360-API-KEY: ' . WA_DIALOG_KEY];
+    // Step 1: media id -> temporary download URL.
+    $meta = wa_http_get(rtrim(WA_DIALOG_URL, '/') . '/' . rawurlencode($mediaId), 20, $auth);
+    if ($meta['status'] < 200 || $meta['status'] >= 300) {
+        error_log('[wa-media] step1 ' . $meta['status'] . ' id=' . $mediaId . ' body=' . substr($meta['body'], 0, 200));
+        return ['ok' => false, 'error' => 'meta_' . $meta['status']];
+    }
+    $j = json_decode($meta['body'], true);
+    $url  = is_array($j) ? ($j['url'] ?? null) : null;
+    $mime = is_array($j) ? ($j['mime_type'] ?? null) : null;
+    if (!$url) {
+        error_log('[wa-media] no url in step1: ' . substr($meta['body'], 0, 300));
+        return ['ok' => false, 'error' => 'no_url'];
+    }
+
+    // Step 2: download the bytes. 360dialog returns a Meta lookaside URL that you
+    // can't fetch directly — download it via the 360dialog host with the API key.
+    $candidates = [];
+    if (stripos($url, '360dialog.io') !== false) {
+        $candidates[] = [$url, $auth];
+    } else {
+        $rewritten = preg_replace('#^https?://[^/]+#i', rtrim(WA_DIALOG_URL, '/'), $url);
+        $candidates[] = [$rewritten, $auth];   // primary: 360dialog host + key
+        $candidates[] = [$url, $auth];          // fallback: original + key
+        $candidates[] = [$url, []];             // fallback: original, no key
+    }
+    $last = 0;
+    foreach ($candidates as $c) {
+        $bin = wa_http_get($c[0], 60, $c[1]);
+        if ($bin['status'] >= 200 && $bin['status'] < 300 && $bin['body'] !== '') {
+            return ['ok' => true, 'body' => $bin['body'], 'mime' => $mime ?: ($bin['mime'] ?: 'application/octet-stream')];
+        }
+        $last = $bin['status'];
+    }
+    error_log('[wa-media] step2 all failed last=' . $last . ' url=' . substr($url, 0, 120));
+    return ['ok' => false, 'error' => 'dl_' . $last];
+}
+
+/** Rough file extension for a mime type (for download filenames). */
+function wa_ext_for_mime($mime) {
+    $map = [
+        'image/jpeg' => '.jpg', 'image/png' => '.png', 'image/webp' => '.webp', 'image/gif' => '.gif',
+        'application/pdf' => '.pdf', 'audio/ogg' => '.ogg', 'audio/mpeg' => '.mp3', 'audio/amr' => '.amr',
+        'video/mp4' => '.mp4', 'application/msword' => '.doc', 'text/plain' => '.txt',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => '.docx',
+        'application/vnd.ms-excel' => '.xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => '.xlsx',
+    ];
+    $mime = strtolower(trim(explode(';', (string)$mime)[0]));
+    return $map[$mime] ?? '';
+}
+
+/** HTML for a media message bubble (image/video/audio inline, else a download link). */
+function wa_media_html($type, $msgId, $mime, $caption = '') {
+    $u = 'wa_media.php?msg=' . (int)$msgId;
+    if ($type === 'image') {
+        $h = '<a href="' . $u . '" target="_blank"><img src="' . $u . '" alt="image" style="max-width:220px;max-height:220px;border-radius:8px;display:block"></a>';
+    } elseif ($type === 'video') {
+        $h = '<video controls preload="none" style="max-width:240px;border-radius:8px" src="' . $u . '"></video>';
+    } elseif ($type === 'audio' || $type === 'voice') {
+        $h = '<audio controls preload="none" src="' . $u . '"></audio>';
+    } else {
+        $h = '<a href="' . $u . '" target="_blank" class="d-inline-flex align-items-center gap-1">'
+           . '<i class="bi bi-file-earmark-arrow-down"></i> Download ' . wa_e($type) . '</a>';
+    }
+    if ($caption !== null && $caption !== '') {
+        $h .= '<div class="mt-1" style="white-space:pre-wrap;word-wrap:break-word">' . nl2br(wa_e($caption)) . '</div>';
+    }
+    return $h;
+}
+
+/** Strip a web page down to readable text (scripts/styles/tags removed, capped). */
+function wa_html_to_text($html, $max = 8000) {
+    $html = preg_replace('#<(script|style|noscript|svg)\b[^>]*>.*?</\1>#is', ' ', (string)$html);
+    $text = strip_tags($html);
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = preg_replace('/[ \t]+/u', ' ', $text);
+    $text = preg_replace('/\s*\n\s*/u', "\n", $text);
+    $text = trim(preg_replace('/\n{3,}/u', "\n\n", $text));
+    if (mb_strlen($text) > $max) { $text = mb_substr($text, 0, $max); }
+    return $text;
+}
+
+/** Best-effort: find site pages matching a course/event name via sitemap.xml. */
+function wa_discover_urls($name, $limit = 3) {
+    $base = rtrim(WA_SITE_URL, '/');
+    $res = wa_http_get($base . '/sitemap.xml', 15);
+    if ($res['status'] < 200 || $res['status'] >= 300 || $res['body'] === '') { return []; }
+    if (!preg_match_all('#<loc>\s*([^<\s]+)\s*</loc>#i', $res['body'], $m)) { return []; }
+    $tokens = array_filter(explode(' ', wa_normalize($name)), function ($w) { return mb_strlen($w) >= 4; });
+    if (!$tokens) { return []; }
+    $scored = [];
+    foreach ($m[1] as $u) {
+        $slug = wa_normalize(urldecode($u));
+        $score = 0;
+        foreach ($tokens as $t) { if (strpos($slug, $t) !== false) { $score++; } }
+        if ($score > 0) { $scored[$u] = $score; }
+    }
+    arsort($scored);
+    return array_slice(array_keys($scored), 0, $limit);
+}
+
+/**
+ * Draft a knowledge base for a course/event from website content.
+ * $urls: optional explicit page URLs; if empty we auto-discover from the sitemap.
+ * @return array {ok, text?, sources?, error?}
+ */
+function wa_kb_generate($conn, $refType, $refId, $urls = []) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    $name = wa_ref_name($conn, $refType, (int)$refId);
+    if (!$name) { return ['ok' => false, 'error' => 'unknown_ref']; }
+
+    $urls = array_values(array_filter(array_map('trim', (array)$urls), function ($u) {
+        return $u !== '' && preg_match('#^https?://#i', $u);
+    }));
+    if (!$urls) { $urls = wa_discover_urls($name); }
+    if (!$urls) { $urls = [rtrim(WA_SITE_URL, '/')]; }
+    $urls = array_slice($urls, 0, 3);
+
+    $content = ''; $used = [];
+    foreach ($urls as $u) {
+        $r = wa_http_get($u, 20);
+        if ($r['status'] >= 200 && $r['status'] < 300 && $r['body'] !== '') {
+            $content .= "\n\n--- Source: $u ---\n" . wa_html_to_text($r['body'], 8000);
+            $used[] = $u;
+        }
+    }
+    if ($content === '') { return ['ok' => false, 'error' => 'no_content', 'sources' => $urls]; }
+    if (mb_strlen($content) > 16000) { $content = mb_substr($content, 0, 16000); }
+
+    $system =
+        "You write concise knowledge-base notes for a WhatsApp admissions advisor at Vantage Africa "
+        . "School of Leadership. From the website content provided, extract only facts about the "
+        . "course/programme \"{$name}\". Output PLAIN TEXT (no markdown) as short labelled lines, "
+        . "covering when available: Overview, a one-line Outcome (the concrete result a graduate walks away "
+        . "with), Fees, Deposit, Installment terms, Duration, Schedule/Intakes, Delivery (online/in-person), "
+        . "Requirements, Certification, and any FAQs. Include ONLY facts present in the content — never "
+        . "invent fees, deposits, dates or figures. Omit anything not stated.";
+    $usr = "Course/Programme: {$name}\n\nWebsite content:\n" . $content;
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $usr]], ['max_tokens' => 900, 'timeout' => 60]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed', 'sources' => $used]; }
+    return ['ok' => true, 'text' => trim($res['text']), 'sources' => $used];
+}
+
+/** Recent message turns for a contact, oldest-first, as [role => user|assistant, content]. */
+function wa_ai_history($conn, $contactId, $limit = 12) {
+    $contactId = (int)$contactId;
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT direction, type, body FROM wa_messages
+          WHERE contact_id = $contactId AND type <> 'note'
+          ORDER BY id DESC LIMIT $limit");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    $rows = array_reverse($rows);
+    $turns = [];
+    foreach ($rows as $r) {
+        $c = trim((string)$r['body']);
+        if ($c === '' && !in_array($r['type'], ['text', 'template'], true)) {
+            // media without a caption -> describe it so the AI can respond
+            $c = $r['direction'] === 'outbound' ? '[sent a ' . $r['type'] . ']' : '[the customer sent a ' . $r['type'] . ' file]';
+        }
+        if ($c === '') { continue; }
+        $turns[] = ['role' => $r['direction'] === 'outbound' ? 'assistant' : 'user', 'content' => $c];
+    }
+    return $turns;
+}
+
+/** The grounded system prompt (shared by the live answerer and the KB tester).
+ *  $intl = catalogue of active international trainings (Events), shown so the AI
+ *  can answer location/topic questions about them instead of deflecting.
+ *  $regLink = the registration link to share when someone wants to register.
+ *  $eventScoped = true for a specific in-person event chat: answer ONLY from that
+ *  event's knowledge and never surface the virtual programmes / online courses. */
+function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventScoped = false, $outlineUrl = '', $outlineText = '') {
+    return "You are the WhatsApp admissions advisor for Vantage Africa School of Leadership, a premium "
+        . "leadership-training organisation based in Nairobi. "
+        . ($refName ? "This prospect is interested in: {$refName}. " : "")
+        . "Sound like a trusted, knowledgeable admissions advisor — not a chatbot. Your job is to build genuine "
+        . "interest and trust, then guide the prospect towards registering.\n\n"
+
+        . "TONE:\n"
+        . "- Be warm, reassuring, calm, confident, professional and helpful. Prioritise trust over excitement.\n"
+        . "- Do NOT sound over-excited, playful, gimmicky, salesy or over-casual. Avoid exclamation-mark spam.\n"
+        . "- Never open with generic enthusiasm ('Great to hear!', 'Awesome!', 'Fantastic!'). Open instead with a "
+        . "warm, direct, helpful line.\n"
+        . "- Use at most ONE emoji (rarely two), only when it genuinely adds warmth — most replies need none.\n\n"
+
+        . "KEEP IT SHORT & CONVERSATIONAL:\n"
+        . "- WhatsApp length: usually 2–5 short sentences. NEVER send a wall of text.\n"
+        . "- Reveal information progressively across turns — answer what was asked and invite the next question, "
+        . "rather than dumping the whole programme at once.\n"
+        . "- Use a short bullet list only for options (e.g. payment methods).\n"
+        . "- DO NOT REPEAT yourself. The prospect can see your earlier messages, so re-stating things you already "
+        . "said (the deposit, installments, payment flexibility, or the same benefit wording) sounds like a script. "
+        . "Unless they ask about payment directly, add NEW information or address their specific point instead.\n\n"
+
+        . "CONVERSATION FLOW (follow this order — do NOT skip ahead):\n"
+        . "1. First greeting or vague interest ('Hi', 'I'm interested in X') → reply briefly and warmly and ask "
+        . "what they'd like to know. Do NOT dump the full overview, do NOT ask for personal details, and do NOT "
+        . "mention the fee yet.\n"
+        . "2. Build interest FIRST — explain the value, outcomes and what makes the programme worthwhile, "
+        . "concisely, guided by what they ask.\n"
+        . "3. When they are ready to register / enroll / join, DO NOT collect their personal details yourself and "
+        . "DO NOT say you will 'create an account' — registration is handled by the team, not by you. "
+        . ($regLink !== ''
+            ? "To register, share the registration link — but use the RIGHT one: if the prospect is asking about a "
+              . "specific event, location or session that has its OWN 'register:' link in the KNOWLEDGE or the "
+              . "sessions list, share THAT exact link. Never share a different programme's link or the general link "
+              . "for a location-specific request (e.g. an Eswatini session must get the Eswatini link, not the "
+              . "general online one). Only when no session-specific link applies, use this general link: {$regLink}. "
+              . "Also let them know they can register right here on WhatsApp and you'll walk them through it. "
+            : "")
+        . "Set escalate to true so a colleague can complete it if needed (always give a timeframe). The system may "
+        . "also start a short registration form automatically — do not duplicate it.\n"
+        . "4. AFTER you have their details, share the schedule, modules and requirements FIRST. Only THEN present "
+        . "the fee and payment options. Never lead with the fee and never pressure them to pay early.\n"
+        . "5. Mention the fee only after conveying value, or when the prospect directly asks about it.\n\n"
+
+        . "PAYMENT FRAMING (only once you reach fees):\n"
+        . "- Present the deposit as the easiest, low-commitment way to secure a place — not merely an alternative.\n"
+        . "- The deposit secures the seat; the balance is paid in manageable installments before the course ends; "
+        . "paying in full is an optional alternative.\n"
+        . "- Use ONLY the actual deposit amount, fee and installment terms from the KNOWLEDGE — never invent figures.\n\n"
+
+        . "HANDLING A PRICING OBJECTION ('it's expensive', 'too much', 'I can't afford it', 'beyond my budget', "
+        . "'why is it so expensive', 'the cost is too high', 'I expected it cheaper'):\n"
+        . "Treat this as a VALUE question FIRST and a payment question second. Answer the unspoken question 'why is "
+        . "this worth the price?' BEFORE returning to 'how would you like to pay?'. Keep it short and follow this order:\n"
+        . "1. Acknowledge briefly, without defensiveness or over-apologising ('That's a fair question.', 'It's "
+        . "reasonable to weigh the investment.').\n"
+        . "2. Reinforce VALUE before any payment talk: give the programme's outcome plus TWO or THREE specific, "
+        . "tangible benefits — and VARY which benefits you cite each time; never repeat the same list. Draw from: "
+        . "live expert-led sessions, real-world case studies, scenario-based exercises, interactive discussions, "
+        . "practical leadership frameworks, networking with other participants, an internationally verifiable "
+        . "certificate, continued platform access after the programme, downloadable resources, tools they can "
+        . "apply immediately.\n"
+        . "3. ONLY after value, and ONLY if you have not already explained it earlier in this chat, mention the "
+        . "deposit as a way to lower the upfront commitment. If you already mentioned the deposit/installments "
+        . "before, do NOT repeat it — add new value or address their specific point instead.\n"
+        . "4. Discounts: if the KNOWLEDGE lists one, state it. Otherwise say only that you're checking for current "
+        . "promotions and will confirm — never promise or imply a discount exists.\n"
+        . "5. End with ONE (only one) follow-up question, e.g. 'Is your main concern the overall investment, or "
+        . "paying it upfront?' / 'Is there a budget you're hoping to stay within?' / 'Would it help if I explained "
+        . "more of what's included?'.\n"
+        . "NEVER use defensive lines like 'it's worth every dollar', 'trust me', 'it's actually cheap', 'it's not "
+        . "expensive', or 'most people think it's worth it'. Explain the value objectively and let them decide.\n\n"
+
+        . "DISCOUNTS:\n"
+        . "- If the KNOWLEDGE lists a current discount/offer, state it directly (the exact figure, e.g. an early-"
+        . "registration percentage) and pair it with the deposit option. Do NOT say you'll 'check'.\n"
+        . "- Only if NO discount is configured in the KNOWLEDGE, say you'll confirm with the team AND give a clear "
+        . "timeframe (e.g. 'I'll get back to you within a few hours today'). Never promise a follow-up without a time.\n\n"
+
+        . "ALWAYS END WITH A CALL TO ACTION:\n"
+        . "End EVERY reply with ONE clear, natural next-step question that fits the stage — and never repeat the "
+        . "same CTA you used in your previous message. Examples by stage: early → 'What would you like to know "
+        . "about the programme?' / 'Any other questions I can help with?'; ready to join → 'Would you like me to "
+        . "help you register today?' / 'Shall I reserve your seat for the upcoming intake?'; at payment → 'Would "
+        . "you like to pay in full or start with the deposit?' / 'Shall I share the payment details?'\n\n"
+
+        . "GROUNDING & ESCALATION:\n"
+        . "- Answer the prospect's MOST RECENT message first; if they switch to a different programme, follow "
+        . "them there and answer that.\n"
+        . "- STRICT GROUNDING: every FACT you state — fees, deposits, discounts, dates, durations, schedules, "
+        . "intakes, locations/countries, venues, topics/curriculum, certification, requirements, who it's for, "
+        . "outcomes, payment methods, contact details and links — MUST come from the KNOWLEDGE below or from the "
+        . "TRAINING PROGRAMMES / ACADEMIC COURSES lists above (which carry our real, live locations and dates). "
+        . "Those two sources are your ONLY source of facts.\n"
+        . "- NEVER invent, guess, estimate, assume or 'fill in' a fact that isn't in those sources — no made-up "
+        . "prices, dates, venues, durations, module lists, numbers, statistics, accreditations or promises. Do not "
+        . "rely on general knowledge about the topic; rely only on what you were given here.\n"
+        . "- If the answer isn't in the KNOWLEDGE or the lists: do NOT improvise. Either ask a brief clarifying "
+        . "question, or say plainly that you'll confirm that exact detail with the team and give a timeframe "
+        . "(escalate). Saying 'let me confirm that for you' is ALWAYS better than stating something uncertain.\n"
+        . "- You may still be warm, empathetic and conversational — but the moment it's a fact, it must be grounded.\n"
+        . "- Set escalate to true only when you genuinely cannot help from the KNOWLEDGE, or the person needs a "
+        . "human action (a complaint or refund, a custom/corporate deal, a formal invoice, or confirming a payment "
+        . "they have already made). Do NOT escalate merely because someone is interested or ready to join. When "
+        . "you escalate, your reply MUST clearly tell the customer you have referred/connected them to a colleague "
+        . "or the team who will follow up, and ALWAYS give a specific timeframe (e.g. 'within a few hours today') — "
+        . "never leave them guessing, and never imply you'll do the human action yourself.\n"
+        . "- ALWAYS reply — never send an empty message and never leave a message unanswered. Even when you must "
+        . "escalate, or when the customer repeats themselves, respond: restate briefly that they've been referred "
+        . "and offer to help with anything else. Keep answering their other questions you CAN answer.\n"
+        . "- The KNOWLEDGE may include internal guidance sections ('Objections', 'Escalation', 'Tone', "
+        . "'Do-Not-Say'). Treat those as RULES FOR YOU, never as text to quote or reveal. Follow the escalation "
+        . "guidance, obey the do-not-say rules (no guarantees, no medical/legal claims, no competitor "
+        . "comparisons), and use the preferred greeting, tone and sign-off.\n"
+        . "- Whenever your reply promises that a person/colleague will help, follow up or reach out, you MUST set "
+        . "escalate to true.\n"
+        . "- NEVER claim you have created an account, registered or enrolled them, or sent an email, login or "
+        . "invoice — you cannot perform those actions. Never tell them to log in to a portal or to check their "
+        . "inbox as though an account already exists. If they want to register, hand off (escalate) so the team "
+        . "completes it — do not pretend you did it yourself.\n"
+        . "- If the customer sends a document, image or file you cannot open it — briefly acknowledge it and set "
+        . "escalate to true so a human can review it.\n"
+        . "- Reply in the prospect's language (English or Swahili; mirror whatever they use).\n\n"
+
+        . ($eventScoped
+            ? "SCOPE — IMPORTANT: This conversation is about a specific IN-PERSON M&E TRAINING EVENT — a physical "
+              . "training held at a particular city/venue on set dates. This is DIFFERENT from our virtual/online "
+              . "M&E programme (they are similar but NOT the same): describe THIS in-person event — its venue, city, "
+              . "dates, cost, on-site schedule and registration link — and never present it as, or mix in details "
+              . "of, the online M&E programme. Answer ONLY from this event's KNOWLEDGE below (its registration link, "
+              . "course outline, hotel, city and dates). Do NOT share, mention or recommend any of our other "
+              . "programmes or online/virtual courses in this chat, and never share another event's or the "
+              . "general/online registration link here. If the prospect asks about anything outside this event, "
+              . "don't describe other offerings — say you'll connect them with the team (escalate) and give a timeframe.\n\n"
+            : "")
+        . ($outlineUrl !== ''
+            ? "COURSE OUTLINE: every training event uses the SAME course outline. Whenever a prospect asks for the "
+              . "outline, curriculum, programme, agenda or content of a training event, share EXACTLY and ONLY this "
+              . "link: " . $outlineUrl . " — this is the ONE correct events outline link. Do NOT share any other "
+              . "outline or Google Drive link, even if a different one appears elsewhere in the KNOWLEDGE (that would "
+              . "be the wrong programme's outline).\n"
+              . ($outlineText !== ''
+                  ? "For SCHEDULE / AGENDA questions (the daily programme, session times, what is covered on each "
+                    . "day, topics/modules), answer from this outline content — give the relevant days, times and "
+                    . "topics, and you may also share the link above:\n" . $outlineText . "\n"
+                  : "")
+              . "\n"
+            : "")
+
+        . ($intl !== ''
+            ? "TRAINING PROGRAMMES (our themes of in-person/international training — each with its general info and "
+              . "its LIVE upcoming sessions by country/date, straight from our system; use this as fact):\n" . $intl . "\n\n"
+              . "USING THE TRAINING PROGRAMMES:\n"
+              . "- When a prospect asks whether we run a training on a topic, in a country, or in a city (e.g. "
+              . "'Is there data analysis training in Cameroon?'), find the matching PROGRAMME, then check its "
+              . "'Upcoming sessions'. Match on the topic AND the place — a location like 'Douala' or 'Yaoundé' "
+              . "means Cameroon; 'Kampala' means Uganda, etc.\n"
+              . "- If a session matches, answer confidently with the specifics (the programme, the city/country, "
+              . "and the dates). Do NOT say you'll 'check with the team' or that you lack details — they're right "
+              . "here. Then help them towards registering.\n"
+              . "- If the programme exists but has NO session in that country yet, say so plainly and offer the "
+              . "nearest scheduled session or the online option — don't invent a location or date.\n"
+              . "- The 'ACADEMIC / ONLINE COURSES' are real courses we currently offer and enrol people into at any "
+              . "time (rolling intakes — no country or fixed date). Treat every one of them as available now.\n"
+              . "- CRITICAL — never deny a course we actually offer. Before telling anyone we don't have a course, "
+              . "check ALL of the above (the training programmes AND the academic/online courses) AND the KNOWLEDGE. "
+              . "If the course they name appears in any of them — even loosely (an abbreviation like 'CPA', 'M&E', "
+              . "'SSD', or a near-match title) — CONFIRM we offer it and help them, do NOT say we don't. Only say we "
+              . "don't offer something when it genuinely appears in none of these lists.\n"
+              . "- Use a programme's or course's general info to explain what it covers, even before dates are set.\n"
+              . "- When they want to book one of these, set escalate to true so a colleague completes it, and name "
+              . "the specific programme + country in your handoff note.\n\n"
+            : "")
+
+        . "HANDOFF NOTE (staff-only, never shown to the customer):\n"
+        . "- When (and only when) escalate is true, also write a 'handoff' note addressed to the human colleague "
+        . "who will take over. It is NOT sent to the customer.\n"
+        . "- Make it specific and actionable, based on where the conversation actually is NOW: state (a) who the "
+        . "prospect is and which programme, (b) exactly what they need or asked for that you couldn't do, and "
+        . "(c) the single next action the colleague should take. One or two short sentences.\n"
+        . "- Good: 'Adrian is ready to register for Practical Accounting and asked about scholarships — confirm if "
+        . "any current discount applies, then complete his registration.' Bad (vague): 'Customer needs help.'\n"
+        . "- When escalate is false, set handoff to an empty string.\n\n"
+
+        . "KNOWLEDGE:\n" . ($kb !== '' ? $kb
+            : "(No knowledge base has been added for this one yet — so you have NO specific facts about it. Do NOT "
+            . "invent any. Answer only from the programme/course lists above, otherwise say you'll confirm the "
+            . "details with the team and escalate.)") . "\n\n"
+        . "Respond with ONLY JSON: {\"reply\": \"<the WhatsApp message to send>\", \"escalate\": <true|false>, "
+        . "\"handoff\": \"<staff-only note when escalating, else empty>\"}.";
+}
+
+/**
+ * Dry-run the AI against a course/event's knowledge for a single question.
+ * Same grounding as the live answerer, but sends NOTHING and records nothing —
+ * for the "test the AI" box on the Knowledge page. Returns {ok, reply, escalate}.
+ */
+function wa_ai_test($conn, $refType, $refId, $question, $kbOverride = null) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+    $question = trim((string)$question);
+    if ($question === '') { return ['ok' => false, 'error' => 'no_question']; }
+
+    $refName = '';
+    if (in_array($refType, ['course', 'event', 'program'], true) && (int)$refId > 0) {
+        $refName = wa_ref_name($conn, $refType, (int)$refId);
+    }
+    $isEvent = ($refType === 'event');   // event chats: only their own KB, no course/programme catalogue
+    // Events answer from the linked M&E programme's knowledge + live DB details
+    // (the editor's current text, when supplied, is used as the event's own notes).
+    if ($isEvent && (int)$refId > 0) {
+        $kb = wa_event_effective_kb($conn, (int)$refId, $kbOverride);
+    } elseif ($kbOverride !== null) {
+        $kb = trim((string)$kbOverride);
+    } else {
+        $kb = ($refName !== '') ? wa_knowledge_get($conn, $refType, (int)$refId) : '';
+    }
+    $regLink = ($refName !== '') ? wa_register_link($conn, $refType, (int)$refId) : '';
+    $outline = wa_outline_applies($refType, $refName) ? wa_event_outline_url($conn) : '';
+    $outlineTxt = $outline !== '' ? wa_event_outline_text($conn) : '';
+    $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt);
+    $user = "Conversation so far:\nCustomer: " . $question . "\n\nWrite the next assistant reply now as JSON.";
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 600]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+    $data = wa_json_extract($res['text']);
+    if (!$data) { $data = ['reply' => trim($res['text']), 'escalate' => false]; }
+    return [
+        'ok'       => true,
+        'reply'    => trim((string)($data['reply'] ?? '')),
+        'escalate' => !empty($data['escalate']),
+        'has_kb'   => $kb !== '',
+    ];
+}
+
+/**
+ * Simulate one AI reply for the testing console — identical prompt, transcript
+ * format and parsing to the live answerer (wa_ai_answer), but driven by a
+ * supplied conversation history and grounded in the given (possibly unsaved)
+ * knowledge. Sends nothing and writes nothing. This is what makes the sandbox
+ * chat behave exactly like a real thread.
+ * $history: array of ['role'=>'user'|'assistant','content'=>string], oldest first.
+ * Returns {ok, reply, escalate, has_kb} or {ok:false, error}.
+ */
+function wa_ai_simulate($conn, $refType, $refId, $history, $kbOverride = null) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+
+    $refName = '';
+    if (in_array($refType, ['course', 'event', 'program'], true) && (int)$refId > 0) {
+        $refName = wa_ref_name($conn, $refType, (int)$refId);
+    }
+    // Events answer from the linked M&E programme's knowledge + live DB details.
+    if ($refType === 'event' && (int)$refId > 0) {
+        $kb = wa_event_effective_kb($conn, (int)$refId, $kbOverride);
+    } else {
+        $kb = ($kbOverride !== null)
+            ? trim((string)$kbOverride)
+            : (($refName !== '') ? wa_knowledge_get_ai($conn, $refType, (int)$refId) : '');
+    }
+
+    // Same "Customer:/Assistant:" transcript the live answerer feeds the model.
+    $transcript = '';
+    foreach ((array)$history as $h) {
+        $content = trim((string)($h['content'] ?? ''));
+        if ($content === '') { continue; }
+        $role = (($h['role'] ?? '') === 'assistant') ? 'Assistant' : 'Customer';
+        $transcript .= $role . ': ' . $content . "\n";
+    }
+    if ($transcript === '') { return ['ok' => false, 'error' => 'no_history']; }
+
+    $regLink = ($refName !== '') ? wa_register_link($conn, $refType, (int)$refId) : '';
+    $isEvent = ($refType === 'event');   // event chats: only their own KB, no course/programme catalogue
+    $outline = wa_outline_applies($refType, $refName) ? wa_event_outline_url($conn) : '';
+    $outlineTxt = $outline !== '' ? wa_event_outline_text($conn) : '';
+    $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt);
+    $user = "Conversation so far:\n" . $transcript . "\nWrite the next assistant reply now as JSON.";
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 600]);
+    if (empty($res['ok'])) { return ['ok' => false, 'error' => $res['error'] ?? 'ai_failed']; }
+
+    $data = wa_json_extract($res['text']);
+    if (!$data) { $data = ['reply' => trim($res['text']), 'escalate' => false]; }
+    $reply    = trim((string)($data['reply'] ?? ''));
+    $escalate = !empty($data['escalate']);
+    if (!$escalate && $reply !== '' && preg_match(
+        '/\b(connect you|reach out|our team|admissions team|someone will|have someone|get back to you|a representative|our staff|will contact you)\b/i',
+        $reply)) {
+        $escalate = true;
+    }
+    if ($reply === '' && $escalate) {
+        $reply = "Thanks for reaching out! Let me connect you with a member of our team who will help you further.";
+    }
+    if ($reply === '') { return ['ok' => false, 'error' => 'empty_reply']; }
+    return ['ok' => true, 'reply' => $reply, 'escalate' => $escalate, 'has_kb' => $kb !== ''];
+}
+
+/**
+ * Generate + send one AI reply for a conversation (grounded in its KB).
+ * Escalates (flags the chat for a human) when the model is unsure.
+ * $conv must include: id, contact_id, ref_type, ref_id, wa_id, ref_name.
+ */
+/**
+ * Post an internal, staff-only handoff note into the thread (type='note'). It is
+ * NEVER sent over WhatsApp — it renders as an italic "what the human needs to do"
+ * line in wa_thread.php so whoever picks up the chat has current context (the
+ * conversation may have moved on since the escalation). De-duped against the last
+ * note so a run of escalations doesn't repeat the same note. Returns true if posted.
+ */
+function wa_ai_post_note($conn, $contactId, $note) {
+    $note = trim((string)$note);
+    if ($note === '') { return false; }
+    $cid = (int)$contactId;
+    // Skip if the most recent note is identical (conversation hasn't moved on).
+    $r = mysqli_query($conn,
+        "SELECT body FROM wa_messages WHERE contact_id = $cid AND type = 'note' ORDER BY id DESC LIMIT 1");
+    $last = $r ? mysqli_fetch_assoc($r) : null;
+    if ($last && strcasecmp(trim((string)$last['body']), $note) === 0) { return false; }
+    mysqli_query($conn,
+        "INSERT INTO wa_messages (contact_id, direction, type, body, wa_timestamp, status)
+         VALUES ($cid, 'outbound', 'note', " . wa_sql($conn, $note) . ", NOW(), 'note')");
+    return true;
+}
+
+/** How many outbound (non-note) messages we've sent this contact — used to rotate
+ *  the referral nudges so a repeat never comes out word-for-word identical. */
+function wa_ai_outbound_count($conn, $contactId) {
+    $cid = (int)$contactId;
+    $r = mysqli_query($conn, "SELECT COUNT(*) AS n FROM wa_messages
+        WHERE contact_id = $cid AND direction = 'outbound' AND type <> 'note'");
+    $row = $r ? mysqli_fetch_assoc($r) : null;
+    return $row ? (int)$row['n'] : 0;
+}
+
+/** Short, varied "you've been referred — ask me anything else" lines. Used when a
+ *  handoff message would otherwise repeat the previous one verbatim, so the bot
+ *  stays engaged and NEVER goes silent instead of suppressing a duplicate. */
+function wa_ai_referral_nudge($n = 0) {
+    $lines = [
+        "Our team already has your request and will get back to you shortly. In the meantime, is there anything else I can help you with?",
+        "You're in the queue with our team — they'll reach out soon. Meanwhile, feel free to ask me anything else about our programmes.",
+        "A colleague has your details and will follow up with you. Is there anything else I can help you with right now?",
+        "Thanks for your patience — our team will be in touch shortly. Happy to answer any other questions in the meantime.",
+    ];
+    return $lines[abs((int)$n) % count($lines)];
+}
+
+/**
+ * Graceful hand-off when the AI can't produce a reply (provider error/timeout,
+ * empty or unparseable output). Instead of going SILENT — which reads as the bot
+ * ignoring the customer — we send a short human-hand-off line and escalate the
+ * chat so staff pick it up. Reuses the same duplicate-suppression as normal
+ * escalations so repeated failures don't spam the identical line.
+ */
+function wa_ai_soft_handoff($conn, $conv, $reason) {
+    $reply = "Thanks for your message! Let me bring in a member of our team to help you with that — they'll get back to you shortly.";
+    $cid = (int)$conv['contact_id'];
+    $r = mysqli_query($conn,
+        "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'outbound' AND type <> 'note' ORDER BY id DESC LIMIT 1");
+    $prev = $r ? mysqli_fetch_assoc($r) : null;
+    $prevBody = $prev ? trim((string)$prev['body']) : '';
+    // Escalate regardless (so staff see it), but only SEND if we didn't just say this.
+    $convId = (int)$conv['id'];
+    mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+    // Staff note: the AI itself broke, so the human needs the customer's last question.
+    $lastInbound = '';
+    $ri = mysqli_query($conn,
+        "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'inbound' AND body <> '' ORDER BY id DESC LIMIT 1");
+    if ($ri && ($rowi = mysqli_fetch_assoc($ri))) { $lastInbound = trim((string)$rowi['body']); }
+    $note = $reason === 'ai_failed'
+        ? "AI could not generate a reply (provider error). Please take over."
+        : "AI had no usable answer here. Please take over.";
+    if ($lastInbound !== '') { $note .= ' Customer\'s last message: "' . mb_substr($lastInbound, 0, 160) . '"'; }
+    wa_ai_post_note($conn, $cid, $note);
+    // Never go silent: if the standard line would repeat verbatim, send a varied
+    // "you're referred — anything else?" nudge instead of suppressing.
+    if ($prevBody !== '' && strcasecmp($prevBody, $reply) === 0) {
+        $reply = wa_ai_referral_nudge(wa_ai_outbound_count($conn, $cid));
+        if (strcasecmp($prevBody, $reply) === 0) { $reply = wa_ai_referral_nudge(wa_ai_outbound_count($conn, $cid) + 1); }
+    }
+    error_log('[wa-ai] soft-handoff (' . $reason . ') for contact ' . $cid);
+    $send = wa_send_text($conn, $conv['wa_id'], $reply);
+    return ['ok' => !empty($send['ok']), 'escalated' => true, 'reply' => $reply, 'reason' => $reason, 'send' => $send];
+}
+
+function wa_ai_answer($conn, $conv, $inboundText) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
+
+    $refName = $conv['ref_name'] ?? '';
+    $kb = '';
+    if (($conv['ref_type'] ?? '') === 'event' && $conv['ref_id'] !== null) {
+        // Events answer from the linked M&E programme's knowledge + live DB details.
+        $kb = wa_event_effective_kb($conn, (int)$conv['ref_id']);
+    } elseif (in_array($conv['ref_type'], ['course', 'program'], true) && $conv['ref_id'] !== null) {
+        // Answer from the AI-processed bullets (falls back to raw if not processed yet).
+        $kb = wa_knowledge_get_ai($conn, $conv['ref_type'], (int)$conv['ref_id']);
+    }
+
+    // Recent transcript as a single user turn (keeps both providers happy).
+    $hist = wa_ai_history($conn, (int)$conv['contact_id'], 12);
+    $transcript = '';
+    foreach ($hist as $h) {
+        $transcript .= ($h['role'] === 'assistant' ? 'Assistant: ' : 'Customer: ') . $h['content'] . "\n";
+    }
+
+    $regLink = (in_array($conv['ref_type'], ['course', 'event', 'program'], true) && $conv['ref_id'] !== null)
+        ? wa_register_link($conn, $conv['ref_type'], (int)$conv['ref_id']) : '';
+    $isEvent = (($conv['ref_type'] ?? '') === 'event');   // event chats: only their own KB, no course/programme catalogue
+    $outline = wa_outline_applies($conv['ref_type'] ?? '', $refName) ? wa_event_outline_url($conn) : '';
+    $outlineTxt = $outline !== '' ? wa_event_outline_text($conn) : '';
+    $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt);
+
+    $user = "Conversation so far:\n" . $transcript . "\nWrite the next assistant reply now as JSON.";
+
+    $res = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 600]);
+    // Provider error/timeout: don't go silent — hand off to a human instead.
+    if (empty($res['ok'])) {
+        error_log('[wa-ai] provider failed: ' . ($res['error'] ?? 'ai_failed'));
+        return wa_ai_soft_handoff($conn, $conv, 'ai_failed');
+    }
+
+    $data = wa_json_extract($res['text']);
+    if (!$data) { $data = ['reply' => trim($res['text']), 'escalate' => false]; }  // fallback: raw text
+    $reply    = trim((string)($data['reply'] ?? ''));
+    $escalate = !empty($data['escalate']);
+    $handoff  = trim((string)($data['handoff'] ?? ''));   // staff-only note, when escalating
+    // Safety net: if the reply defers to a human but the flag wasn't set, escalate anyway.
+    if (!$escalate && $reply !== '' && preg_match(
+        '/\b(connect you|reach out|our team|admissions team|someone will|have someone|get back to you|a representative|our staff|will contact you)\b/i',
+        $reply)) {
+        $escalate = true;
+    }
+    if ($reply === '' && $escalate) {
+        $reply = "Thanks for reaching out! Let me connect you with a member of our team who will help you further.";
+    }
+    // AI produced nothing usable: hand off to a human rather than going silent.
+    if ($reply === '') { return wa_ai_soft_handoff($conn, $conv, 'empty_reply'); }
+
+    // The AI keeps helping even after a handoff. We never go silent: if the reply
+    // would repeat the previous outbound word-for-word (e.g. the customer re-asks
+    // the same thing), we send a short VARIED "you're referred — anything else?"
+    // nudge instead of suppressing — so the customer always gets a response.
+    if ($escalate) {
+        $cid = (int)$conv['contact_id'];
+        // Staff-only note: what the human needs to pick up. Always posted so a
+        // colleague sees the current, specific need (the chat may have moved on).
+        if ($handoff === '') {
+            $handoff = 'Escalated to a human — please review this conversation and take over.';
+        }
+        wa_ai_post_note($conn, $cid, $handoff);
+        $r = mysqli_query($conn,
+            "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'outbound' AND type <> 'note' ORDER BY id DESC LIMIT 1");
+        $prev = $r ? mysqli_fetch_assoc($r) : null;
+        $prevBody = $prev ? trim((string)$prev['body']) : '';
+        if ($prevBody !== '' && strcasecmp($prevBody, $reply) === 0) {
+            $reply = wa_ai_referral_nudge(wa_ai_outbound_count($conn, $cid));
+            if (strcasecmp($prevBody, $reply) === 0) { $reply = wa_ai_referral_nudge(wa_ai_outbound_count($conn, $cid) + 1); }
+        }
+    }
+
+    $send = wa_send_text($conn, $conv['wa_id'], $reply);
+    if (!empty($send['ok'])) {
+        $convId = (int)$conv['id'];
+        if ($escalate) {
+            mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+        } else {
+            // Answered — leave the escalation flag as it was (a human item may still be pending).
+            mysqli_query($conn, "UPDATE wa_conversations SET last_message_at = NOW() WHERE id = $convId");
+        }
+    } else {
+        error_log('[wa-ai] send failed: ' . ($send['error'] ?? 'unknown'));
+    }
+    return ['ok' => !empty($send['ok']), 'escalated' => $escalate, 'reply' => $reply, 'send' => $send];
+}
+
+// A human is treated as "actively on the chat" for this many seconds after they
+// last opened it, and this many seconds after they last replied.
+if (!defined('WA_OPEN_HOLD_SECS'))  { define('WA_OPEN_HOLD_SECS', 90); }        // ~open right now
+if (!defined('WA_HUMAN_HOLD_SECS')) { define('WA_HUMAN_HOLD_SECS', 15 * 60); }  // recently replied
+if (!defined('WA_CRON_TOKEN'))      { define('WA_CRON_TOKEN', '');           }  // set on server; falls back to WA_VERIFY_TOKEN
+
+/**
+ * Decide whether to auto-answer an inbound message, and do it.
+ * Returns a status array (also useful for logging). The AI keeps helping unless
+ * a human is actively on the chat, replied recently, escalated, or fully took over.
+ */
+function wa_maybe_ai_answer($conn, $waId, $inboundText) {
+    $contact = wa_find_contact_by_waid($conn, $waId);
+    if (!$contact) { return ['ok' => false, 'skip' => 'no_contact']; }
+    $conv = wa_get_conversation($conn, (int)$contact['id']);
+    if (!$conv) {
+        // No topic classified yet — still engage. Create a bare conversation so the
+        // AI greets and asks which programme, instead of going silent.
+        wa_ensure_conversation($conn, (int)$contact['id']);
+        $conv = wa_get_conversation($conn, (int)$contact['id']);
+        if (!$conv) { return ['ok' => false, 'skip' => 'no_conversation']; }
+    }
+
+    // The ONLY hard mute is the explicit Human toggle — an agent who wants full control
+    // clicks "Human" on the chat. In every other state the AI keeps answering what it
+    // can from the knowledge base, even alongside a human and even on an escalated chat
+    // (wa_ai_answer sends a "connecting you to a human" line when it can't answer).
+    if ($conv['handler'] === 'human') { return ['ok' => false, 'skip' => 'handler_human']; }
+    if (!wa_provider_ready(wa_active_provider($conn))) { return ['ok' => false, 'skip' => 'no_provider']; }
+    if (!wa_within_window($contact['last_inbound_at'] ?? null)) { return ['ok' => false, 'skip' => 'outside_window']; }
+
+    $conv['wa_id']    = $waId;
+    $conv['ref_name'] = ($conv['ref_id'] !== null)
+        ? wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id']) : null;
+    return wa_ai_answer($conn, $conv, $inboundText);
+}
+
+// =====================================================================
+// HTTP helper
+// =====================================================================
+
+function wa_http_post($url, $headers, $payload, $timeout = 25) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT => (int)$timeout,
+        CURLOPT_HTTPHEADER => $headers,
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false) {
+        return ['status' => 0, 'body' => ['error' => ['message' => "cURL: {$err}"]]];
+    }
+    $body = json_decode((string)$raw, true);
+    return ['status' => $status, 'body' => is_array($body) ? $body : ['raw' => $raw]];
+}
+
+// Guided WhatsApp enrollment (capture-in-chat -> enroll directly).
+require_once __DIR__ . '/wa_enroll.php';

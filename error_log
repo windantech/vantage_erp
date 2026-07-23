@@ -1,0 +1,375 @@
+[18-Jun-2026 10:45:02 UTC] Successful login for user: 41
+[18-Jun-2026 10:56:27 UTC] No user cookie found
+[18-Jun-2026 10:56:28 UTC] No user cookie found
+[18-Jun-2026 11:00:06 UTC] Successful login for user: 41
+[18-Jun-2026 11:05:19 UTC] Successful login for user: 78
+[18-Jun-2026 11:06:56 UTC] Successful login for user: 90
+[18-Jun-2026 11:08:14 UTC] Successful login for user: 69
+[18-Jun-2026 11:13:22 UTC] Successful login for user: 107
+[18-Jun-2026 11:14:55 UTC] Successful login for user: 105
+[18-Jun-2026 11:18:36 UTC] Successful login for user: 77
+[18-Jun-2026 11:31:58 UTC] Successful login for user: 100
+[18-Jun-2026 11:39:24 UTC] Successful login for user: 69
+[18-Jun-2026 11:42:28 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[18-Jun-2026 11:46:46 UTC] Successful login for user: 114
+[18-Jun-2026 11:48:26 UTC] No user cookie found
+[18-Jun-2026 11:48:40 UTC] Successful login for user: 114
+[18-Jun-2026 11:54:36 UTC] Successful login for user: 111
+[18-Jun-2026 12:52:08 UTC] Successful login for user: 105
+[18-Jun-2026 12:52:36 UTC] Successful login for user: 76
+[18-Jun-2026 12:53:15 UTC] Successful login for user: 114
+[18-Jun-2026 12:54:29 UTC] Successful login for user: 90
+[18-Jun-2026 13:03:18 UTC] Successful login for user: 91
+[18-Jun-2026 13:24:49 UTC] Successful login for user: 69
+[18-Jun-2026 13:25:10 UTC] Successful login for user: 78
+[18-Jun-2026 13:28:51 UTC] Successful login for user: 6
+[18-Jun-2026 13:34:40 UTC] Successful login for user: 76
+[18-Jun-2026 13:35:09 UTC] Successful login for user: 41
+[18-Jun-2026 13:36:17 UTC] Successful login for user: 111
+[18-Jun-2026 13:36:46 UTC] Successful login for user: 90
+[18-Jun-2026 13:37:17 UTC] Successful login for user: 100
+[18-Jun-2026 13:38:32 UTC] No user cookie found
+[18-Jun-2026 13:38:45 UTC] Successful login for user: 114
+[18-Jun-2026 13:40:19 UTC] Successful login for user: 79
+[18-Jun-2026 13:40:23 UTC] Login attempt for non-existent user: admin
+[18-Jun-2026 13:40:31 UTC] Successful login for user: 94
+[18-Jun-2026 14:03:28 UTC] Successful login for user: 69
+[18-Jun-2026 17:16:25 UTC] No user cookie found
+[18-Jun-2026 17:16:41 UTC] Successful login for user: 91
+[19-Jun-2026 05:07:04 UTC] No user cookie found
+[19-Jun-2026 05:07:12 UTC] No user cookie found
+[19-Jun-2026 05:08:10 UTC] Successful login for user: 107
+[19-Jun-2026 05:09:17 UTC] Successful login for user: 108
+[19-Jun-2026 05:11:26 UTC] No user cookie found
+[19-Jun-2026 05:12:50 UTC] No user cookie found
+[19-Jun-2026 05:30:07 UTC] No user cookie found
+[19-Jun-2026 05:33:06 UTC] No user cookie found
+[19-Jun-2026 05:33:08 UTC] Successful login for user: 76
+[19-Jun-2026 05:53:54 UTC] No user cookie found
+[19-Jun-2026 05:55:31 UTC] No user cookie found
+[19-Jun-2026 05:55:37 UTC] Successful login for user: 91
+[19-Jun-2026 05:59:53 UTC] Successful login for user: 94
+[19-Jun-2026 06:14:22 UTC] Successful login for user: 110
+[19-Jun-2026 06:18:04 UTC] No user cookie found
+[19-Jun-2026 06:18:06 UTC] Successful login for user: 69
+[19-Jun-2026 06:21:11 UTC] No user cookie found
+[19-Jun-2026 06:21:11 UTC] No user cookie found
+[19-Jun-2026 06:21:14 UTC] Successful login for user: 100
+[19-Jun-2026 06:21:54 UTC] No user cookie found
+[19-Jun-2026 06:22:08 UTC] No user cookie found
+[19-Jun-2026 06:22:15 UTC] Successful login for user: 107
+[19-Jun-2026 06:22:36 UTC] Invalid password for user: denise@vantageafricaleaders.com
+[19-Jun-2026 06:23:10 UTC] Successful login for user: 90
+[19-Jun-2026 06:27:09 UTC] Successful login for user: 78
+[19-Jun-2026 06:33:04 UTC] Successful login for user: 105
+[19-Jun-2026 06:35:04 UTC] Successful login for user: 77
+[19-Jun-2026 07:00:04 UTC] No user cookie found
+[19-Jun-2026 07:03:58 UTC] Successful login for user: 41
+[19-Jun-2026 07:09:47 UTC] Successful login for user: 77
+[19-Jun-2026 07:17:15 UTC] No user cookie found
+[19-Jun-2026 07:17:46 UTC] Successful login for user: 94
+[19-Jun-2026 07:26:34 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[19-Jun-2026 07:29:57 UTC] No user cookie found
+[19-Jun-2026 07:30:00 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[19-Jun-2026 07:30:00 UTC] Successful login for user: 111
+[19-Jun-2026 07:30:04 UTC] Successful login for user: 100
+[19-Jun-2026 07:40:26 UTC] Successful login for user: 94
+[19-Jun-2026 07:59:27 UTC] Successful login for user: 69
+[19-Jun-2026 08:12:08 UTC] No user cookie found
+[19-Jun-2026 08:12:11 UTC] Successful login for user: 79
+[19-Jun-2026 09:34:54 UTC] Successful login for user: 108
+[19-Jun-2026 10:12:49 UTC] Successful login for user: 111
+[19-Jun-2026 10:44:35 UTC] No user cookie found
+[19-Jun-2026 10:44:38 UTC] Successful login for user: 107
+[19-Jun-2026 11:07:02 UTC] Successful login for user: 100
+[19-Jun-2026 11:33:23 UTC] Successful login for user: 41
+[19-Jun-2026 11:44:46 UTC] Successful login for user: 69
+[19-Jun-2026 11:47:58 UTC] Successful login for user: 90
+[19-Jun-2026 11:52:44 UTC] Successful login for user: 77
+[19-Jun-2026 12:30:49 UTC] Successful login for user: 100
+[19-Jun-2026 12:33:13 UTC] Successful login for user: 78
+[19-Jun-2026 12:35:20 UTC] Successful login for user: 6
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/view_assigned_user.php on line 564
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:35:35 UTC] PHP Warning:  Array to string conversion in /home2/vantage/public_html/admin/view_assigned_user.php on line 636
+[19-Jun-2026 12:37:26 UTC] Successful login for user: 91
+[19-Jun-2026 12:38:04 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[19-Jun-2026 12:47:16 UTC] Successful login for user: 105
+[19-Jun-2026 12:59:39 UTC] Successful login for user: 41
+[19-Jun-2026 13:34:07 UTC] Successful login for user: 90
+[19-Jun-2026 13:35:55 UTC] Successful login for user: 107
+[19-Jun-2026 13:54:22 UTC] Successful login for user: 69
+[19-Jun-2026 15:57:58 UTC] No user cookie found
+[19-Jun-2026 15:57:58 UTC] No user cookie found
+[20-Jun-2026 06:21:49 UTC] No user cookie found
+[20-Jun-2026 06:32:00 UTC] No user cookie found
+[20-Jun-2026 06:32:03 UTC] Successful login for user: 79
+[20-Jun-2026 06:35:29 UTC] No user cookie found
+[20-Jun-2026 06:42:00 UTC] Successful login for user: 78
+[20-Jun-2026 06:45:02 UTC] No user cookie found
+[20-Jun-2026 06:45:05 UTC] Successful login for user: 100
+[20-Jun-2026 06:54:57 UTC] No user cookie found
+[20-Jun-2026 06:55:00 UTC] Successful login for user: 105
+[20-Jun-2026 06:57:09 UTC] Successful login for user: 77
+[20-Jun-2026 08:08:43 UTC] No user cookie found
+[20-Jun-2026 09:53:10 UTC] Successful login for user: 78
+[20-Jun-2026 09:55:48 UTC] Successful login for user: 100
+[21-Jun-2026 11:26:26 UTC] No user cookie found
+[21-Jun-2026 11:26:28 UTC] No user cookie found
+[21-Jun-2026 11:26:31 UTC] No user cookie found
+[22-Jun-2026 05:06:44 UTC] No user cookie found
+[22-Jun-2026 05:18:05 UTC] No user cookie found
+[22-Jun-2026 05:18:08 UTC] Successful login for user: 100
+[22-Jun-2026 05:27:04 UTC] No user cookie found
+[22-Jun-2026 05:27:07 UTC] Successful login for user: 105
+[22-Jun-2026 05:34:43 UTC] No user cookie found
+[22-Jun-2026 06:31:52 UTC] Successful login for user: 76
+[22-Jun-2026 06:31:52 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 06:32:02 UTC] Successful login for user: 76
+[22-Jun-2026 06:49:03 UTC] No user cookie found
+[22-Jun-2026 06:51:29 UTC] No user cookie found
+[22-Jun-2026 06:51:50 UTC] No user cookie found
+[22-Jun-2026 06:55:14 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[22-Jun-2026 06:55:27 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 07:14:36 UTC] No user cookie found
+[22-Jun-2026 07:17:10 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 07:17:47 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 07:18:13 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 07:26:57 UTC] No user cookie found
+[22-Jun-2026 07:27:07 UTC] Successful login for user: 91
+[22-Jun-2026 07:28:37 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[22-Jun-2026 07:32:44 UTC] No user cookie found
+[22-Jun-2026 07:32:47 UTC] No user cookie found
+[22-Jun-2026 07:32:49 UTC] No user cookie found
+[22-Jun-2026 07:33:21 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[22-Jun-2026 07:39:00 UTC] Successful login for user: 100
+[22-Jun-2026 07:48:12 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[22-Jun-2026 08:01:04 UTC] No user cookie found
+[22-Jun-2026 08:01:21 UTC] Successful login for user: 79
+[22-Jun-2026 08:05:50 UTC] Successful login for user: 105
+[22-Jun-2026 08:11:06 UTC] Successful login for user: 108
+[22-Jun-2026 08:11:11 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 08:11:46 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 08:12:35 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 08:15:45 UTC] PHP Fatal error:  Uncaught Error: mysqli object is already closed in /home2/vantage/public_html/admin/view_student_online.php:1365
+Stack trace:
+#0 /home2/vantage/public_html/admin/view_student_online.php(1365): mysqli_query(Object(mysqli), 'SELECT `id`, `e...')
+#1 {main}
+  thrown in /home2/vantage/public_html/admin/view_student_online.php on line 1365
+[22-Jun-2026 08:15:49 UTC] PHP Warning:  Undefined array key "source" in /home2/vantage/public_html/admin/loaded_data.php on line 1320
+[22-Jun-2026 08:16:02 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 08:40:10 UTC] Successful login for user: 78
+[22-Jun-2026 08:43:52 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 08:47:37 UTC] No user cookie found
+[22-Jun-2026 08:47:38 UTC] No user cookie found
+[22-Jun-2026 08:47:40 UTC] Successful login for user: 74
+[22-Jun-2026 08:56:23 UTC] No user cookie found
+[22-Jun-2026 08:56:35 UTC] Invalid password for user: info@vantageafricaleaders.com
+[22-Jun-2026 08:56:46 UTC] No user cookie found
+[22-Jun-2026 08:58:39 UTC] Login attempt for non-existent user: admin@vantageafricaleaders.com
+[22-Jun-2026 08:58:50 UTC] Successful login for user: 6
+[22-Jun-2026 10:02:53 UTC] Successful login for user: 6
+[22-Jun-2026 10:14:13 UTC] No user cookie found
+[22-Jun-2026 10:14:13 UTC] No user cookie found
+[22-Jun-2026 10:14:41 UTC] Successful login for user: 69
+[22-Jun-2026 10:14:46 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 10:52:27 UTC] No user cookie found
+[22-Jun-2026 10:52:33 UTC] Successful login for user: 110
+[22-Jun-2026 11:02:15 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 11:02:26 UTC] Successful login for user: 108
+[22-Jun-2026 11:03:34 UTC] Successful login for user: 114
+[22-Jun-2026 11:03:52 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[22-Jun-2026 11:05:01 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[22-Jun-2026 11:06:15 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[22-Jun-2026 11:34:04 UTC] Successful login for user: 91
+[22-Jun-2026 11:48:07 UTC] Successful login for user: 105
+[22-Jun-2026 12:44:02 UTC] Successful login for user: 76
+[22-Jun-2026 13:17:23 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 13:17:28 UTC] Login attempt for non-existent user: admin
+[22-Jun-2026 13:20:42 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'r.intake' in 'WHERE' in /home2/vantage/public_html/admin/includes/enquiry_functions.php:912
+Stack trace:
+#0 /home2/vantage/public_html/admin/includes/enquiry_functions.php(912): mysqli_query(Object(mysqli), 'SELECT \n       ...')
+#1 /home2/vantage/public_html/admin/enquiry_dashboard.php(84): get_all_enquiries(Object(mysqli), Array, 1, 250)
+#2 {main}
+  thrown in /home2/vantage/public_html/admin/includes/enquiry_functions.php on line 912
+[22-Jun-2026 13:47:55 UTC] Successful login for user: 105
+[22-Jun-2026 13:59:55 UTC] Successful login for user: 76
+[22-Jun-2026 18:50:36 UTC] No user cookie found
+[23-Jun-2026 04:53:18 UTC] No user cookie found
+[23-Jun-2026 04:58:48 UTC] No user cookie found
+[23-Jun-2026 04:58:53 UTC] Successful login for user: 91
+[23-Jun-2026 04:58:53 UTC] Successful login for user: 91
+[23-Jun-2026 05:00:01 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[23-Jun-2026 05:00:03 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[23-Jun-2026 05:00:23 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[23-Jun-2026 05:27:39 UTC] No user cookie found
+[23-Jun-2026 05:27:41 UTC] Successful login for user: 79
+[23-Jun-2026 05:42:16 UTC] No user cookie found
+[23-Jun-2026 05:42:20 UTC] Successful login for user: 74
+[23-Jun-2026 06:02:02 UTC] No user cookie found
+[23-Jun-2026 06:02:05 UTC] Successful login for user: 100
+[23-Jun-2026 06:02:08 UTC] No user cookie found
+[23-Jun-2026 06:02:11 UTC] Successful login for user: 105
+[23-Jun-2026 06:03:48 UTC] No user cookie found
+[23-Jun-2026 06:03:57 UTC] Invalid password for user: denise@vantageafricaleaders.com
+[23-Jun-2026 06:04:11 UTC] Successful login for user: 90
+[23-Jun-2026 06:13:07 UTC] Login attempt for non-existent user: admin
+[23-Jun-2026 06:15:27 UTC] Successful login for user: 114
+[23-Jun-2026 06:15:44 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[23-Jun-2026 06:28:59 UTC] No user cookie found
+[23-Jun-2026 06:29:06 UTC] Successful login for user: 111
+[23-Jun-2026 06:52:02 UTC] No user cookie found
+[23-Jun-2026 06:52:08 UTC] Successful login for user: 110
+[23-Jun-2026 07:10:09 UTC] No user cookie found
+[23-Jun-2026 07:26:54 UTC] Login attempt for non-existent user: admin
+[23-Jun-2026 07:40:54 UTC] Successful login for user: 114
+[23-Jun-2026 07:41:07 UTC] No user cookie found
+[23-Jun-2026 07:41:12 UTC] Successful login for user: 6
+[23-Jun-2026 07:41:38 UTC] No user cookie found
+[23-Jun-2026 07:41:51 UTC] Successful login for user: 69
+[23-Jun-2026 07:44:44 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 351
+[23-Jun-2026 07:44:44 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 507
+[23-Jun-2026 07:51:45 UTC] Successful login for user: 78
+[23-Jun-2026 08:07:24 UTC] No user cookie found
+[23-Jun-2026 08:07:30 UTC] Successful login for user: 76
+[23-Jun-2026 08:20:40 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 351
+[23-Jun-2026 08:20:40 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 507
+[23-Jun-2026 08:22:36 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 351
+[23-Jun-2026 08:22:36 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 507
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:05 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:06 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:45 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:45 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:31:46 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 28
+[23-Jun-2026 08:32:30 UTC] PHP Warning:  Undefined array key "country" in /home2/vantage/public_html/admin/enquiry_details_.php on line 7
+[23-Jun-2026 08:32:30 UTC] PHP Warning:  Undefined variable $desc in /home2/vantage/public_html/admin/enquiry_details_.php on line 232
+[23-Jun-2026 08:32:51 UTC] Successful login for user: 78
+[23-Jun-2026 10:29:32 UTC] No user cookie found
+[23-Jun-2026 10:53:09 UTC] Login attempt for non-existent user: admin
+[23-Jun-2026 11:06:01 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[23-Jun-2026 11:06:45 UTC] Login attempt for non-existent user: admin
+[23-Jun-2026 11:08:00 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[23-Jun-2026 11:08:13 UTC] Login attempt for non-existent user: admin
+[23-Jun-2026 11:11:27 UTC] Successful login for user: 105
+[23-Jun-2026 11:13:36 UTC] No user cookie found
+[23-Jun-2026 11:20:24 UTC] Successful login for user: 100
+[23-Jun-2026 11:23:25 UTC] Successful login for user: 110
+[23-Jun-2026 12:52:26 UTC] No user cookie found
+[23-Jun-2026 12:52:35 UTC] Successful login for user: 90
+[23-Jun-2026 13:17:48 UTC] Successful login for user: 105
+[23-Jun-2026 13:38:35 UTC] Successful login for user: 100
+[23-Jun-2026 17:14:20 UTC] No user cookie found
+[24-Jun-2026 05:00:47 UTC] No user cookie found
+[24-Jun-2026 05:01:12 UTC] Successful login for user: 77
+[24-Jun-2026 05:08:41 UTC] No user cookie found
+[24-Jun-2026 05:13:05 UTC] No user cookie found
+[24-Jun-2026 05:13:13 UTC] Successful login for user: 107
+[24-Jun-2026 05:17:52 UTC] Successful login for user: 78
+[24-Jun-2026 05:38:19 UTC] No user cookie found
+[24-Jun-2026 05:38:22 UTC] Successful login for user: 100
+[24-Jun-2026 05:52:37 UTC] No user cookie found
+[24-Jun-2026 05:52:53 UTC] Successful login for user: 91
+[24-Jun-2026 05:53:47 UTC] No user cookie found
+[24-Jun-2026 05:53:50 UTC] Successful login for user: 110
+[24-Jun-2026 06:03:28 UTC] Successful login for user: 114
+[24-Jun-2026 06:03:44 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 06:03:46 UTC] No user cookie found
+[24-Jun-2026 06:03:58 UTC] Login attempt for non-existent user: denise
+[24-Jun-2026 06:06:02 UTC] Successful login for user: 90
+[24-Jun-2026 06:16:39 UTC] Successful login for user: 77
+[24-Jun-2026 06:19:16 UTC] No user cookie found
+[24-Jun-2026 06:19:30 UTC] Successful login for user: 41
+[24-Jun-2026 07:15:59 UTC] No user cookie found
+[24-Jun-2026 07:16:01 UTC] Successful login for user: 76
+[24-Jun-2026 07:20:48 UTC] Successful login for user: 100
+[24-Jun-2026 07:42:02 UTC] Invalid password for user: chepkemoi@vantageafricaleaders.com
+[24-Jun-2026 07:42:26 UTC] Successful login for user: 77
+[24-Jun-2026 08:07:04 UTC] No user cookie found
+[24-Jun-2026 08:07:06 UTC] Successful login for user: 111
+[24-Jun-2026 08:07:15 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 08:19:36 UTC] Successful login for user: 78
+[24-Jun-2026 08:26:54 UTC] No user cookie found
+[24-Jun-2026 08:27:25 UTC] Successful login for user: 6
+[24-Jun-2026 08:31:37 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 351
+[24-Jun-2026 08:31:37 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 507
+[24-Jun-2026 08:34:50 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 351
+[24-Jun-2026 08:34:50 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home2/vantage/public_html/admin/view_event.php on line 507
+[24-Jun-2026 08:43:02 UTC] Login attempt for non-existent user: admin
+[24-Jun-2026 08:45:26 UTC] Successful login for user: 76
+[24-Jun-2026 09:08:50 UTC] Successful login for user: 77
+[24-Jun-2026 09:21:00 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[24-Jun-2026 09:25:44 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[24-Jun-2026 09:32:29 UTC] Login attempt for non-existent user: admin
+[24-Jun-2026 09:32:35 UTC] Successful login for user: 110
+[24-Jun-2026 09:34:44 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 09:35:41 UTC] No user cookie found
+[24-Jun-2026 09:35:46 UTC] Successful login for user: 69
+[24-Jun-2026 09:52:19 UTC] Successful login for user: 76
+[24-Jun-2026 11:17:54 UTC] Successful login for user: 69
+[24-Jun-2026 11:22:47 UTC] Successful login for user: 110
+[24-Jun-2026 11:35:55 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[24-Jun-2026 11:36:54 UTC] Invalid password for user: kendi@vantageafricaleaders.com
+[24-Jun-2026 11:40:36 UTC] Successful login for user: 90
+[24-Jun-2026 11:43:19 UTC] Successful login for user: 76
+[24-Jun-2026 11:43:44 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 11:47:52 UTC] Successful login for user: 114
+[24-Jun-2026 11:47:58 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 11:53:54 UTC] Successful login for user: 78
+[24-Jun-2026 12:08:37 UTC] Login attempt for non-existent user: admin
+[24-Jun-2026 12:14:30 UTC] Successful login for user: 110
+[24-Jun-2026 12:30:10 UTC] Successful login for user: 77
+[24-Jun-2026 12:54:44 UTC] No user cookie found
+[24-Jun-2026 13:13:09 UTC] Successful login for user: 110
+[24-Jun-2026 13:13:16 UTC] PHP Warning:  Undefined array key "role" in /home2/vantage/public_html/admin/intake.php on line 279
+[24-Jun-2026 13:19:30 UTC] Invalid password for user: morgan@vantageafricaleaders.com
+[24-Jun-2026 13:19:58 UTC] Successful login for user: 91
+[24-Jun-2026 13:26:56 UTC] No user cookie found
+[24-Jun-2026 13:26:58 UTC] Successful login for user: 105
+[24-Jun-2026 13:36:31 UTC] Successful login for user: 100
+[25-Jun-2026 05:48:25 UTC] No user cookie found
+[25-Jun-2026 05:58:17 UTC] Successful login for user: 77
+[25-Jun-2026 06:12:00 UTC] No user cookie found
+[25-Jun-2026 06:22:07 UTC] Successful login for user: 100
+[25-Jun-2026 07:15:51 UTC] No user cookie found
+[25-Jun-2026 07:15:54 UTC] Successful login for user: 107
+[25-Jun-2026 08:12:21 UTC] Successful login for user: 107
+[25-Jun-2026 10:03:54 UTC] No user cookie found
+[25-Jun-2026 10:11:35 UTC] Successful login for user: 91
+[25-Jun-2026 10:12:08 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[25-Jun-2026 10:12:08 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 24
+[25-Jun-2026 10:12:10 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[25-Jun-2026 10:12:10 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 24
+[25-Jun-2026 10:31:14 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[25-Jun-2026 10:31:14 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 24
+[25-Jun-2026 10:31:21 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[25-Jun-2026 10:31:21 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 24
+[25-Jun-2026 10:31:27 UTC] PHP Warning:  Undefined variable $status in /home2/vantage/public_html/admin/view_student_online.php on line 1569
+[25-Jun-2026 10:31:27 UTC] PHP Warning:  Trying to access array offset on value of type null in /home2/vantage/function.php on line 24
+[25-Jun-2026 11:15:52 UTC] No user cookie found
+[25-Jun-2026 11:16:09 UTC] Successful login for user: 77
+[25-Jun-2026 12:39:27 UTC] Successful login for user: 78

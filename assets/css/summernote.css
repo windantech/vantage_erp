@@ -1,0 +1,11 @@
+.note-editor.note-frame{
+    width: 100% !important;
+}
+
+.note-editor .note-toolbar{
+    border-bottom: 1px solid #d1d3e2;
+}
+
+.note-editor.note-frame .note-editing-area .note-editable{
+    height: 283.885px;
+}
