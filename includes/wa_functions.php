@@ -2548,12 +2548,21 @@ function wa_ai_history($conn, $contactId, $limit = 12) {
  *  $regLink = the registration link to share when someone wants to register.
  *  $eventScoped = true for a specific in-person event chat: answer ONLY from that
  *  event's knowledge and never surface the virtual programmes / online courses. */
-function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventScoped = false, $outlineUrl = '', $outlineText = '') {
+function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventScoped = false, $outlineUrl = '', $outlineText = '', $profile = '') {
     return "You are the WhatsApp admissions advisor for Vantage Africa School of Leadership, a premium "
         . "leadership-training organisation based in Nairobi. "
         . ($refName ? "This prospect is interested in: {$refName}. " : "")
         . "Sound like a trusted, knowledgeable admissions advisor — not a chatbot. Your job is to build genuine "
         . "interest and trust, then guide the prospect towards registering.\n\n"
+
+        . ($profile !== ''
+            ? "WHAT YOU ALREADY KNOW ABOUT THIS PROSPECT (use it — do NOT ask again for anything listed here):\n"
+              . $profile . "\n"
+              . "- Greet them by name if you have it, and never re-request a detail already listed above. Only ask "
+              . "for details that are genuinely missing.\n"
+              . "- If a registration is already in progress and they say 'enrol me' / 'get me registered', CONTINUE "
+              . "that registration — do not restart it or divert back to programme questions.\n\n"
+            : "")
 
         . "TONE:\n"
         . "- Be warm, reassuring, calm, confident, professional and helpful. Prioritise trust over excitement.\n"
@@ -2635,6 +2644,36 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "help you register today?' / 'Shall I reserve your seat for the upcoming intake?'; at payment → 'Would "
         . "you like to pay in full or start with the deposit?' / 'Shall I share the payment details?'\n\n"
 
+        . "DIRECT REQUESTS OVERRIDE THE SALES SCRIPT:\n"
+        . "- When the prospect gives a clear instruction, do THAT first — before any sales flow, pitch or further "
+        . "questions:\n"
+        . "  * 'send/share the link' or 'registration link' -> actually paste the correct registration link now. "
+        . "NEVER say 'the link has everything you need' without sending the link itself.\n"
+        . "  * 'register me' / 'enroll me' / 'get me enrolled' -> move straight to registration; do NOT loop back to "
+        . "programme questions or restart the pitch.\n"
+        . "  * 'talk to a human' / 'agent' / 'representative' -> hand off immediately (set escalate true) and stop "
+        . "selling.\n"
+        . "  * 'cancel' / 'stop' / 'not interested' -> acknowledge it and stop; do NOT keep pitching the programme.\n"
+        . "- Never defer or ignore a direct request in order to continue your own script.\n\n"
+
+        . "CONSISTENCY & ABBREVIATIONS:\n"
+        . "- Never contradict a fact you or the KNOWLEDGE already stated earlier in THIS chat (e.g. don't call a "
+        . "programme four weeks now and six weeks later, or name a different trainer). If unsure whether a detail is "
+        . "correct, say you'll confirm it — do NOT state a new, conflicting figure, date, duration or name.\n"
+        . "- If a course code or abbreviation is ambiguous or could match more than one programme (e.g. 'SSD' could "
+        . "mean Supervisory Skills Development), ASK the prospect to confirm which one they mean BEFORE answering — "
+        . "never guess and describe the wrong course.\n\n"
+
+        . "PROMISES & TIMES (be truthful about what you can actually do):\n"
+        . "- Never say you are registering them, creating an account, sending an email/login/invoice, or that it is "
+        . "'done'. You cannot perform those actions. Say only that you have 'submitted their details for "
+        . "registration' and the team will complete it.\n"
+        . "- Never invent a specific delivery time ('within two hours', 'by end of day') for an email, document or "
+        . "credential unless the KNOWLEDGE explicitly gives that timeframe. When you escalate you may say the team "
+        . "will follow up, but do not fabricate a clock.\n"
+        . "- Never share bank-account, mobile-money or other payout/payment details unless those exact details "
+        . "appear in the KNOWLEDGE below.\n\n"
+
         . "GROUNDING & ESCALATION:\n"
         . "- Answer the prospect's MOST RECENT message first; if they switch to a different programme, follow "
         . "them there and answer that.\n"
@@ -2670,8 +2709,16 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "inbox as though an account already exists. If they want to register, hand off (escalate) so the team "
         . "completes it — do not pretend you did it yourself.\n"
         . "- If the customer sends a document, image or file you cannot open it — briefly acknowledge it and set "
-        . "escalate to true so a human can review it.\n"
-        . "- Reply in the prospect's language (English or Swahili; mirror whatever they use).\n\n"
+        . "escalate to true so a human can review it.\n\n"
+
+        . "LANGUAGE:\n"
+        . "- Detect the language of the prospect's MOST RECENT message and reply in that SAME language — "
+        . "English, Swahili, French, or any other. Mirror them exactly: a French message gets a French reply, "
+        . "a Swahili message gets Swahili, English gets English.\n"
+        . "- NEVER answer in a different language from the one they just wrote in (e.g. never reply in Swahili to "
+        . "a French or English message).\n"
+        . "- If you genuinely cannot tell which language they are using, ask politely which language they'd prefer "
+        . "rather than guessing.\n\n"
 
         . ($eventScoped
             ? "SCOPE — IMPORTANT: This conversation is about a specific IN-PERSON M&E TRAINING EVENT — a physical "
@@ -2960,7 +3007,34 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     $isEvent = (($conv['ref_type'] ?? '') === 'event');   // event chats: only their own KB, no course/programme catalogue
     $outline = wa_outline_applies($conv['ref_type'] ?? '', $refName) ? wa_event_outline_url($conn) : '';
     $outlineTxt = $outline !== '' ? wa_event_outline_text($conn) : '';
-    $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt);
+
+    // Build a short profile of what we already know, so the AI stops re-asking for
+    // details the prospect already gave (name from the contact, plus any fields
+    // captured in an in-progress registration, plus the programme of interest).
+    $cid = (int)$conv['contact_id'];
+    $known = [];
+    $pn = wa_scalar($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid");
+    if ($pn) { $known['Name'] = $pn; }
+    $enrolling = false;
+    $es = function_exists('wa_enroll_active') ? wa_enroll_active($conn, $cid) : null;
+    if ($es) {
+        $enrolling = true;
+        $d = !empty($es['data']) ? json_decode($es['data'], true) : null;
+        if (is_array($d)) {
+            if (!empty($d['fullname']))     { $known['Name'] = $d['fullname']; }
+            if (!empty($d['email']))        { $known['Email'] = $d['email']; }
+            if (!empty($d['phone']))        { $known['Phone'] = $d['phone']; }
+            if (!empty($d['country']))      { $known['Country'] = $d['country']; }
+            if (!empty($d['organization'])) { $known['Organization'] = $d['organization']; }
+        }
+    }
+    $profileLines = [];
+    if ($refName) { $profileLines[] = '- Interested in: ' . $refName; }
+    foreach ($known as $label => $val) { $profileLines[] = '- ' . $label . ': ' . $val; }
+    if ($enrolling) { $profileLines[] = '- A registration is already in progress — continue it, do not restart.'; }
+    $profile = $profileLines ? implode("\n", $profileLines) : '';
+
+    $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt, $profile);
 
     $user = "Conversation so far:\n" . $transcript . "\nWrite the next assistant reply now as JSON.";
 
@@ -3015,7 +3089,17 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     if (!empty($send['ok'])) {
         $convId = (int)$conv['id'];
         if ($escalate) {
-            mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+            // Give the escalation a real owner so it doesn't sit in a shared "escalated"
+            // flag that nobody closes: if the chat isn't already assigned and we know the
+            // programme, assign it to that programme's owner.
+            $ownerSql = '';
+            if (empty($conv['assigned_user_id'])
+                && in_array($conv['ref_type'] ?? '', ['course', 'event', 'program'], true)
+                && $conv['ref_id'] !== null) {
+                $ownerId = wa_first_owner($conn, ($conv['ref_type'] === 'event' ? 'event' : 'course'), (int)$conv['ref_id']);
+                if ($ownerId) { $ownerSql = ", assigned_user_id = " . (int)$ownerId; }
+            }
+            mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1$ownerSql, last_message_at = NOW() WHERE id = $convId");
         } else {
             // Answered — leave the escalation flag as it was (a human item may still be pending).
             mysqli_query($conn, "UPDATE wa_conversations SET last_message_at = NOW() WHERE id = $convId");
