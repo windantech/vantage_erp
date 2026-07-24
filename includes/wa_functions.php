@@ -555,6 +555,50 @@ function wa_classify_event($conn, $text) {
     return ['event_id' => $ids[0], 'confidence' => $conf];
 }
 
+/** True if this Event row is an academic/online course ('ACADEMIC#…'), not an
+ *  in-person training event. Academic courses have no venue/city/outline and must
+ *  be answered like a course, not scoped like a physical event. */
+function wa_is_academic_event($conn, $eventId) {
+    $eventId = (int)$eventId;
+    $res = mysqli_query($conn,
+        "SELECT 1 FROM `Event` WHERE event_id = $eventId AND location LIKE 'ACADEMIC#%' LIMIT 1");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+/**
+ * Classify an ACADEMIC / online course by title (AI for Leaders, CPA(K), etc.).
+ * These live in the Event table as 'ACADEMIC#…' rows, which wa_classify_event()
+ * deliberately skips (it is location-driven and academic courses have no city).
+ * Without this they are invisible to routing, so a chat can never bind to them —
+ * the exact reason a conversation stayed stuck on the first course while the
+ * customer had clearly moved to an academic one. Matches on title tokens only.
+ * Returns ['event_id'=>?int, 'confidence'=>float].
+ */
+function wa_classify_academic($conn, $text) {
+    $stop = wa_stopwords();
+    $msg = ' ' . wa_normalize($text) . ' ';
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title FROM `Event`
+          WHERE status = 1 AND location LIKE 'ACADEMIC#%'");
+    if (!$res) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $scores = [];
+    while ($e = mysqli_fetch_assoc($res)) {
+        $hits = 0;
+        foreach (explode(' ', wa_normalize((string)$e['event_title'])) as $w) {
+            if (mb_strlen($w) < 3 || isset($stop[$w])) { continue; }   // skip generic tokens
+            if (strpos($msg, ' ' . $w . ' ') !== false) { $hits++; }
+        }
+        if ($hits > 0) { $scores[(int)$e['event_id']] = $hits; }
+    }
+    if (!$scores) { return ['event_id' => null, 'confidence' => 0.0]; }
+    arsort($scores);
+    $ids = array_keys($scores);
+    $conf = (count($ids) === 1)
+        ? 0.9
+        : ($scores[$ids[0]] > $scores[$ids[1]] ? 0.75 : 0.35);   // tie -> low, no switch
+    return ['event_id' => $ids[0], 'confidence' => $conf];
+}
+
 /** True if the given provider has a real (non-placeholder) API key in wa_config.php. */
 function wa_provider_ready($provider) {
     if ($provider === 'openai') {
@@ -667,6 +711,25 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
             $courseId = $ai['course_id'];
             $conf = $ai['confidence'];
             $method = 'ai_inferred';
+        }
+    }
+
+    // Academic fallback: still no confident regular-course match, so check whether the
+    // customer named an academic/online course (AI for Leaders, CPA(K), …) which the
+    // course + location-event classifiers cannot see. Runs ONLY as a fallback, so it
+    // can never hijack a clear course match like "Senior Management". Academic courses
+    // are Event rows, so this binds the chat as an event ref.
+    if ($courseId === null || $conf < 0.60) {
+        $ac = wa_classify_academic($conn, $text);
+        if ($ac['event_id'] !== null && $ac['confidence'] >= 0.60) {
+            $eid = (int)$ac['event_id'];
+            if (!$returning || (int)$conv['ref_id'] !== $eid || $conv['ref_type'] !== 'event') {
+                $uid = wa_first_owner($conn, 'event', $eid);
+                wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, 'academic_title', $ac['confidence']);
+                return wa_route_result($conn, 'assigned', 'academic_title', 'event', $eid, $uid);
+            }
+            $uid = $conv['assigned_user_id'] !== null ? (int)$conv['assigned_user_id'] : null;
+            return wa_route_result($conn, 'kept', 'continuing', 'event', $eid, $uid);
         }
     }
 
@@ -2986,10 +3049,17 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     if (!wa_provider_ready($provider)) { return ['ok' => false, 'error' => 'no_provider']; }
 
     $refName = $conv['ref_name'] ?? '';
+    $refIsEvent = (($conv['ref_type'] ?? '') === 'event') && $conv['ref_id'] !== null;
+    // Academic/online courses are stored as Event rows but must NOT be scoped like an
+    // in-person event (no venue/city/outline); answer them like a course.
+    $isAcademicEvent = $refIsEvent && wa_is_academic_event($conn, (int)$conv['ref_id']);
     $kb = '';
-    if (($conv['ref_type'] ?? '') === 'event' && $conv['ref_id'] !== null) {
-        // Events answer from the linked M&E programme's knowledge + live DB details.
+    if ($refIsEvent && !$isAcademicEvent) {
+        // In-person event: answer from the linked M&E programme's knowledge + live DB details.
         $kb = wa_event_effective_kb($conn, (int)$conv['ref_id']);
+    } elseif ($isAcademicEvent) {
+        // Academic/online course: answer from its own processed knowledge base.
+        $kb = wa_knowledge_get_ai($conn, 'event', (int)$conv['ref_id']);
     } elseif (in_array($conv['ref_type'], ['course', 'program'], true) && $conv['ref_id'] !== null) {
         // Answer from the AI-processed bullets (falls back to raw if not processed yet).
         $kb = wa_knowledge_get_ai($conn, $conv['ref_type'], (int)$conv['ref_id']);
@@ -3004,8 +3074,10 @@ function wa_ai_answer($conn, $conv, $inboundText) {
 
     $regLink = (in_array($conv['ref_type'], ['course', 'event', 'program'], true) && $conv['ref_id'] !== null)
         ? wa_register_link($conn, $conv['ref_type'], (int)$conv['ref_id']) : '';
-    $isEvent = (($conv['ref_type'] ?? '') === 'event');   // event chats: only their own KB, no course/programme catalogue
-    $outline = wa_outline_applies($conv['ref_type'] ?? '', $refName) ? wa_event_outline_url($conn) : '';
+    // Only IN-PERSON events get the event-scoped, no-catalogue, venue/outline treatment.
+    // Academic online courses keep the catalogue and skip the in-person outline.
+    $isEvent = $refIsEvent && !$isAcademicEvent;
+    $outline = (!$isAcademicEvent && wa_outline_applies($conv['ref_type'] ?? '', $refName)) ? wa_event_outline_url($conn) : '';
     $outlineTxt = $outline !== '' ? wa_event_outline_text($conn) : '';
 
     // Build a short profile of what we already know, so the AI stops re-asking for
