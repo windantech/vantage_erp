@@ -388,6 +388,20 @@ function wa_enroll_cancel($conn, $sessId) {
     mysqli_query($conn, "UPDATE wa_enroll_sessions SET status = 'cancelled' WHERE id = " . (int)$sessId);
 }
 
+/** The customer's last few inbound messages (most recent first) joined with the
+ *  current one — used to detect which programme they're actually on when the
+ *  enrol trigger itself is a bare "yes / enrol me" that names no course. */
+function wa_enroll_recent_context($conn, $contactId, $current) {
+    $contactId = (int)$contactId;
+    $parts = [(string)$current];
+    $res = mysqli_query($conn,
+        "SELECT body FROM wa_messages
+          WHERE contact_id = $contactId AND direction = 'inbound' AND body <> ''
+          ORDER BY id DESC LIMIT 4");
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $parts[] = (string)$r['body']; } }
+    return implode('  ', $parts);
+}
+
 /**
  * The single hook the webhook calls. Returns true if enrollment consumed the
  * message (so the caller skips the AI answer). No-op unless enroll_enabled=1.
@@ -401,9 +415,15 @@ function wa_enroll_intercept($conn, $contactId, $waId, $body) {
     // Auto-start on intent only when enabled + the chat is on a course/event.
     if (wa_setting_get($conn, 'enroll_enabled', '0') === '1'
         && $body !== null && $body !== '' && wa_enroll_intent($body)) {
-        // Let routing switch to the course they actually named ("register SSD"),
-        // so we offer the RIGHT one — not whatever the chat was last about.
-        if (function_exists('wa_route_inbound')) { @wa_route_inbound($conn, $waId, (string)$body); }
+        // Route to the programme they're ACTUALLY discussing, so we offer the RIGHT
+        // one. A bare "yes, enrol me" names no course, so classify over their recent
+        // messages (not just this line) — that catches a switch made a turn or two ago
+        // (e.g. moved from Senior Management to AI for Leaders) instead of offering the
+        // stale programme the chat was first about.
+        if (function_exists('wa_route_inbound')) {
+            $ctx = wa_enroll_recent_context($conn, (int)$contactId, (string)$body);
+            @wa_route_inbound($conn, $waId, $ctx);
+        }
         $conv = wa_get_conversation($conn, (int)$contactId);
         if ($conv && $conv['ref_id'] !== null && in_array($conv['ref_type'], ['course','event'], true)) {
             // Share the link + offer to walk them through here (not straight to collecting).
