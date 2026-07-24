@@ -648,6 +648,49 @@ function wa_ai_classify_course($conn, $text, $courses) {
     return ['course_id' => $cid, 'confidence' => max(0.0, min(1.0, $conf))];
 }
 
+/**
+ * AI inference for ACADEMIC / online courses (Event 'ACADEMIC#…' rows), matched by
+ * MEANING rather than shared words — so abbreviations and synonyms the title keyword
+ * matcher misses ("CPA" -> Certified Public Accountant, "AI course" -> AI for Leaders)
+ * still bind correctly. Only runs when the provider has a key.
+ * Returns ['event_id'=>?int, 'confidence'=>float].
+ */
+function wa_ai_classify_academic($conn, $text) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['event_id' => null, 'confidence' => 0.0]; }
+
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title FROM `Event`
+          WHERE status = 1 AND location LIKE 'ACADEMIC#%'
+          ORDER BY event_title ASC LIMIT 80");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    if (!$rows) { return ['event_id' => null, 'confidence' => 0.0]; }
+
+    $lines = [];
+    foreach ($rows as $r) { $lines[] = (int)$r['event_id'] . ': ' . $r['event_title']; }
+    $system = 'You route a prospective student\'s WhatsApp message to exactly one online academic '
+            . 'course from the provided list. Match on meaning, not just shared words (e.g. "CPA" '
+            . 'means Certified Public Accountant; "AI course" means AI for Leaders). If no course '
+            . 'clearly fits, use null. Reply with ONLY JSON: {"event_id": <id or null>, "confidence": <0-1>}.';
+    $user = "Academic courses:\n" . implode("\n", $lines) . "\n\nMessage: \"" . $text . "\"";
+
+    $ans = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 150]);
+    if (empty($ans['ok'])) { return ['event_id' => null, 'confidence' => 0.0]; }
+
+    $data = wa_json_extract($ans['text']);
+    if (!$data) { return ['event_id' => null, 'confidence' => 0.0]; }
+
+    $eid = (isset($data['event_id']) && $data['event_id'] !== null) ? (int)$data['event_id'] : null;
+    $valid = false;
+    foreach ($rows as $r) { if ((int)$r['event_id'] === $eid) { $valid = true; break; } }
+    if (!$valid) { return ['event_id' => null, 'confidence' => 0.0]; }
+
+    $conf = isset($data['confidence']) ? (float)$data['confidence'] : 0.6;
+    return ['event_id' => $eid, 'confidence' => max(0.0, min(1.0, $conf))];
+}
+
 function wa_normalize($s) {
     $s = mb_strtolower(trim($s));
     $s = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s) ?? $s;
@@ -721,12 +764,21 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     // are Event rows, so this binds the chat as an event ref.
     if ($courseId === null || $conf < 0.60) {
         $ac = wa_classify_academic($conn, $text);
+        $acMethod = 'academic_title';
+        // Keyword match weak? Ask the AI (catches "CPA", "AI course", other synonyms).
+        if ($ac['event_id'] === null || $ac['confidence'] < 0.60) {
+            $aiAc = wa_ai_classify_academic($conn, $text);   // no-op if no AI key
+            if ($aiAc['event_id'] !== null && $aiAc['confidence'] >= 0.60) {
+                $ac = $aiAc;
+                $acMethod = 'academic_ai';
+            }
+        }
         if ($ac['event_id'] !== null && $ac['confidence'] >= 0.60) {
             $eid = (int)$ac['event_id'];
             if (!$returning || (int)$conv['ref_id'] !== $eid || $conv['ref_type'] !== 'event') {
                 $uid = wa_first_owner($conn, 'event', $eid);
-                wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, 'academic_title', $ac['confidence']);
-                return wa_route_result($conn, 'assigned', 'academic_title', 'event', $eid, $uid);
+                wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, $acMethod, $ac['confidence']);
+                return wa_route_result($conn, 'assigned', $acMethod, 'event', $eid, $uid);
             }
             $uid = $conv['assigned_user_id'] !== null ? (int)$conv['assigned_user_id'] : null;
             return wa_route_result($conn, 'kept', 'continuing', 'event', $eid, $uid);
