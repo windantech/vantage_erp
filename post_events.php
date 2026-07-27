@@ -142,7 +142,7 @@ require_once 'header.php';
     <div id="content">
         <?php
         require_once 'top_nav.php';
-        include '../../function.php';
+        include 'function.php';
         ?>
 
         <div class="container-fluid mt-5 pt-5">

@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-include '../../function.php';
+include 'function.php';
 
 $filter_status = isset($_GET['status']) && in_array($_GET['status'], ['pending', 'contacted', 'closed'], true) ? $_GET['status'] : '';
 ?>

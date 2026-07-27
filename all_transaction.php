@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-include '../../function.php';
+include 'function.php';
 // Get selected year (default to 'all')
 $selected_year = isset($_GET['year']) ? $_GET['year'] : 'all';
 

@@ -79,7 +79,31 @@ if (!headers_sent()) {
         </a>
     </li>
 
-		   <a class="collapse-item bi bi-whatsapp" href="wa_inbox.php"><span>WhatsApp Inbox</span></a>
+    <!-- WhatsApp -->
+    <?php if (in_array(44, $role)) { ?>
+    <li class="nav-item whatsapp">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#whatsapp" aria-expanded="true" aria-controls="whatsapp">
+            <i class="bi bi-whatsapp"></i>
+            <span>WhatsApp</span>
+        </a>
+        <div id="whatsapp" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+            <div class="bg_main py-2 m-0 collapse-inner rounded">
+                <a class="collapse-item" href="wa_inbox.php">Inbox</a>
+                <a class="collapse-item" href="wa_contacts.php">Contacts</a>
+                <?php if (in_array(777, $role)) { ?>
+                <a class="collapse-item" href="wa_broadcast.php">Broadcast</a>
+                <a class="collapse-item" href="wa_broadcasts.php">Broadcast History</a>
+                <a class="collapse-item" href="wa_templates.php">Templates</a>
+                <a class="collapse-item" href="wa_canned.php">Quick Replies</a>
+                <a class="collapse-item" href="wa_knowledge.php">Knowledge Base</a>
+                <a class="collapse-item" href="wa_assignments.php">Assignments</a>
+                <a class="collapse-item" href="wa_insights.php">Insights</a>
+                <a class="collapse-item" href="wa_settings.php">Settings</a>
+                <?php } ?>
+            </div>
+        </div>
+    </li>
+    <?php } ?>
 
 
     <!-- Transactions -->

@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-require "../../function.php";
+require "function.php";
 ?>
 
 <section id="content-wrapper" class="d-flex flex-column">

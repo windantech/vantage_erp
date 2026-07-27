@@ -4,7 +4,7 @@ require_once 'header.php';
 
         
 
-    include '../../function.php';
+    include 'function.php';
 ?>
 
 <section id="content-wrapper" class="d-flex flex-column">

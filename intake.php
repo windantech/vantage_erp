@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-require "../../function.php";
+require "function.php";
 
 function check_role($conn,$id){
     $query = mysqli_query($conn,"SELECT `id`, `email`, `password`, `fullname`, `phone_no`, `role`, `status`, `token`, `transaction_key` FROM `registered_users`  WHERE id=$id ") or die(mysqli_error($conn));

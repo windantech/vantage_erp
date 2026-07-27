@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-require "../../function.php";
+require "function.php";
 function check_details($conn,$entry_id,$variable){
     $check  = mysqli_query($conn,"SELECT `id`, `fullname`, `email`, `term`, `phone_number`, `ticket_id`, `status`, `amount`, `ticket_number`, `confirmation`, `date_sent`, `organization`, `position`, `event_id` FROM `ticket_congress` WHERE `ticket_id`='$entry_id'") or die(mysqli_error($conn));
     if(mysqli_num_rows($check) > 0){

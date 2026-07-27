@@ -1,6 +1,6 @@
 <?php
 require_once 'header.php';
-require "../../function.php";
+require "function.php";
 
 // Assuming staff info is stored in session
 

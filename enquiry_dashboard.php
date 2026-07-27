@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once 'header.php';
-require "../../function.php";
+require "function.php";
 require_once 'includes/enquiry_functions.php';
 
 // Get dashboard statistics

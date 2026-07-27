@@ -297,6 +297,46 @@ switch ($action) {
         wa_redirect('../wa_knowledge.php?ref=' . $rt . ':' . $rid);
     }
 
+    // ---- Inbox quick actions (Actions dropdown on each conversation row) ----
+    // These mirror the thread actions but redirect back to the inbox.
+    case 'inbox_assign_me':
+    case 'inbox_handler':
+    case 'inbox_escalate':
+    case 'inbox_resolve':
+    case 'inbox_mark_read': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not assigned to you.');
+            wa_redirect('../wa_inbox.php');
+        }
+        switch ($action) {
+            case 'inbox_assign_me':
+                mysqli_query($conn, "UPDATE wa_conversations SET assigned_user_id = " . (int)$staff_id . " WHERE id = $conv_id");
+                wa_flash('success', 'Conversation assigned to you.');
+                break;
+            case 'inbox_handler':
+                $h = ($_POST['handler'] ?? '') === 'human' ? 'human' : 'ai';
+                $extra = $h === 'human' ? ', last_human_at = NOW()' : '';
+                mysqli_query($conn, "UPDATE wa_conversations SET handler = '$h'$extra WHERE id = $conv_id");
+                wa_flash('success', 'Handler set to ' . $h . '.');
+                break;
+            case 'inbox_escalate':
+                mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Conversation escalated.');
+                break;
+            case 'inbox_resolve':
+                mysqli_query($conn, "UPDATE wa_conversations SET escalated = 0, last_human_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Escalation resolved.');
+                break;
+            case 'inbox_mark_read':
+                mysqli_query($conn, "UPDATE wa_conversations SET last_read_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Marked as read.');
+                break;
+        }
+        wa_redirect('../wa_inbox.php');
+    }
+
     default:
         wa_redirect('../wa_inbox.php');
 }

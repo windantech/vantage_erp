@@ -40,7 +40,7 @@ require_once 'header.php';
                                                    <select required  class="form-control select2" name="email_title" id="email_title"  >
                                                        <option value=""  >--Please Select-- </option>
                                                        <?php 
-                                                          include '../../function.php';
+                                                          include 'function.php';
    
             
 // Use array_map to safely escape each program value for SQL

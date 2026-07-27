@@ -1,7 +1,7 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { @session_start(); }
 require_once 'header.php';                     // auth.php -> $conn, $role, $staff_id
-require "../../function.php";
+require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 
@@ -79,8 +79,11 @@ if ($result) {
             <div class="alert alert-<?php echo wa_e($flash[0]); ?>"><?php echo wa_e($flash[1]); ?></div>
             <?php endif; ?>
 
+            <!-- Actions dropdowns must not be clipped by the scrollable table container -->
+            <style>#waInboxCard .table-responsive { overflow: visible; }</style>
+
             <!-- Conversations Table -->
-            <div class="card shadow-sm border-0">
+            <div class="card shadow-sm border-0" id="waInboxCard">
                 <div class="card-header bg-white py-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div class="d-flex align-items-center gap-2">
@@ -114,6 +117,7 @@ if ($result) {
                                     <th>Owner</th>
                                     <th>Handler</th>
                                     <th>Last Message</th>
+                                    <th class="text-end pe-3">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="waRows">
@@ -140,11 +144,30 @@ if ($result) {
                                         <td class="<?php echo $u ? 'fw-semibold' : ''; ?>">
                                             <?php echo wa_e(mb_strimwidth((string)$row['last_body'], 0, 60, '…')); ?>
                                         </td>
+                                        <td class="text-end pe-3" onclick="event.stopPropagation();">
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">Actions</button>
+                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                    <li><a class="dropdown-item" href="wa_thread.php?id=<?php echo (int)$row['id']; ?>"><i class="bi bi-chat-dots me-2"></i>Open chat</a></li>
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_assign_me"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-person-check me-2"></i>Assign to me</button></form></li>
+                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_handler"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="handler" value="<?php echo $row['handler'] === 'human' ? 'ai' : 'human'; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-robot me-2"></i><?php echo $row['handler'] === 'human' ? 'Switch to AI' : 'Switch to Human'; ?></button></form></li>
+                                                    <?php if ((int)$row['escalated'] === 1): ?>
+                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_resolve"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item text-success"><i class="bi bi-check2-circle me-2"></i>Resolve escalation</button></form></li>
+                                                    <?php else: ?>
+                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_escalate"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item text-warning"><i class="bi bi-exclamation-triangle me-2"></i>Escalate</button></form></li>
+                                                    <?php endif; ?>
+                                                    <?php if ($u): ?>
+                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_mark_read"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-envelope-open me-2"></i>Mark as read</button></form></li>
+                                                    <?php endif; ?>
+                                                </ul>
+                                            </div>
+                                        </td>
                                     </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="6" class="text-center py-5">
+                                        <td colspan="7" class="text-center py-5">
                                             <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
                                             <p class="text-muted">No conversations yet</p>
                                         </td>
@@ -170,6 +193,32 @@ if ($result) {
     var unreadEl = document.getElementById('waUnread');
 
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+
+    // Actions dropdown for a conversation row (mirrors the PHP-rendered one).
+    function actForm(id, action, label, icon, cls, extra) {
+        var hidden = '<input type="hidden" name="action" value="' + action + '">'
+                   + '<input type="hidden" name="id" value="' + id + '">'
+                   + (extra || '');
+        return '<li><form method="post" action="includes/wa_process.php" class="m-0">' + hidden
+             + '<button type="submit" class="dropdown-item ' + (cls || '') + '"><i class="bi ' + icon + ' me-2"></i>' + label + '</button></form></li>';
+    }
+    function actionsCell(c) {
+        var toHuman = c.handler === 'human';
+        var items = '<li><a class="dropdown-item" href="wa_thread.php?id=' + c.id + '"><i class="bi bi-chat-dots me-2"></i>Open chat</a></li>'
+            + '<li><hr class="dropdown-divider"></li>'
+            + actForm(c.id, 'inbox_assign_me', 'Assign to me', 'bi-person-check', '')
+            + actForm(c.id, 'inbox_handler', toHuman ? 'Switch to AI' : 'Switch to Human', 'bi-robot', '',
+                      '<input type="hidden" name="handler" value="' + (toHuman ? 'ai' : 'human') + '">')
+            + (c.escalated
+                ? actForm(c.id, 'inbox_resolve', 'Resolve escalation', 'bi-check2-circle', 'text-success')
+                : actForm(c.id, 'inbox_escalate', 'Escalate', 'bi-exclamation-triangle', 'text-warning'))
+            + (c.unread ? actForm(c.id, 'inbox_mark_read', 'Mark as read', 'bi-envelope-open', '') : '');
+        return '<td class="text-end pe-3" onclick="event.stopPropagation();">'
+             + '<div class="dropdown">'
+             + '<button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">Actions</button>'
+             + '<ul class="dropdown-menu dropdown-menu-end shadow-sm">' + items + '</ul>'
+             + '</div></td>';
+    }
 
     // ---- sound + desktop alerts ----
     var alertsOn = localStorage.getItem('waAlerts') === '1';
@@ -253,9 +302,10 @@ if ($result) {
                  + '<td>' + esc(c.owner || '—') + '</td>'
                  + '<td><span class="badge ' + hc + '">' + esc(c.handler) + '</span></td>'
                  + '<td class="' + (c.unread ? 'fw-semibold' : '') + '">' + esc(c.last_body) + '</td>'
+                 + actionsCell(c)
                  + '</tr>';
         });
-        rowsEl.innerHTML = html || '<tr><td colspan="6" class="text-center py-4 text-muted">No matches</td></tr>';
+        rowsEl.innerHTML = html || '<tr><td colspan="7" class="text-center py-4 text-muted">No matches</td></tr>';
         countEl.textContent = shown;
         document.getElementById('cntAll').textContent    = counts.all;
         document.getElementById('cntUnread').textContent = counts.unread;

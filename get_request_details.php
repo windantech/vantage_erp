@@ -1,7 +1,7 @@
 <?php
 session_start();
 require "auth.php";
-require "../../function.php";
+require "function.php";
 
 
 if(!isset($_GET['request_id'])) {

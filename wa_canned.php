@@ -1,7 +1,7 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { @session_start(); }
 require_once 'header.php';                     // auth.php -> $conn, $role, $staff_id
-require "../../function.php";
+require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 
