@@ -172,21 +172,35 @@ switch ($action) {
         if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_assignments.php'); }
         $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
-        $uid = (int)($_POST['user_id'] ?? 0);
-        if ($rid > 0) {
-            // 1) WhatsApp override (existing behaviour — wins for chat routing).
-            wa_owner_override_set($conn, $rt, $rid, $uid);
 
-            // 2) Mirror into the CEO Performance assignment fields (all NOT NULL varchars).
-            $val = $uid > 0 ? "'" . (int)$uid . "'" : "''";
+        // Multiple assignees + one PRIMARY (the rep who actually routes/handles chats).
+        $assignees = array_values(array_unique(array_filter(
+            array_map('intval', (array)($_POST['user_ids'] ?? [])),
+            function ($v) { return $v > 0; }
+        )));
+        $primary = (int)($_POST['primary_id'] ?? 0);
+        if ($primary > 0 && !in_array($primary, $assignees, true)) { $assignees[] = $primary; }
+        if ($primary <= 0 && $assignees) { $primary = $assignees[0]; }   // default primary = first
+
+        if ($rid > 0) {
+            // Full assignee list lives in the ERP comma-field (CEO Performance + FIND_IN_SET read it).
+            $list = $assignees ? "'" . implode(',', $assignees) . "'" : "''";
+            // Primary drives chat routing via the single wa_course_owner override.
+            wa_owner_override_set($conn, $rt, $rid, $primary);           // clears when $primary <= 0
+
             if ($rt === 'event') {
-                mysqli_query($conn, "UPDATE `Event` SET assigned_to = $val WHERE event_id = $rid");
+                // International + Academics are both Event rows.
+                mysqli_query($conn, "UPDATE `Event` SET assigned_to = $list WHERE event_id = $rid");
             } else {
-                // Virtual: apply the rep to the whole course — every intake + the rollup.
-                mysqli_query($conn, "UPDATE intake SET assigned_to = $val WHERE course_id = $rid");
-                mysqli_query($conn, "UPDATE course SET assigned_to = $val WHERE course_id = $rid");
+                // Virtual: course rollup = full list; each intake takes the PRIMARY (single per intake).
+                $pval = $primary > 0 ? "'" . $primary . "'" : "''";
+                mysqli_query($conn, "UPDATE course SET assigned_to = $list WHERE course_id = $rid");
+                mysqli_query($conn, "UPDATE intake SET assigned_to = $pval WHERE course_id = $rid");
             }
-            wa_flash('success', $uid > 0 ? 'Rep assigned (synced to Performance).' : 'Assignment cleared (synced to Performance).');
+            $n = count($assignees);
+            wa_flash('success', $n > 0
+                ? ($n . ' rep' . ($n > 1 ? 's' : '') . ' assigned (synced to Performance).')
+                : 'Assignment cleared (synced to Performance).');
         }
         wa_redirect('../wa_assignments.php');
     }

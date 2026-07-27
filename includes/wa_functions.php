@@ -1444,7 +1444,7 @@ function wa_ref_name($conn, $refType, $refId) {
 /** Active events (status = 1). */
 function wa_active_events($conn) {
     $res = mysqli_query($conn,
-        'SELECT event_id AS id, event_title AS name FROM `Event` WHERE status = 1 ORDER BY start_on DESC');
+        'SELECT event_id AS id, event_title AS name, location FROM `Event` WHERE status = 1 ORDER BY start_on DESC');
     $rows = [];
     if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
     return $rows;
