@@ -162,14 +162,31 @@ switch ($action) {
     }
 
     // ---- Assign a rep to a course/event (fallback owner; supervisor only) ----
+    // Also mirrored into the CEO "Performance" assignment fields so the WhatsApp
+    // Assignments page and CEO Dashboard → Performance stay in sync:
+    //   - event  -> Event.assigned_to            (matches ceo_dashboard/event_assignments)
+    //   - course -> intake.assigned_to for EVERY intake of the course, plus the
+    //               course.assigned_to rollup    (matches ceo_dashboard/intake_assignments)
+    // Assigning sets the rep id; clearing (uid<=0) empties the field.
     case 'assign_owner': {
         if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_assignments.php'); }
         $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
         $uid = (int)($_POST['user_id'] ?? 0);
         if ($rid > 0) {
+            // 1) WhatsApp override (existing behaviour — wins for chat routing).
             wa_owner_override_set($conn, $rt, $rid, $uid);
-            wa_flash('success', $uid > 0 ? 'Rep assigned.' : 'Assignment cleared.');
+
+            // 2) Mirror into the CEO Performance assignment fields (all NOT NULL varchars).
+            $val = $uid > 0 ? "'" . (int)$uid . "'" : "''";
+            if ($rt === 'event') {
+                mysqli_query($conn, "UPDATE `Event` SET assigned_to = $val WHERE event_id = $rid");
+            } else {
+                // Virtual: apply the rep to the whole course — every intake + the rollup.
+                mysqli_query($conn, "UPDATE intake SET assigned_to = $val WHERE course_id = $rid");
+                mysqli_query($conn, "UPDATE course SET assigned_to = $val WHERE course_id = $rid");
+            }
+            wa_flash('success', $uid > 0 ? 'Rep assigned (synced to Performance).' : 'Assignment cleared (synced to Performance).');
         }
         wa_redirect('../wa_assignments.php');
     }
