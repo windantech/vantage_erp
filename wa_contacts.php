@@ -5,8 +5,8 @@ require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 
-if (!in_array(777, $role)) {
-    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Supervisors only.</div></div>';
+if (!in_array(WA_ROLE, $role)) {
+    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Access denied.</div></div>';
     require_once 'footer.php';
     exit;
 }

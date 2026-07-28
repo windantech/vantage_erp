@@ -243,7 +243,7 @@ switch ($action) {
 
     // Canned quick replies (supervisor manages; any agent uses in the thread).
     case 'save_quick': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_canned.php'); }
+        // Quick Replies module — full parity for WhatsApp staff (role 44); access gated at top of file.
         // scope is "0" (global), "course:<id>" or "event:<id>".
         $refType = ''; $refId = 0;
         $scope = (string)($_POST['scope'] ?? '0');
@@ -253,7 +253,7 @@ switch ($action) {
         wa_redirect('../wa_canned.php');
     }
     case 'delete_quick': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_canned.php'); }
+        // Quick Replies module — full parity for WhatsApp staff (role 44).
         wa_quick_reply_delete($conn, (int)($_POST['id'] ?? 0));
         wa_flash('success', 'Quick reply deleted.');
         wa_redirect('../wa_canned.php');
@@ -269,7 +269,7 @@ switch ($action) {
 
     // Manually opt a contact in/out of broadcasts (supervisor override).
     case 'contact_opt': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_contacts.php'); }
+        // Contacts module — full parity for WhatsApp staff (role 44).
         $cid = (int)($_POST['contact_id'] ?? 0);
         $out = ($_POST['opt'] ?? '') === 'out';
         wa_contact_set_optout($conn, $cid, $out);
@@ -280,7 +280,7 @@ switch ($action) {
 
     // ---- Knowledge base: save per-course/event text (supervisor only) ----
     case 'save_program': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $pid  = (int)($_POST['program_id'] ?? 0);
         $name = trim((string)($_POST['name'] ?? ''));
         if ($name === '') { wa_flash('warning', 'Programme name is required.'); wa_redirect('../wa_knowledge.php'); }
@@ -291,14 +291,14 @@ switch ($action) {
     }
 
     case 'delete_program': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         wa_program_delete($conn, (int)($_POST['program_id'] ?? 0));
         wa_flash('success', 'Training programme deleted.');
         wa_redirect('../wa_knowledge.php');
     }
 
     case 'save_knowledge': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $rt  = in_array($_POST['ref_type'] ?? '', ['event', 'program'], true) ? $_POST['ref_type'] : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
         if ($rid > 0) {
@@ -312,7 +312,7 @@ switch ($action) {
 
     case 'learn_approve':
     case 'learn_dismiss': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $lid = (int)($_POST['learning_id'] ?? 0);
         $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
