@@ -3351,6 +3351,66 @@ function wa_run_due_replies($conn, $limit = 20) {
     return ['ok' => true, 'processed' => $processed];
 }
 
+/** Idempotently add the follow-up bookkeeping column. */
+function wa_followup_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_conversations`
+        ADD COLUMN IF NOT EXISTS `followup_sent_at` DATETIME NULL DEFAULT NULL");
+}
+
+/**
+ * Issue #14: ONE gentle follow-up when an answered conversation goes quiet, then stop.
+ * Fires ~$afterHours after the customer's LAST inbound but still INSIDE WhatsApp's 24h
+ * free-form window (so a plain message is allowed — after 24h only templates work, so
+ * we skip). Only for open, non-escalated, AI-handled, opted-in chats that we already
+ * replied to and haven't nudged yet. Gated by the 'followup_enabled' setting (off by
+ * default) so it never starts messaging customers until you switch it on.
+ */
+function wa_run_followups($conn, $afterHours = 23, $limit = 20) {
+    if (wa_setting_get($conn, 'followup_enabled', '0') !== '1') { return ['ok' => true, 'skipped' => 'disabled']; }
+    wa_followup_schema_ensure($conn);
+    $afterHours = max(1, min(23, (int)$afterHours));   // keep strictly inside the 24h window
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT c.id AS contact_id, c.wa_id, c.profile_name, cv.id AS conv_id, cv.ref_type, cv.ref_id
+           FROM wa_contacts c
+           JOIN wa_conversations cv ON cv.contact_id = c.id
+          WHERE cv.handler <> 'human'
+            AND cv.escalated = 0
+            AND cv.status = 'open'
+            AND cv.followup_sent_at IS NULL
+            AND c.opted_out = 0
+            AND c.last_inbound_at IS NOT NULL
+            AND c.last_inbound_at <= (NOW() - INTERVAL $afterHours HOUR)
+            AND c.last_inbound_at >  (NOW() - INTERVAL 24 HOUR)
+            AND EXISTS (SELECT 1 FROM wa_messages m
+                         WHERE m.contact_id = c.id AND m.direction = 'outbound' AND m.type <> 'note'
+                           AND m.wa_timestamp >= c.last_inbound_at)
+          ORDER BY c.last_inbound_at ASC
+          LIMIT $limit");
+    if (!$res) { return ['ok' => true, 'sent' => 0]; }
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; }
+    $sent = 0;
+    foreach ($rows as $r) {
+        $convId = (int)$r['conv_id'];
+        // Claim before sending so overlapping cron runs can't double-nudge.
+        mysqli_query($conn, "UPDATE wa_conversations SET followup_sent_at = NOW() WHERE id = $convId AND followup_sent_at IS NULL");
+        if (mysqli_affected_rows($conn) < 1) { continue; }
+        $name  = trim((string)$r['profile_name']);
+        $first = $name !== '' ? ' ' . preg_split('/\s+/', $name)[0] : '';
+        $prog  = ($r['ref_id'] !== null) ? (string)wa_ref_name($conn, $r['ref_type'], (int)$r['ref_id']) : '';
+        $msg   = $prog !== ''
+            ? "Hi{$first}, just checking in — are you still interested in {$prog}? I'm happy to answer any questions or help you get started whenever you're ready."
+            : "Hi{$first}, just checking in — are you still interested in our programmes? I'm happy to answer any questions or help you get started whenever you're ready.";
+        wa_send_text($conn, (string)$r['wa_id'], $msg);
+        $sent++;
+    }
+    return ['ok' => true, 'sent' => $sent];
+}
+
 /**
  * Safety net for issue #11 ("some messages get no reply at all"). Finds conversations
  * whose newest message is an inbound one that has sat UNANSWERED past $staleSecs (well

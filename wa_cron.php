@@ -31,4 +31,6 @@ $res     = wa_run_due_scheduled($wa_conn, 5);
 $replies = wa_run_due_replies($wa_conn, 20);   // send any batched replies whose window elapsed
 $staleSecs = (int)wa_setting_get($wa_conn, 'unanswered_after_secs', '600');   // default 10 min
 $sweep   = wa_run_unanswered_sweep($wa_conn, $staleSecs, 30);   // #11: never leave a customer on read
-echo json_encode(['scheduled' => $res, 'replies' => $replies, 'unanswered' => $sweep]);
+$fuHours = (int)wa_setting_get($wa_conn, 'followup_after_hours', '23');       // inside the 24h window
+$follow  = wa_run_followups($wa_conn, $fuHours, 20);            // #14: one gentle nudge on quiet chats
+echo json_encode(['scheduled' => $res, 'replies' => $replies, 'unanswered' => $sweep, 'followups' => $follow]);
