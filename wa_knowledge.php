@@ -605,6 +605,30 @@ MNEKB;
                         </div>
                         <div id="kbSaveMsg" class="small mt-1"></div>
 
+                        <?php if ($selType && $selId): ?>
+                            <?php
+                                $kbLink = wa_register_link($conn, $selType, $selId);
+                                $kbEdit = wa_kb_last_edit($conn, $selType, $selId);
+                            ?>
+                            <div class="small text-muted mt-2 border-top pt-2">
+                                <div>
+                                    <i class="bi bi-link-45deg"></i> Registration link the AI will share for
+                                    <strong><?php echo wa_e($selName); ?></strong>:
+                                    <?php if ($kbLink !== ''): ?>
+                                        <a href="<?php echo wa_e($kbLink); ?>" target="_blank" rel="noopener"><?php echo wa_e($kbLink); ?></a>
+                                        <span> — verify this is the correct page; to change it, edit the <code>register:</code> line in the text above.</span>
+                                    <?php else: ?>
+                                        <span class="text-danger">none set — add a <code>register: https://…</code> line above so the AI shares the right link.</span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($kbEdit && !empty($kbEdit['changed_at'])): ?>
+                                    <div class="mt-1"><i class="bi bi-clock-history"></i> Last edited by
+                                        <strong><?php echo wa_e($kbEdit['who'] ?: 'staff'); ?></strong>
+                                        on <?php echo wa_e($kbEdit['changed_at']); ?>.</div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+
                         <?php if ($learnings): ?>
                         <!-- Learn from the team: human replies pending review -->
                         <div class="border rounded p-3 mt-3" style="background:#fff8e1; border-color:#ffe08a !important">

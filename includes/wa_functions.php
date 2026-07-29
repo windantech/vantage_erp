@@ -293,6 +293,48 @@ function wa_apply_status($conn, $wamid, $status) {
 }
 
 /** Oldest-first message thread for a contact. */
+/** Idempotently ensure the KB-edit audit table (#16 — who changed what, when). */
+function wa_kb_audit_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_kb_audit` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `ref_type` VARCHAR(16) NOT NULL,
+        `ref_id` INT UNSIGNED NOT NULL,
+        `changed_by` INT UNSIGNED DEFAULT NULL,
+        `changed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `body_len` INT UNSIGNED DEFAULT 0,
+        PRIMARY KEY (`id`),
+        KEY `idx_kb_audit_ref` (`ref_type`, `ref_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+/** Record a knowledge-base edit (who/when/which entry). */
+function wa_kb_audit_log($conn, $refType, $refId, $userId, $bodyLen) {
+    wa_kb_audit_ensure($conn);
+    $rt  = wa_sql($conn, (string)$refType);
+    $rid = (int)$refId;
+    $uid = $userId !== null ? (int)$userId : 'NULL';
+    $len = (int)$bodyLen;
+    mysqli_query($conn, "INSERT INTO wa_kb_audit (ref_type, ref_id, changed_by, body_len) VALUES ($rt, $rid, $uid, $len)");
+}
+
+/** The most recent edit (who + when) for a KB entry, or null. */
+function wa_kb_last_edit($conn, $refType, $refId) {
+    wa_kb_audit_ensure($conn);
+    $rt  = wa_sql($conn, (string)$refType);
+    $rid = (int)$refId;
+    $res = mysqli_query($conn,
+        "SELECT a.changed_at, COALESCE(NULLIF(s.full_name,''), ru.fullname) AS who
+           FROM wa_kb_audit a
+      LEFT JOIN registered_users ru ON ru.id = a.changed_by
+      LEFT JOIN staff s             ON s.system_user_id = a.changed_by
+          WHERE a.ref_type = $rt AND a.ref_id = $rid
+          ORDER BY a.id DESC LIMIT 1");
+    return $res ? mysqli_fetch_assoc($res) : null;
+}
+
 /** Idempotently add the soft-delete marker used to retract a reply from the CRM (#19). */
 function wa_message_flags_ensure($conn) {
     static $done = false;

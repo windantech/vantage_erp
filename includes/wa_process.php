@@ -339,6 +339,7 @@ switch ($action) {
         $rid = (int)($_POST['ref_id'] ?? 0);
         if ($rid > 0) {
             wa_knowledge_set($conn, $rt, $rid, (string)($_POST['body'] ?? ''));
+            wa_kb_audit_log($conn, $rt, $rid, $staff_id, strlen((string)($_POST['body'] ?? '')));   // #16 audit trail
             wa_flash('success', 'Knowledge base saved.');
         } else {
             wa_flash('warning', 'Pick a course or event first.');
