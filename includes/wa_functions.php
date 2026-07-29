@@ -3352,6 +3352,59 @@ function wa_run_due_replies($conn, $limit = 20) {
 }
 
 /**
+ * Safety net for issue #11 ("some messages get no reply at all"). Finds conversations
+ * whose newest message is an inbound one that has sat UNANSWERED past $staleSecs (well
+ * beyond the batch window) — i.e. a silent failure (cron missed it, provider was down,
+ * a send failed) — and forces a resolution: retry the AI answer once, and if that still
+ * produces nothing, escalate + post a staff note so the waiting customer surfaces in the
+ * CRM instead of being left on read. Idempotent: skips human-owned, opted-out, and
+ * already-escalated chats, so it never spams.
+ */
+function wa_run_unanswered_sweep($conn, $staleSecs = 600, $limit = 30) {
+    $staleSecs = max(60, (int)$staleSecs);
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT c.id AS contact_id, c.wa_id, cv.id AS conv_id
+           FROM wa_contacts c
+           JOIN wa_conversations cv ON cv.contact_id = c.id
+          WHERE cv.handler <> 'human'
+            AND cv.escalated = 0
+            AND c.opted_out = 0
+            AND c.last_inbound_at IS NOT NULL
+            AND c.last_inbound_at <= (NOW() - INTERVAL $staleSecs SECOND)
+            AND NOT EXISTS (
+                SELECT 1 FROM wa_messages m
+                 WHERE m.contact_id = c.id AND m.direction = 'outbound' AND m.type <> 'note'
+                   AND m.wa_timestamp >= c.last_inbound_at)
+          ORDER BY c.last_inbound_at ASC
+          LIMIT $limit");
+    if (!$res) { return ['ok' => true, 'swept' => 0]; }
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; }
+    $swept = 0;
+    foreach ($rows as $r) {
+        $convId = (int)$r['conv_id'];
+        $cid    = (int)$r['contact_id'];
+        // Drop any stale scheduled-reply flag — we're forcing the answer now.
+        mysqli_query($conn, "UPDATE wa_conversations SET ai_reply_due_at = NULL WHERE id = $convId");
+        $lr = mysqli_query($conn,
+            "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'inbound' AND body <> ''
+              ORDER BY id DESC LIMIT 1");
+        $txt = ($lr && ($row = mysqli_fetch_assoc($lr))) ? (string)$row['body'] : '';
+        $r2 = wa_maybe_ai_answer($conn, (string)$r['wa_id'], $txt);
+        // If the retry neither replied nor escalated (e.g. skipped), force-escalate so a
+        // human picks up the waiting customer — we never leave anyone unanswered.
+        if (empty($r2['ok']) && empty($r2['escalated'])) {
+            mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+            wa_ai_post_note($conn, $cid,
+                'This customer has been waiting unanswered for a while and the AI could not reply — please follow up.');
+        }
+        $swept++;
+    }
+    return ['ok' => true, 'swept' => $swept];
+}
+
+/**
  * Decide whether to auto-answer an inbound message, and do it.
  * Returns a status array (also useful for logging). The AI keeps helping unless
  * a human is actively on the chat, replied recently, escalated, or fully took over.

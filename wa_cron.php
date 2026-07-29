@@ -29,4 +29,6 @@ ignore_user_abort(true);
 
 $res     = wa_run_due_scheduled($wa_conn, 5);
 $replies = wa_run_due_replies($wa_conn, 20);   // send any batched replies whose window elapsed
-echo json_encode(['scheduled' => $res, 'replies' => $replies]);
+$staleSecs = (int)wa_setting_get($wa_conn, 'unanswered_after_secs', '600');   // default 10 min
+$sweep   = wa_run_unanswered_sweep($wa_conn, $staleSecs, 30);   // #11: never leave a customer on read
+echo json_encode(['scheduled' => $res, 'replies' => $replies, 'unanswered' => $sweep]);
