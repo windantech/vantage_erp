@@ -680,7 +680,11 @@ function wa_ai_classify_course($conn, $text, $courses) {
     foreach ($courses as $c) { $lines[] = (int)$c['id'] . ': ' . $c['name']; }
     $system = 'You route a prospective student\'s WhatsApp message to exactly one course from the '
             . 'provided list. Match on meaning, not just shared words (e.g. "M&E" means Monitoring '
-            . 'and Evaluation). If no course clearly fits, use null. '
+            . 'and Evaluation). But match ONLY a course that is ACTUALLY in the list. Do NOT map an acronym '
+            . 'or a distinct qualification onto a merely related course — e.g. "CPA" (Certified Public '
+            . 'Accountant) is NOT "Practical Accounting", and "diploma" is not a "certificate". If the exact '
+            . 'course the person named is not clearly in the list, return null (a separate step handles our '
+            . 'academic/online courses). When in doubt, return null rather than guessing a near-match. '
             . 'Reply with ONLY JSON: {"course_id": <id or null>, "confidence": <0-1>}.';
     $user = "Courses:\n" . implode("\n", $lines) . "\n\nMessage: \"" . $text . "\"";
 
@@ -2768,10 +2772,13 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "- CLARIFY WHEN UNCLEAR: if their intent is genuinely ambiguous, ask a brief, natural clarifying question "
         . "(you may ask more than one) instead of guessing or answering the wrong thing. Phrase it warmly, the way a "
         . "human agent would ('Just so I point you to the right one — did you mean X or Y?').\n"
-        . "- DELIVERY MODE: when a programme is offered BOTH online/virtual AND in-person, establish which one they "
-        . "want BEFORE quoting dates, fees, venue or logistics (a quick 'Would you prefer the online or the "
-        . "in-person option?'). Once you know, keep every detail — schedule, price, venue, link — specific to that "
-        . "mode, and don't mix the two.\n\n"
+        . "- DELIVERY MODE — ALWAYS ASK FIRST: many programmes run in TWO modes — online/virtual AND in-person "
+        . "(on-site events). Whenever the programme they're asking about exists in both modes (check the TRAINING "
+        . "PROGRAMMES / ACADEMIC COURSES lists and the KNOWLEDGE — if it has an online/virtual offering AND "
+        . "in-person sessions, it is offered in both), you MUST ask which one they want BEFORE quoting any dates, "
+        . "fees, venue, schedule or link — a quick 'Would you like the online or the in-person option?'. Never "
+        . "assume a mode or answer for only one without checking. Once they choose, keep EVERY detail — schedule, "
+        . "price, venue, link — specific to that mode and never mix the two.\n\n"
 
         . "CONVERSATION FLOW (follow this order — do NOT skip ahead):\n"
         . "1. First greeting or vague interest ('Hi', 'I'm interested in X') → reply briefly and warmly and ask "
@@ -2782,12 +2789,17 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "3. When they are ready to register / enroll / join, DO NOT collect their personal details yourself and "
         . "DO NOT say you will 'create an account' — registration is handled by the team, not by you. "
         . ($regLink !== ''
-            ? "To register, share the registration link — but use the RIGHT one: if the prospect is asking about a "
-              . "specific event, location or session that has its OWN 'register:' link in the KNOWLEDGE or the "
-              . "sessions list, share THAT exact link. Never share a different programme's link or the general link "
-              . "for a location-specific request (e.g. an Eswatini session must get the Eswatini link, not the "
-              . "general online one). Only when no session-specific link applies, use this general link: {$regLink}. "
-              . "Also let them know they can register right here on WhatsApp and you'll walk them through it. "
+            ? "To register, use the RIGHT link — and ONLY a genuine registration/application link. If the prospect "
+              . "is asking about a specific event, location or session that has its OWN 'register:' link in the "
+              . "KNOWLEDGE or the sessions list, share THAT exact link (e.g. an Eswatini session gets the Eswatini "
+              . "link, not the general one). Never share a different programme's link. "
+              . "CRITICAL — NEVER present a portal LOGIN or 'sign in' page (any URL containing /login, or a page to "
+              . "log into an existing account) as a way to register: a login page is only for people who ALREADY "
+              . "have an account, so sending it to a new prospect is wrong and confusing. If the only URL available "
+              . "is a login page, or there is no proper course-specific registration link, DO NOT send a link at "
+              . "all — instead register them right here on WhatsApp: say you'll take their details here and walk "
+              . "them through it (and do NOT paste a generic link alongside that offer). Use {$regLink} only if it "
+              . "is genuinely this course's registration/application page and not a login page. "
             : "")
         . "Set escalate to true (INTERNAL) so a human quietly completes it — but never tell the customer a colleague "
         . "or 'the team' will do it; in your own voice, just let them know you're getting them set up and will "
@@ -3216,6 +3228,9 @@ function wa_ai_answer($conn, $conv, $inboundText) {
 
     $regLink = (in_array($conv['ref_type'], ['course', 'event', 'program'], true) && $conv['ref_id'] !== null)
         ? wa_register_link($conn, $conv['ref_type'], (int)$conv['ref_id']) : '';
+    // Never hand the AI a portal LOGIN page as a "registration" link — it's for existing
+    // accounts, not new prospects. Dropping it makes the AI offer WhatsApp signup instead.
+    if ($regLink !== '' && preg_match('~/(login|signin|sign-in|account/login)~i', $regLink)) { $regLink = ''; }
     // Only IN-PERSON events get the event-scoped, no-catalogue, venue/outline treatment.
     // Academic online courses keep the catalogue and skip the in-person outline.
     $isEvent = $refIsEvent && !$isAcademicEvent;
