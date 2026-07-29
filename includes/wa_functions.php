@@ -3281,6 +3281,76 @@ if (!defined('WA_OPEN_HOLD_SECS'))  { define('WA_OPEN_HOLD_SECS', 90); }        
 if (!defined('WA_HUMAN_HOLD_SECS')) { define('WA_HUMAN_HOLD_SECS', 15 * 60); }  // recently replied
 if (!defined('WA_CRON_TOKEN'))      { define('WA_CRON_TOKEN', '');           }  // set on server; falls back to WA_VERIFY_TOKEN
 
+// =====================================================================
+// Batched-reply window (issues #4/#5/#10/#12): instead of answering each inbound
+// message the instant it arrives, wait for a short quiet period so rapid successive
+// messages are gathered into ONE complete reply — and the webhook returns fast
+// instead of blocking on the AI call. Controlled by the 'reply_window_secs' setting:
+// 0 (default) = answer immediately, as before; >0 = batch with that window (seconds).
+// The wa_cron.php runner sends the due replies, so run the cron at least every minute.
+// =====================================================================
+
+/** Idempotently add the ai_reply_due_at column used to schedule batched replies. */
+function wa_reply_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_conversations`
+        ADD COLUMN IF NOT EXISTS `ai_reply_due_at` DATETIME NULL DEFAULT NULL");
+}
+
+/** Schedule (or push forward) the AI reply for this contact to NOW + $secs. Resetting
+ *  on every inbound is what groups a burst: we only reply once they've gone quiet for
+ *  $secs. No-op for a human-owned chat. */
+function wa_schedule_ai_reply($conn, $contactId, $secs) {
+    wa_reply_schema_ensure($conn);
+    $contactId = (int)$contactId;
+    $secs = max(1, (int)$secs);
+    wa_ensure_conversation($conn, $contactId);
+    mysqli_query($conn,
+        "UPDATE wa_conversations
+            SET ai_reply_due_at = DATE_ADD(NOW(), INTERVAL $secs SECOND)
+          WHERE contact_id = $contactId AND handler <> 'human'");
+}
+
+/** Cron entry point: send every batched reply whose quiet window has elapsed. Claims
+ *  each conversation atomically (sets ai_reply_due_at = NULL only if we win the row)
+ *  so overlapping cron runs never double-answer. Returns a small status summary. */
+function wa_run_due_replies($conn, $limit = 20) {
+    wa_reply_schema_ensure($conn);
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT cv.id AS conv_id, cv.contact_id, c.wa_id
+           FROM wa_conversations cv
+           JOIN wa_contacts c ON c.id = cv.contact_id
+          WHERE cv.ai_reply_due_at IS NOT NULL AND cv.ai_reply_due_at <= NOW()
+            AND cv.handler <> 'human'
+          ORDER BY cv.ai_reply_due_at ASC
+          LIMIT $limit");
+    if (!$res) { return ['ok' => true, 'processed' => 0]; }
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; }
+    $processed = 0;
+    foreach ($rows as $r) {
+        $convId = (int)$r['conv_id'];
+        // Atomic claim: only the worker that clears the due flag proceeds.
+        mysqli_query($conn,
+            "UPDATE wa_conversations SET ai_reply_due_at = NULL
+              WHERE id = $convId AND ai_reply_due_at IS NOT NULL AND ai_reply_due_at <= NOW()");
+        if (mysqli_affected_rows($conn) < 1) { continue; }   // another run took it
+        // The AI answerer reads the FULL recent transcript, so passing the latest
+        // inbound line is enough — every message in the burst is covered.
+        $cid = (int)$r['contact_id'];
+        $lr = mysqli_query($conn,
+            "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'inbound' AND body <> ''
+              ORDER BY id DESC LIMIT 1");
+        $txt = ($lr && ($row = mysqli_fetch_assoc($lr))) ? (string)$row['body'] : '';
+        wa_maybe_ai_answer($conn, (string)$r['wa_id'], $txt);
+        $processed++;
+    }
+    return ['ok' => true, 'processed' => $processed];
+}
+
 /**
  * Decide whether to auto-answer an inbound message, and do it.
  * Returns a status array (also useful for logging). The AI keeps helping unless
@@ -3301,6 +3371,12 @@ function wa_maybe_ai_answer($conn, $waId, $inboundText) {
     $conv['wa_id']    = $waId;
     $conv['ref_name'] = ($conv['ref_id'] !== null)
         ? wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id']) : null;
+
+    // A guided registration in progress owns the chat — never let a (possibly batched)
+    // AI reply talk over the form.
+    if (function_exists('wa_enroll_active') && wa_enroll_active($conn, (int)$contact['id'])) {
+        return ['ok' => false, 'skip' => 'enroll_active'];
+    }
 
     // The ONLY case we stay silent is an explicit Human takeover — an agent clicked
     // "Human" to own the chat, so the AI must not talk over them.

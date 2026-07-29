@@ -121,8 +121,18 @@ function wa_webhook_store($conn, $message, $names) {
         // then let the AI answer from the course knowledge base (escalates when unsure).
         if (wa_setting_get($conn, 'ai_autoreply', '0') === '1' && $body) {
             wa_route_inbound($conn, $waId, (string)$body, $adId, $names[$waId] ?? null);
-            $aiRes = wa_maybe_ai_answer($conn, $waId, (string)$body);
-            error_log('[wa-ai] ' . json_encode($aiRes));   // shows why it replied or skipped
+            // Batch window (reply_window_secs > 0): don't answer inline — schedule a reply
+            // after a short quiet period so rapid successive messages are gathered into
+            // ONE reply, and this webhook returns fast (no blocking AI call). The cron
+            // (wa_cron.php) sends it. 0 = immediate reply, exactly as before.
+            $windowSecs = (int)wa_setting_get($conn, 'reply_window_secs', '0');
+            if ($windowSecs > 0) {
+                wa_schedule_ai_reply($conn, $contactId, $windowSecs);
+                error_log('[wa-ai] batched reply scheduled in ' . $windowSecs . 's for ' . $waId);
+            } else {
+                $aiRes = wa_maybe_ai_answer($conn, $waId, (string)$body);
+                error_log('[wa-ai] ' . json_encode($aiRes));   // shows why it replied or skipped
+            }
         }
     }
 }

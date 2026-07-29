@@ -27,5 +27,6 @@ if ($expected === '' || !hash_equals($expected, $given)) {
 ignore_user_abort(true);
 @set_time_limit(300);
 
-$res = wa_run_due_scheduled($wa_conn, 5);
-echo json_encode($res);
+$res     = wa_run_due_scheduled($wa_conn, 5);
+$replies = wa_run_due_replies($wa_conn, 20);   // send any batched replies whose window elapsed
+echo json_encode(['scheduled' => $res, 'replies' => $replies]);
