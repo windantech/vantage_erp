@@ -99,8 +99,27 @@ if ($result) {
                                 <button type="button" class="btn btn-outline-danger" data-filter="unread">Unread <span class="badge bg-danger ms-1" id="cntUnread">0</span></button>
                                 <button type="button" class="btn btn-outline-warning" data-filter="escalated">Escalated <span class="badge bg-warning text-dark ms-1" id="cntEsc">0</span></button>
                             </div>
-                            <input type="text" id="waSearch" class="form-control form-control-sm" style="width:200px"
-                                   placeholder="Search...">
+                            <select id="waCourse" class="form-select form-select-sm" style="width:170px" title="Filter by course / event">
+                                <option value="">All courses</option>
+                                <?php
+                                $courseOpts = [];
+                                foreach ($conversations as $cRow) {
+                                    $rn = trim((string)($cRow['ref_name'] ?? ''));
+                                    if ($rn !== '') { $courseOpts[$rn] = true; }
+                                }
+                                ksort($courseOpts);
+                                foreach (array_keys($courseOpts) as $rn) {
+                                    echo '<option value="' . wa_e($rn) . '">' . wa_e($rn) . '</option>';
+                                }
+                                ?>
+                            </select>
+                            <select id="waHandler" class="form-select form-select-sm" style="width:120px" title="Filter by handler">
+                                <option value="">AI &amp; Human</option>
+                                <option value="ai">AI only</option>
+                                <option value="human">Human only</option>
+                            </select>
+                            <input type="text" id="waSearch" class="form-control form-control-sm" style="width:180px"
+                                   placeholder="Search name / phone…">
                             <button type="button" id="waAlertBtn" class="btn btn-sm btn-outline-secondary"
                                     title="Sound + desktop alerts for new messages and escalations"></button>
                         </div>
@@ -189,6 +208,8 @@ if ($result) {
     var currentFilter = 'all';
     var rowsEl   = document.getElementById('waRows');
     var searchEl = document.getElementById('waSearch');
+    var courseEl = document.getElementById('waCourse');
+    var handlerEl = document.getElementById('waHandler');
     var countEl  = document.getElementById('waCount');
     var unreadEl = document.getElementById('waUnread');
 
@@ -279,6 +300,8 @@ if ($result) {
 
     function render(list) {
         var q = (searchEl.value || '').toLowerCase();
+        var courseVal  = courseEl  ? courseEl.value  : '';
+        var handlerVal = handlerEl ? handlerEl.value : '';
         var counts = { all: list.length, unread: 0, escalated: 0 };
         var shown = 0, html = '';
         list.forEach(function (c) {
@@ -286,6 +309,8 @@ if ($result) {
             if (c.escalated) counts.escalated++;
             if (currentFilter === 'unread'    && !c.unread)    return;
             if (currentFilter === 'escalated' && !c.escalated) return;
+            if (courseVal  && (c.ref_name || '') !== courseVal) return;   // filter by course/event
+            if (handlerVal && c.handler !== handlerVal) return;           // filter by AI/Human
             var hay = (c.name + ' ' + c.wa_id + ' ' + c.ref_name + ' ' + c.owner + ' ' + c.last_body).toLowerCase();
             if (q && hay.indexOf(q) === -1) return;
             shown++;
@@ -323,6 +348,8 @@ if ($result) {
     }
 
     searchEl.addEventListener('input', function () { render(current); });
+    if (courseEl)  courseEl.addEventListener('change', function () { render(current); });
+    if (handlerEl) handlerEl.addEventListener('change', function () { render(current); });
     document.querySelectorAll('#waFilters button').forEach(function (b) {
         b.addEventListener('click', function () {
             document.querySelectorAll('#waFilters button').forEach(function (x) { x.classList.remove('active'); });
