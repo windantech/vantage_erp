@@ -22,7 +22,9 @@ if (!function_exists('check_course')) {
             if (mysqli_num_rows($check) > 0) {
                 return mysqli_fetch_array($check)["location"];
             } else {
-                return "none";
+                // register.program / purpose often already stores the course NAME
+                // rather than an id — show it as-is instead of a useless "none".
+                return ($course_id !== null && $course_id !== '') ? $course_id : "none";
             }
         }
     }
