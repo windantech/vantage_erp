@@ -623,7 +623,7 @@ function get_dashboard_stats($conn) {
     $stats = [
         'total_enquiries' => 0, 
         'new_today' => 0, 
-        'by_type' => ['virtual' => 0, 'international' => 0, 'undecided' => 0], 
+        'by_type' => ['virtual' => 0, 'international' => 0, 'academic' => 0, 'undecided' => 0],
         'paid_count' => 0, 
         'unpaid_count' => 0, 
         'followups_today' => 0, 
@@ -669,12 +669,18 @@ function get_dashboard_stats($conn) {
         $register_count = ($result && $row = mysqli_fetch_assoc($result)) ? intval($row['cnt']) : 0;
     }
     
-    // Count from ticket_congress table (International) - only if staff has event access
-    $ticket_count = 0;
+    // Count from ticket_congress (International + Academics) - only if staff has event access.
+    // Academics are ticket_congress rows whose backing Event is marked location='ACADEMIC#…';
+    // International is everything else. Split so the two dashboard cards don't overlap.
+    $ticket_intl = 0;
+    $ticket_acad = 0;
     if ($has_event_access) {
-        $result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM ticket_congress t WHERE 1=1 $event_filter");
-        $ticket_count = ($result && $row = mysqli_fetch_assoc($result)) ? intval($row['cnt']) : 0;
+        $result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM ticket_congress t LEFT JOIN `Event` ev ON t.event_id = ev.event_id WHERE (ev.location IS NULL OR ev.location NOT LIKE 'ACADEMIC#%') $event_filter");
+        $ticket_intl = ($result && $row = mysqli_fetch_assoc($result)) ? intval($row['cnt']) : 0;
+        $result = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM ticket_congress t JOIN `Event` ev ON t.event_id = ev.event_id WHERE ev.location LIKE 'ACADEMIC#%' $event_filter");
+        $ticket_acad = ($result && $row = mysqli_fetch_assoc($result)) ? intval($row['cnt']) : 0;
     }
+    $ticket_count = $ticket_intl + $ticket_acad;
     
     // Count from enquiries table (undecided) - show to all staff who have any access
     $enquiry_count = 0;
@@ -688,7 +694,8 @@ function get_dashboard_stats($conn) {
     
     $stats['total_enquiries'] = $enquiry_count + $register_count + $ticket_count;
     $stats['by_type']['virtual'] = $register_count;
-    $stats['by_type']['international'] = $ticket_count;
+    $stats['by_type']['international'] = $ticket_intl;
+    $stats['by_type']['academic'] = $ticket_acad;
     $stats['by_type']['undecided'] = $enquiry_count;
     
     // Payment stats
@@ -924,7 +931,7 @@ function get_all_enquiries($conn, $filters = [], $page = 1, $per_page = 250) {
     // Skip entirely if a specific COURSE filter is active (courses aren't international).
     // ==========================================
     if ($has_event_access
-        && (empty($filters['interest_type']) || $filters['interest_type'] == 'international')
+        && (empty($filters['interest_type']) || in_array($filters['interest_type'], ['international', 'academic'], true))
         && $filter_program === 0
         && $filter_intake === '') {
         $q = "SELECT 
@@ -937,9 +944,9 @@ function get_all_enquiries($conn, $filters = [], $page = 1, $per_page = 250) {
             t.email, 
             t.phone_number AS phone, 
             t.country, 
-            t.organization, 
-            'international' AS interest_type, 
-            'medium' AS priority, 
+            t.organization,
+            CASE WHEN ev.location LIKE 'ACADEMIC#%' THEN 'academic' ELSE 'international' END AS interest_type,
+            'medium' AS priority,
             CASE t.status WHEN 2 THEN 'qualified' ELSE COALESCE(t.lead_status, 'new') END AS status, 
             t.assigned_to, 
             NULL AS program_interest, 
@@ -950,10 +957,18 @@ function get_all_enquiries($conn, $filters = [], $page = 1, $per_page = 250) {
             ev.event_title AS event_name, 
             t.amount AS amount_paid, 
             CASE WHEN t.status = 2 THEN 1 ELSE 0 END AS is_paid 
-        FROM ticket_congress t 
-        LEFT JOIN Event ev ON t.event_id = ev.event_id 
+        FROM ticket_congress t
+        LEFT JOIN Event ev ON t.event_id = ev.event_id
         WHERE 1=1 $event_filter";
-        
+
+        // Academic vs International split — both live in ticket_congress; academics
+        // are tickets whose backing Event.location is marked ACADEMIC#…
+        if (($filters['interest_type'] ?? '') === 'academic') {
+            $q .= " AND ev.location LIKE 'ACADEMIC#%'";
+        } elseif (($filters['interest_type'] ?? '') === 'international') {
+            $q .= " AND (ev.location IS NULL OR ev.location NOT LIKE 'ACADEMIC#%')";
+        }
+
         // Specific event filter (stacks on top of access scope)
         if ($filter_event > 0) {
             $q .= " AND t.event_id = $filter_event";

@@ -193,9 +193,9 @@ $overdue_followups = get_overdue_followups($conn);
             </div>
 
             <!-- Statistics Cards -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3">
-                    <div class="card stat-card border-0 shadow-sm bg-primary text-white">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-5 g-3 mb-4">
+                <div class="col">
+                    <div class="card stat-card border-0 shadow-sm bg-primary text-white h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between">
                                 <div>
@@ -208,8 +208,9 @@ $overdue_followups = get_overdue_followups($conn);
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card stat-card border-0 shadow-sm bg-success text-white">
+                <div class="col">
+                    <a href="?interest_type=virtual&amp;limit=500" class="text-decoration-none d-block">
+                    <div class="card stat-card border-0 shadow-sm bg-success text-white h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between">
                                 <div>
@@ -221,9 +222,11 @@ $overdue_followups = get_overdue_followups($conn);
                             </div>
                         </div>
                     </div>
+                    </a>
                 </div>
-                <div class="col-md-3">
-                    <div class="card stat-card border-0 shadow-sm bg-info text-white">
+                <div class="col">
+                    <a href="?interest_type=international&amp;limit=500" class="text-decoration-none d-block">
+                    <div class="card stat-card border-0 shadow-sm bg-info text-white h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between">
                                 <div>
@@ -235,9 +238,26 @@ $overdue_followups = get_overdue_followups($conn);
                             </div>
                         </div>
                     </div>
+                    </a>
                 </div>
-                <div class="col-md-3">
-                    <div class="card stat-card border-0 shadow-sm bg-warning text-dark">
+                <div class="col">
+                    <a href="?interest_type=academic&amp;limit=500" class="text-decoration-none d-block">
+                    <div class="card stat-card border-0 shadow-sm text-white h-100" style="background:#6d1f2b;">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <p class="mb-1 opacity-75">Academics</p>
+                                    <h3 class="stat-number mb-0"><?php echo number_format($stats['by_type']['academic'] ?? 0); ?></h3>
+                                    <small class="opacity-75">Certificate &amp; diploma</small>
+                                </div>
+                                <div class="stat-icon"><i class="bi bi-mortarboard"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                    </a>
+                </div>
+                <div class="col">
+                    <div class="card stat-card border-0 shadow-sm bg-warning text-dark h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between">
                                 <div>
@@ -274,6 +294,7 @@ $overdue_followups = get_overdue_followups($conn);
                                 <option value="">All Types</option>
                                 <option value="virtual" <?php echo $filters['interest_type'] == 'virtual' ? 'selected' : ''; ?>>Virtual</option>
                                 <option value="international" <?php echo $filters['interest_type'] == 'international' ? 'selected' : ''; ?>>International</option>
+                                <option value="academic" <?php echo $filters['interest_type'] == 'academic' ? 'selected' : ''; ?>>Academic</option>
                             </select>
                         </div>
                         <div class="col-md-2">
