@@ -75,6 +75,42 @@ switch ($action) {
     }
 
     // ---- Thread: AI / Human handler toggle ----
+    // ---- Thread: retract (soft-delete) a reply from the CRM, kept for review (#19) ----
+    case 'delete_message': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $msg_id  = (int)($_POST['msg_id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not assigned to you.');
+            wa_redirect('../wa_inbox.php');
+        }
+        if ($msg_id > 0 && $conv) {
+            wa_message_flags_ensure($conn);
+            $cid = (int)$conv['contact_id'];
+            // Only our OWN (outbound) messages, only within this chat.
+            mysqli_query($conn, "UPDATE wa_messages SET deleted_at = NOW()
+                WHERE id = $msg_id AND contact_id = $cid AND direction = 'outbound' AND type <> 'note'");
+            wa_flash('success', 'Reply retracted from the CRM (kept internally for review).');
+        }
+        wa_redirect('../wa_thread.php?id=' . $conv_id);
+    }
+    case 'restore_message': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $msg_id  = (int)($_POST['msg_id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not assigned to you.');
+            wa_redirect('../wa_inbox.php');
+        }
+        if ($msg_id > 0 && $conv) {
+            wa_message_flags_ensure($conn);
+            $cid = (int)$conv['contact_id'];
+            mysqli_query($conn, "UPDATE wa_messages SET deleted_at = NULL WHERE id = $msg_id AND contact_id = $cid");
+            wa_flash('success', 'Reply restored.');
+        }
+        wa_redirect('../wa_thread.php?id=' . $conv_id);
+    }
+
     case 'handler': {
         $conv_id = (int)($_POST['id'] ?? 0);
         $conv = wa_load_conversation($conn, $conv_id);

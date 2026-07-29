@@ -169,33 +169,57 @@ if ($is_supervisor) {
                             <?php continue; ?>
                         <?php endif; ?>
                         <?php
-                        $out    = $m['direction'] === 'outbound';
-                        $failed = $out && $m['status'] === 'failed';
-                        // Failed sends get a red-outlined light bubble so they stand out
-                        // from delivered (green) ones and carry a Resend button.
-                        $bubbleClass = !$out ? 'bg-white border'
-                            : ($failed ? 'bg-white border border-danger text-dark' : 'bg-success text-white');
-                        $metaClass = (!$out || $failed) ? 'text-muted' : 'text-white-50';
+                        $out     = $m['direction'] === 'outbound';
+                        $failed  = $out && $m['status'] === 'failed';
+                        $deleted = !empty($m['deleted_at'] ?? null);
+                        // Failed sends get a red-outlined light bubble; a retracted reply (#19)
+                        // becomes a muted placeholder that keeps the row for review.
+                        $bubbleClass = $deleted ? 'bg-light border text-muted fst-italic'
+                            : (!$out ? 'bg-white border'
+                                : ($failed ? 'bg-white border border-danger text-dark' : 'bg-success text-white'));
+                        $metaClass = ($deleted || !$out || $failed) ? 'text-muted' : 'text-white-50';
                         ?>
                         <div class="d-flex mb-2 <?php echo $out ? 'justify-content-end' : 'justify-content-start'; ?>">
                             <div class="p-2 px-3 rounded-3 <?php echo $bubbleClass; ?>" style="max-width:72%" data-msg-bubble="<?php echo (int)$m['id']; ?>">
-                                <?php if (in_array($m['type'], ['text','template'], true)): ?>
-                                    <div style="white-space:pre-wrap; word-wrap:break-word"><?php echo nl2br(wa_e($m['body'])); ?></div>
+                                <?php if ($deleted): ?>
+                                    <div style="font-size:13px"><i class="bi bi-slash-circle"></i> Reply retracted <span class="text-muted">(kept for review)</span></div>
+                                    <div class="small text-muted waMeta" style="font-size:11px">
+                                        <?php echo wa_e($m['wa_timestamp'] ?: $m['created_at']); ?>
+                                        <form method="post" action="includes/wa_process.php" class="d-inline">
+                                            <input type="hidden" name="action" value="restore_message">
+                                            <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                                            <input type="hidden" name="msg_id" value="<?php echo (int)$m['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-link py-0 px-1 ms-1" style="font-size:11px">Restore</button>
+                                        </form>
+                                    </div>
                                 <?php else: ?>
-                                    <?php echo wa_media_html($m['type'], (int)$m['id'], $m['media_mime'] ?? '', $m['body'] ?? ''); ?>
-                                <?php endif; ?>
-                                <div class="small <?php echo $metaClass; ?> waMeta" style="font-size:11px">
-                                    <?php echo wa_e($m['wa_timestamp'] ?: $m['created_at']); ?>
-                                    <?php if ($failed): ?>
-                                        · <span class="text-danger fw-semibold">not sent</span>
-                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 ms-1 waResend"
-                                                data-msg="<?php echo (int)$m['id']; ?>" style="font-size:11px; line-height:1.4">
-                                            <i class="bi bi-arrow-clockwise"></i> Resend
-                                        </button>
-                                    <?php elseif ($m['status']): ?>
-                                        · <?php echo wa_e($m['status']); ?>
+                                    <?php if (in_array($m['type'], ['text','template'], true)): ?>
+                                        <div style="white-space:pre-wrap; word-wrap:break-word"><?php echo nl2br(wa_e($m['body'])); ?></div>
+                                    <?php else: ?>
+                                        <?php echo wa_media_html($m['type'], (int)$m['id'], $m['media_mime'] ?? '', $m['body'] ?? ''); ?>
                                     <?php endif; ?>
-                                </div>
+                                    <div class="small <?php echo $metaClass; ?> waMeta" style="font-size:11px">
+                                        <?php echo wa_e($m['wa_timestamp'] ?: $m['created_at']); ?>
+                                        <?php if ($failed): ?>
+                                            · <span class="text-danger fw-semibold">not sent</span>
+                                            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 ms-1 waResend"
+                                                    data-msg="<?php echo (int)$m['id']; ?>" style="font-size:11px; line-height:1.4">
+                                                <i class="bi bi-arrow-clockwise"></i> Resend
+                                            </button>
+                                        <?php elseif ($m['status']): ?>
+                                            · <?php echo wa_e($m['status']); ?>
+                                        <?php endif; ?>
+                                        <?php if ($out): ?>
+                                            <form method="post" action="includes/wa_process.php" class="d-inline"
+                                                  onsubmit="return confirm('Retract this reply from the CRM? It stays saved internally for review.');">
+                                                <input type="hidden" name="action" value="delete_message">
+                                                <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                                                <input type="hidden" name="msg_id" value="<?php echo (int)$m['id']; ?>">
+                                                <button type="submit" class="btn btn-sm btn-link <?php echo $failed ? 'text-danger' : 'text-white-50'; ?> py-0 px-1 ms-1" style="font-size:11px">Retract</button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endforeach; ?>

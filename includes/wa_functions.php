@@ -293,7 +293,17 @@ function wa_apply_status($conn, $wamid, $status) {
 }
 
 /** Oldest-first message thread for a contact. */
+/** Idempotently add the soft-delete marker used to retract a reply from the CRM (#19). */
+function wa_message_flags_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_messages`
+        ADD COLUMN IF NOT EXISTS `deleted_at` DATETIME NULL DEFAULT NULL");
+}
+
 function wa_thread($conn, $contactId, $limit = 100) {
+    wa_message_flags_ensure($conn);
     $contactId = (int)$contactId;
     $limit = (int)$limit;
     $res = mysqli_query($conn,
@@ -2635,11 +2645,14 @@ function wa_kb_generate($conn, $refType, $refId, $urls = []) {
 
 /** Recent message turns for a contact, oldest-first, as [role => user|assistant, content]. */
 function wa_ai_history($conn, $contactId, $limit = 12) {
+    wa_message_flags_ensure($conn);
     $contactId = (int)$contactId;
     $limit = (int)$limit;
+    // Retracted replies (#19) leave the AI's context, so it never treats a reply a
+    // human deleted as its own prior turn.
     $res = mysqli_query($conn,
         "SELECT direction, type, body FROM wa_messages
-          WHERE contact_id = $contactId AND type <> 'note'
+          WHERE contact_id = $contactId AND type <> 'note' AND deleted_at IS NULL
           ORDER BY id DESC LIMIT $limit");
     $rows = [];
     if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
