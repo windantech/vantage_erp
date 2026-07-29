@@ -1279,16 +1279,18 @@ $sql = "SELECT `id`, `entry_id`, `email`, `firstname`, `lastname`, `phone_number
         
                     // $sql = "SELECT `id`, `entry_id`, `email`, `firstname`, `lastname`, `phone_number`, `program`, `country`, `datee`,source FROM `register` WHERE source >3  ORDER BY datee DESC";
 $result = $conn->query($sql);
+if (!function_exists('check_source')) {
 function check_source($id){
     if($id == 4){
         return "Whatsapp";
     }
     else  if($id == 5){
         return "Facebook";
-        
+
     }else{
         return "Any other source";
     }
+}
 }
                     ?>
                     <div class="table-responsive overflow">

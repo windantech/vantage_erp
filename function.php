@@ -1,4 +1,35 @@
 <?php
+
+/* ============================================================
+ * Shared ERP lookups — previously supplied by an external function.php that
+ * pages reached via "../../function.php". Re-homed here so every page that
+ * includes function.php keeps these helpers. Guarded with function_exists so a
+ * page-local copy can never double-declare.
+ * ============================================================ */
+if (!function_exists('check_course')) {
+    function check_course($conn, $id) {
+        $id = mysqli_real_escape_string($conn, (string)$id);
+        $res = mysqli_query($conn, "SELECT course FROM course WHERE course_id = '$id' LIMIT 1");
+        if ($res && mysqli_num_rows($res) > 0) { return mysqli_fetch_assoc($res)['course']; }
+        return $id;
+    }
+}
+if (!function_exists('check_event')) {
+    function check_event($conn, $event_id, $variable) {
+        $event_id = (int)$event_id;
+        $res = mysqli_query($conn, "SELECT * FROM `Event` WHERE event_id = $event_id LIMIT 1");
+        $row = $res ? mysqli_fetch_assoc($res) : null;
+        return $row[$variable] ?? '';
+    }
+}
+if (!function_exists('check_source')) {
+    function check_source($id) {
+        if ($id == 4) { return "Whatsapp"; }
+        if ($id == 5) { return "Facebook"; }
+        return "Any other source";
+    }
+}
+
 /**
  * Commission Functions (optimized)
  * Calculation logic for Virtual (Intakes) and International (Events)

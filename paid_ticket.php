@@ -1,9 +1,11 @@
 <?php
 require_once 'header.php';
+  if (!function_exists('check_event')) {
   function check_event($conn,$event_id,$variable){
      $check = mysqli_query($conn,"SELECT * FROM `Event` WHERE `event_id`=$event_id") or die(mysqli_error($conn));
      return mysqli_fetch_array($check)[$variable];
  }
+  }
 ?>
 
 <section id="content-wrapper" class="d-flex flex-column">
