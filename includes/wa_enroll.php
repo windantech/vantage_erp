@@ -222,6 +222,11 @@ function wa_enroll_handle($conn, $contactId, $waId, $text) {
     // Confirmation step.
     if ($sess['status'] === 'confirm') {
         if (preg_match('/^\s*(yes|y|confirm|correct|yeah|yep|sawa|ndio|ndiyo|proceed|go ahead)\s*$/i', $text)) {
+            // Remember the customer's email on the contact so a completed payment
+            // (dpo_payment, matched by email) can later be confirmed back to them (#15).
+            if (function_exists('wa_contact_set_email') && !empty($data['email'])) {
+                wa_contact_set_email($conn, (int)$sess['contact_id'], (string)$data['email']);
+            }
             wa_enroll_finalize($conn, $sess, $data);
             return true;
         }

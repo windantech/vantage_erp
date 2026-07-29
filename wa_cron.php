@@ -33,4 +33,11 @@ $staleSecs = (int)wa_setting_get($wa_conn, 'unanswered_after_secs', '600');   //
 $sweep   = wa_run_unanswered_sweep($wa_conn, $staleSecs, 30);   // #11: never leave a customer on read
 $fuHours = (int)wa_setting_get($wa_conn, 'followup_after_hours', '23');       // inside the 24h window
 $follow  = wa_run_followups($wa_conn, $fuHours, 20);            // #14: one gentle nudge on quiet chats
-echo json_encode(['scheduled' => $res, 'replies' => $replies, 'unanswered' => $sweep, 'followups' => $follow]);
+$pay     = wa_run_payment_confirms($wa_conn, 20);              // #15: confirm completed payments
+echo json_encode([
+    'scheduled'  => $res,
+    'replies'    => $replies,
+    'unanswered' => $sweep,
+    'followups'  => $follow,
+    'payments'   => $pay,
+]);

@@ -3411,6 +3411,93 @@ function wa_run_followups($conn, $afterHours = 23, $limit = 20) {
     return ['ok' => true, 'sent' => $sent];
 }
 
+/** Idempotently add + index an email column on wa_contacts (used to match payments). */
+function wa_contact_email_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_contacts` ADD COLUMN IF NOT EXISTS `email` VARCHAR(190) NULL DEFAULT NULL");
+    @mysqli_query($conn, "ALTER TABLE `wa_contacts` ADD INDEX IF NOT EXISTS `idx_wa_contacts_email` (`email`)");
+}
+
+/** Persist the customer's email on their contact (captured during registration). */
+function wa_contact_set_email($conn, $contactId, $email) {
+    wa_contact_email_ensure($conn);
+    $contactId = (int)$contactId;
+    $email = trim((string)$email);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) { return; }
+    mysqli_query($conn, "UPDATE wa_contacts SET email = " . wa_sql($conn, $email) . " WHERE id = $contactId");
+}
+
+/** Idempotently ensure the payment-confirmation dedup table + the contact email column. */
+function wa_payment_confirm_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    wa_contact_email_ensure($conn);
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_payment_confirms` (
+        `payment_ref` VARCHAR(191) NOT NULL,
+        `contact_id`  INT UNSIGNED NOT NULL,
+        `sent_at`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`payment_ref`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+/**
+ * Issue #15: confirm a completed payment back to the WhatsApp customer. Matches a
+ * dpo_payment (status=2) to a contact by the email they gave during registration and
+ * sends ONE acknowledgement per payment (deduped in wa_payment_confirms). Gated by the
+ * 'payment_confirm_enabled' setting (off by default). Payments usually land AFTER
+ * WhatsApp's 24h free-form window, so: within window -> plain message; outside window ->
+ * an approved template if 'payment_confirm_template' is set, otherwise a staff note so
+ * the confirmation is not missed. Deliberately does NOT over-claim "registration
+ * complete" (a payment may be a deposit) — it acknowledges receipt and that processing
+ * is under way.
+ */
+function wa_run_payment_confirms($conn, $limit = 20) {
+    if (wa_setting_get($conn, 'payment_confirm_enabled', '0') !== '1') { return ['ok' => true, 'skipped' => 'disabled']; }
+    wa_payment_confirm_schema_ensure($conn);
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT c.id AS contact_id, c.wa_id, c.profile_name, c.last_inbound_at,
+                dp.token AS ref, dp.TransactionAmount AS amount
+           FROM wa_contacts c
+           JOIN dpo_payment dp ON dp.email = c.email AND dp.status = 2
+          WHERE c.email IS NOT NULL AND c.email <> '' AND c.opted_out = 0 AND dp.token <> ''
+            AND NOT EXISTS (SELECT 1 FROM wa_payment_confirms w WHERE w.payment_ref = dp.token)
+          ORDER BY c.id ASC
+          LIMIT $limit");
+    if (!$res) { return ['ok' => true, 'sent' => 0]; }
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; }
+    $sent = 0;
+    $tmpl = (string)wa_setting_get($conn, 'payment_confirm_template', '');
+    foreach ($rows as $r) {
+        $ref = (string)$r['ref'];
+        $cid = (int)$r['contact_id'];
+        // Claim via the unique PK so we never confirm the same payment twice.
+        mysqli_query($conn, "INSERT IGNORE INTO wa_payment_confirms (payment_ref, contact_id) VALUES ("
+            . wa_sql($conn, $ref) . ", $cid)");
+        if (mysqli_affected_rows($conn) < 1) { continue; }
+        $name  = trim((string)$r['profile_name']);
+        $first = $name !== '' ? ' ' . preg_split('/\s+/', $name)[0] : '';
+        $amt   = trim((string)$r['amount']);
+        if (wa_within_window($r['last_inbound_at'] ?? null)) {
+            $msg = "Hi{$first}, we've received your payment" . ($amt !== '' ? " of {$amt}" : '')
+                 . " — thank you! We're processing your registration and your access details will follow shortly.";
+            wa_send_text($conn, (string)$r['wa_id'], $msg);
+            $sent++;
+        } elseif ($tmpl !== '') {
+            wa_send_template($conn, (string)$r['wa_id'], $tmpl, 'en', []);
+            $sent++;
+        } else {
+            wa_ai_post_note($conn, $cid,
+                "Payment received (ref {$ref}) but the chat is outside WhatsApp's 24h window — please send this customer their confirmation / access details.");
+        }
+    }
+    return ['ok' => true, 'sent' => $sent];
+}
+
 /**
  * Safety net for issue #11 ("some messages get no reply at all"). Finds conversations
  * whose newest message is an inbound one that has sat UNANSWERED past $staleSecs (well
