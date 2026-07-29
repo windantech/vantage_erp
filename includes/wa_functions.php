@@ -1559,7 +1559,7 @@ function wa_ref_name($conn, $refType, $refId) {
 /** Active events (status = 1). */
 function wa_active_events($conn) {
     $res = mysqli_query($conn,
-        'SELECT event_id AS id, event_title AS name FROM `Event` WHERE status = 1 ORDER BY start_on DESC');
+        'SELECT event_id AS id, event_title AS name, location FROM `Event` WHERE status = 1 ORDER BY start_on DESC');
     $rows = [];
     if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
     return $rows;
@@ -3229,7 +3229,13 @@ function wa_ai_answer($conn, $conv, $inboundText) {
             mysqli_query($conn, "UPDATE wa_conversations SET last_message_at = NOW() WHERE id = $convId");
         }
     } else {
+        // The reply couldn't be delivered — never leave it silently dropped: flag the
+        // chat as escalated and note it so a human picks the customer up.
         error_log('[wa-ai] send failed: ' . ($send['error'] ?? 'unknown'));
+        $convId = (int)$conv['id'];
+        mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+        wa_ai_post_note($conn, (int)$conv['contact_id'],
+            'Auto-reply could not be delivered (' . ($send['error'] ?? 'send failed') . '). Please follow up with this customer.');
     }
     return ['ok' => !empty($send['ok']), 'escalated' => $escalate, 'reply' => $reply, 'send' => $send];
 }
@@ -3257,17 +3263,26 @@ function wa_maybe_ai_answer($conn, $waId, $inboundText) {
         if (!$conv) { return ['ok' => false, 'skip' => 'no_conversation']; }
     }
 
-    // The ONLY hard mute is the explicit Human toggle — an agent who wants full control
-    // clicks "Human" on the chat. In every other state the AI keeps answering what it
-    // can from the knowledge base, even alongside a human and even on an escalated chat
-    // (wa_ai_answer sends a "connecting you to a human" line when it can't answer).
-    if ($conv['handler'] === 'human') { return ['ok' => false, 'skip' => 'handler_human']; }
-    if (!wa_provider_ready(wa_active_provider($conn))) { return ['ok' => false, 'skip' => 'no_provider']; }
-    if (!wa_within_window($contact['last_inbound_at'] ?? null)) { return ['ok' => false, 'skip' => 'outside_window']; }
-
     $conv['wa_id']    = $waId;
     $conv['ref_name'] = ($conv['ref_id'] !== null)
         ? wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id']) : null;
+
+    // The ONLY case we stay silent is an explicit Human takeover — an agent clicked
+    // "Human" to own the chat, so the AI must not talk over them.
+    if ($conv['handler'] === 'human') { return ['ok' => false, 'skip' => 'handler_human']; }
+
+    // From here the customer ALWAYS gets a response — we never leave them on read.
+    // If the AI provider isn't configured/available, don't go silent: acknowledge
+    // and escalate to a human instead.
+    if (!wa_provider_ready(wa_active_provider($conn))) {
+        return wa_ai_soft_handoff($conn, $conv, 'no_provider');
+    }
+    // Outside WhatsApp's 24-hour window the platform blocks a free-form reply; still
+    // acknowledge + escalate so a human follows up (the send no-ops if truly outside).
+    if (!wa_within_window($contact['last_inbound_at'] ?? null)) {
+        return wa_ai_soft_handoff($conn, $conv, 'outside_window');
+    }
+
     return wa_ai_answer($conn, $conv, $inboundText);
 }
 

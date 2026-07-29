@@ -10,7 +10,7 @@ if(isset($_GET['count'])){
 
 
 
-   include '../../function.php';
+   include 'function.php';
     if (!function_exists('sum_paid')) {
    function sum_paid($conn,$email,$course_id){
        $check = mysqli_query($conn,"SELECT SUM(TransactionAmount) AS amt FROM dpo_payment  WHERE email='$email' AND purpose='$course_id' ") or die(mysqli_error($conn));

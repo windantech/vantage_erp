@@ -15,7 +15,7 @@ if($_SESSION['login_id']==6){
     <div id="content">
         <?php
         require_once 'top_nav.php';
-          include '../../function.php';
+          include 'function.php';
         ?>
         <div class="container-fluid mt-5 pt-5">
             <div class="mb-3">

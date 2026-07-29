@@ -162,14 +162,45 @@ switch ($action) {
     }
 
     // ---- Assign a rep to a course/event (fallback owner; supervisor only) ----
+    // Also mirrored into the CEO "Performance" assignment fields so the WhatsApp
+    // Assignments page and CEO Dashboard → Performance stay in sync:
+    //   - event  -> Event.assigned_to            (matches ceo_dashboard/event_assignments)
+    //   - course -> intake.assigned_to for EVERY intake of the course, plus the
+    //               course.assigned_to rollup    (matches ceo_dashboard/intake_assignments)
+    // Assigning sets the rep id; clearing (uid<=0) empties the field.
     case 'assign_owner': {
         if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_assignments.php'); }
         $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
-        $uid = (int)($_POST['user_id'] ?? 0);
+
+        // Multiple assignees + one PRIMARY (the rep who actually routes/handles chats).
+        $assignees = array_values(array_unique(array_filter(
+            array_map('intval', (array)($_POST['user_ids'] ?? [])),
+            function ($v) { return $v > 0; }
+        )));
+        $primary = (int)($_POST['primary_id'] ?? 0);
+        if ($primary > 0 && !in_array($primary, $assignees, true)) { $assignees[] = $primary; }
+        if ($primary <= 0 && $assignees) { $primary = $assignees[0]; }   // default primary = first
+
         if ($rid > 0) {
-            wa_owner_override_set($conn, $rt, $rid, $uid);
-            wa_flash('success', $uid > 0 ? 'Rep assigned.' : 'Assignment cleared.');
+            // Full assignee list lives in the ERP comma-field (CEO Performance + FIND_IN_SET read it).
+            $list = $assignees ? "'" . implode(',', $assignees) . "'" : "''";
+            // Primary drives chat routing via the single wa_course_owner override.
+            wa_owner_override_set($conn, $rt, $rid, $primary);           // clears when $primary <= 0
+
+            if ($rt === 'event') {
+                // International + Academics are both Event rows.
+                mysqli_query($conn, "UPDATE `Event` SET assigned_to = $list WHERE event_id = $rid");
+            } else {
+                // Virtual: course rollup = full list; each intake takes the PRIMARY (single per intake).
+                $pval = $primary > 0 ? "'" . $primary . "'" : "''";
+                mysqli_query($conn, "UPDATE course SET assigned_to = $list WHERE course_id = $rid");
+                mysqli_query($conn, "UPDATE intake SET assigned_to = $pval WHERE course_id = $rid");
+            }
+            $n = count($assignees);
+            wa_flash('success', $n > 0
+                ? ($n . ' rep' . ($n > 1 ? 's' : '') . ' assigned (synced to Performance).')
+                : 'Assignment cleared (synced to Performance).');
         }
         wa_redirect('../wa_assignments.php');
     }
@@ -212,7 +243,7 @@ switch ($action) {
 
     // Canned quick replies (supervisor manages; any agent uses in the thread).
     case 'save_quick': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_canned.php'); }
+        // Quick Replies module — full parity for WhatsApp staff (role 44); access gated at top of file.
         // scope is "0" (global), "course:<id>" or "event:<id>".
         $refType = ''; $refId = 0;
         $scope = (string)($_POST['scope'] ?? '0');
@@ -222,7 +253,7 @@ switch ($action) {
         wa_redirect('../wa_canned.php');
     }
     case 'delete_quick': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_canned.php'); }
+        // Quick Replies module — full parity for WhatsApp staff (role 44).
         wa_quick_reply_delete($conn, (int)($_POST['id'] ?? 0));
         wa_flash('success', 'Quick reply deleted.');
         wa_redirect('../wa_canned.php');
@@ -238,7 +269,7 @@ switch ($action) {
 
     // Manually opt a contact in/out of broadcasts (supervisor override).
     case 'contact_opt': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_contacts.php'); }
+        // Contacts module — full parity for WhatsApp staff (role 44).
         $cid = (int)($_POST['contact_id'] ?? 0);
         $out = ($_POST['opt'] ?? '') === 'out';
         wa_contact_set_optout($conn, $cid, $out);
@@ -249,7 +280,7 @@ switch ($action) {
 
     // ---- Knowledge base: save per-course/event text (supervisor only) ----
     case 'save_program': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $pid  = (int)($_POST['program_id'] ?? 0);
         $name = trim((string)($_POST['name'] ?? ''));
         if ($name === '') { wa_flash('warning', 'Programme name is required.'); wa_redirect('../wa_knowledge.php'); }
@@ -260,14 +291,14 @@ switch ($action) {
     }
 
     case 'delete_program': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         wa_program_delete($conn, (int)($_POST['program_id'] ?? 0));
         wa_flash('success', 'Training programme deleted.');
         wa_redirect('../wa_knowledge.php');
     }
 
     case 'save_knowledge': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $rt  = in_array($_POST['ref_type'] ?? '', ['event', 'program'], true) ? $_POST['ref_type'] : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
         if ($rid > 0) {
@@ -281,7 +312,7 @@ switch ($action) {
 
     case 'learn_approve':
     case 'learn_dismiss': {
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_knowledge.php'); }
+        // Knowledge Base module — full parity for WhatsApp staff (role 44).
         $lid = (int)($_POST['learning_id'] ?? 0);
         $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
         $rid = (int)($_POST['ref_id'] ?? 0);
@@ -295,6 +326,46 @@ switch ($action) {
             }
         }
         wa_redirect('../wa_knowledge.php?ref=' . $rt . ':' . $rid);
+    }
+
+    // ---- Inbox quick actions (Actions dropdown on each conversation row) ----
+    // These mirror the thread actions but redirect back to the inbox.
+    case 'inbox_assign_me':
+    case 'inbox_handler':
+    case 'inbox_escalate':
+    case 'inbox_resolve':
+    case 'inbox_mark_read': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not assigned to you.');
+            wa_redirect('../wa_inbox.php');
+        }
+        switch ($action) {
+            case 'inbox_assign_me':
+                mysqli_query($conn, "UPDATE wa_conversations SET assigned_user_id = " . (int)$staff_id . " WHERE id = $conv_id");
+                wa_flash('success', 'Conversation assigned to you.');
+                break;
+            case 'inbox_handler':
+                $h = ($_POST['handler'] ?? '') === 'human' ? 'human' : 'ai';
+                $extra = $h === 'human' ? ', last_human_at = NOW()' : '';
+                mysqli_query($conn, "UPDATE wa_conversations SET handler = '$h'$extra WHERE id = $conv_id");
+                wa_flash('success', 'Handler set to ' . $h . '.');
+                break;
+            case 'inbox_escalate':
+                mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Conversation escalated.');
+                break;
+            case 'inbox_resolve':
+                mysqli_query($conn, "UPDATE wa_conversations SET escalated = 0, last_human_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Escalation resolved.');
+                break;
+            case 'inbox_mark_read':
+                mysqli_query($conn, "UPDATE wa_conversations SET last_read_at = NOW() WHERE id = $conv_id");
+                wa_flash('success', 'Marked as read.');
+                break;
+        }
+        wa_redirect('../wa_inbox.php');
     }
 
     default:

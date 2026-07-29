@@ -117,6 +117,37 @@ if (isset($_SESSION['msg'])) {
 <?php }
 } ?>
 
+<!-- Sidebar collapse fallback — makes the left-nav menus expand/collapse even when the
+     Bootstrap/jQuery stack is broken (site loads BS4 + BS5 + jQuery x3). Self-contained,
+     no dependencies. Capture phase + stopImmediatePropagation so it fully owns these clicks. -->
+<script>
+(function () {
+  document.addEventListener('click', function (e) {
+    var toggle = e.target.closest('#accordionSidebar [data-target], #accordionSidebar [data-bs-target]');
+    if (!toggle) return;
+    var sel = toggle.getAttribute('data-bs-target') || toggle.getAttribute('data-target');
+    if (!sel || sel.charAt(0) !== '#') return;
+    var panel = document.querySelector(sel);
+    if (!panel || panel.className.indexOf('collapse') === -1) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    var willOpen = panel.className.indexOf('show') === -1;
+    var parentSel = toggle.getAttribute('data-bs-parent') || toggle.getAttribute('data-parent');
+    if (parentSel) {
+      var parent = document.querySelector(parentSel);
+      if (parent) {
+        Array.prototype.forEach.call(parent.querySelectorAll('.collapse.show'), function (p) {
+          if (p !== panel) { p.classList.remove('show'); }
+        });
+      }
+    }
+    panel.classList.toggle('show', willOpen);
+    toggle.classList.toggle('collapsed', !willOpen);
+    toggle.setAttribute('aria-expanded', String(willOpen));
+  }, true);
+})();
+</script>
+
 </body>
 
 </html>

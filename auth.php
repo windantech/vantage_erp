@@ -1,6 +1,8 @@
 <?php
-    session_save_path('/home/vantage/php_sessions');
-    session_start();
+    if (session_status() === PHP_SESSION_NONE) {
+        session_save_path('/home/vantage/php_sessions');
+        session_start();
+    }
 
 
 // Database configuration - YOUR ACTUAL VALUES

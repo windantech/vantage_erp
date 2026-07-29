@@ -79,7 +79,31 @@ if (!headers_sent()) {
         </a>
     </li>
 
-		   <a class="collapse-item bi bi-whatsapp" href="wa_inbox.php"><span>WhatsApp Inbox</span></a>
+    <!-- WhatsApp -->
+    <?php if (in_array(44, $role)) { ?>
+    <li class="nav-item whatsapp">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#whatsapp" data-bs-toggle="collapse" data-bs-target="#whatsapp" aria-expanded="true" aria-controls="whatsapp">
+            <i class="bi bi-whatsapp"></i>
+            <span>WhatsApp</span>
+        </a>
+        <div id="whatsapp" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
+            <div class="bg_main py-2 m-0 collapse-inner rounded">
+                <a class="collapse-item" href="wa_inbox.php">Inbox</a>
+                <a class="collapse-item" href="wa_contacts.php">Contacts</a>
+                <a class="collapse-item" href="wa_canned.php">Quick Replies</a>
+                <a class="collapse-item" href="wa_knowledge.php">Knowledge Base</a>
+                <?php if (in_array(777, $role)) { ?>
+                <a class="collapse-item" href="wa_broadcast.php">Broadcast</a>
+                <a class="collapse-item" href="wa_broadcasts.php">Broadcast History</a>
+                <a class="collapse-item" href="wa_templates.php">Templates</a>
+                <a class="collapse-item" href="wa_assignments.php">Assignments</a>
+                <a class="collapse-item" href="wa_insights.php">Insights</a>
+                <a class="collapse-item" href="wa_settings.php">Settings</a>
+                <?php } ?>
+            </div>
+        </div>
+    </li>
+    <?php } ?>
 
 
     <!-- Transactions -->
@@ -87,12 +111,12 @@ if (!headers_sent()) {
             if(in_array(1, $role)) {
             ?>
     <li class="nav-item transact">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#transactions" aria-expanded="true" aria-controls="transactions">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#transactions" data-bs-toggle="collapse" data-bs-target="#transactions" aria-expanded="true" aria-controls="transactions">
             <i class="bi bi-cash-coin"></i>
             <span>Transactions</span>
         </a>
         
-        <div id="transactions" class="collapse" aria-labelledby="headingTwo" data-parent="#accordionSidebar">
+        <div id="transactions" class="collapse" aria-labelledby="headingTwo" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <a class="collapse-item" href="all_transaction">All Transactions</a>
             </div>
@@ -105,11 +129,11 @@ if (!headers_sent()) {
             if(in_array(0, $role)) {
             ?>
     <li class="nav-item">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#students" aria-expanded="true" aria-controls="students">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#students" data-bs-toggle="collapse" data-bs-target="#students" aria-expanded="true" aria-controls="students">
             <i class="bi bi-backpack4"></i>
             <span>Students</span>
         </a>
-        <div id="students" class="collapse" aria-labelledby="headingUtilities" data-parent="#accordionSidebar">
+        <div id="students" class="collapse" aria-labelledby="headingUtilities" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                       <?php 
             if(in_array(11, $role)) {
@@ -133,11 +157,11 @@ if (!headers_sent()) {
             ?>
     <!-- Course -->
     <li class="nav-item">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#course" aria-expanded="true" aria-controls="course">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#course" data-bs-toggle="collapse" data-bs-target="#course" aria-expanded="true" aria-controls="course">
             <i class="bi bi-journal-bookmark"></i>
             <span>Course</span>
         </a>
-        <div id="course" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+        <div id="course" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <a class="collapse-item" href="list_courses">Assign Virtual Courses</a>
             </div>
@@ -148,12 +172,12 @@ if (!headers_sent()) {
     //  if(in_array(22, $role)) {
      ?>
      <li class="nav-item system_emails">
-                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#system_emails"
+                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#system_emails" data-bs-toggle="collapse" data-bs-target="#system_emails"
                     aria-expanded="true" aria-controls="system_emails">
                     <i class="bi bi-people"></i>
                     <span>System Emails</span>
                 </a>
-                <div id="system_emails" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+                <div id="system_emails" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
                     <div class="bg_main py-2 m-0 collapse-inner rounded">
                         <a class="collapse-item bi bi-dash-circle" href="system_emails1"> System Emails</a>
                     </div>
@@ -169,11 +193,11 @@ if (!headers_sent()) {
 ?>
     <!-- Summit -->
     <li class="nav-item">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#summit" aria-expanded="true" aria-controls="summit">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#summit" data-bs-toggle="collapse" data-bs-target="#summit" aria-expanded="true" aria-controls="summit">
             <i class="bi bi-folder"></i>
             <span>Int'l Training </span>
         </a>
-        <div id="summit" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+        <div id="summit" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <a class="collapse-item" href="post_events">All Training's</a>
             </div>
@@ -197,17 +221,17 @@ if (!headers_sent()) {
 ?>
     <!-- Marketing -->
 <li class="nav-item">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#marketing" aria-expanded="true" aria-controls="marketing">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#marketing" data-bs-toggle="collapse" data-bs-target="#marketing" aria-expanded="true" aria-controls="marketing">
             <i class="bi bi-folder-check"></i>
             <span>Marketing</span>
         </a>
-        <div id="marketing" class="collapse" aria-labelledby="marketing" data-parent="#accordionSidebar">
+        <div id="marketing" class="collapse" aria-labelledby="marketing" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <!-- Sub-Marketing Dropdown -->
-                <a class="collapse-item collapsed" href="#" data-toggle="collapse" data-target="#sub-marketing" aria-expanded="true" aria-controls="sub-marketing">
+                <a class="collapse-item collapsed" href="#" data-toggle="collapse" data-target="#sub-marketing" data-bs-toggle="collapse" data-bs-target="#sub-marketing" aria-expanded="true" aria-controls="sub-marketing">
                     <i class="bi bi-arrow-right-circle"></i> Email
                 </a>
-                <div id="sub-marketing" class="collapse" aria-labelledby="sub-marketing" data-parent="#marketing">
+                <div id="sub-marketing" class="collapse" aria-labelledby="sub-marketing" data-parent="#marketing" data-bs-parent="#marketing">
                     <div class="bg_main py-2 m-0 collapse-inner rounded">
                         <a class="collapse-item" href="bulk_mail">Compose Email</a>
                         <a class="collapse-item" href="send_mail">Composed Email</a>
@@ -218,10 +242,10 @@ if (!headers_sent()) {
                 </div>
 
                 <!-- Sub-Marketing Two Dropdown -->
-                <a class="collapse-item collapsed" href="#" data-toggle="collapse" data-target="#sub-marketing-tw" aria-expanded="true" aria-controls="sub-marketing-two">
+                <a class="collapse-item collapsed" href="#" data-toggle="collapse" data-target="#sub-marketing-tw" data-bs-toggle="collapse" data-bs-target="#sub-marketing-tw" aria-expanded="true" aria-controls="sub-marketing-two">
                     <i class="bi bi-arrow-right-circle"></i> SMS
                 </a>
-                <div id="sub-marketing-two" class="collapse" aria-labelledby="sub-marketing-two" data-parent="#marketing">
+                <div id="sub-marketing-two" class="collapse" aria-labelledby="sub-marketing-two" data-parent="#marketing" data-bs-parent="#marketing">
                     <div class="bg_main py-2 m-0 collapse-inner rounded">
                    <a class="collapse-item" href="#">Compose SMS</a>
                         <a class="collapse-item" href="#">Composed SMS</a>
@@ -338,11 +362,11 @@ if (!headers_sent()) {
 
     <!-- Enquiries -->
     <li class="nav-item enquiries">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#enquiries" aria-expanded="true" aria-controls="enquiries">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#enquiries" data-bs-toggle="collapse" data-bs-target="#enquiries" aria-expanded="true" aria-controls="enquiries">
             <i class="bi bi-arrow-down-up"></i>
             <span>Enquiries</span>
         </a>
-        <div id="enquiries" class="collapse" aria-labelledby="enquiries" data-parent="#accordionSidebar">
+        <div id="enquiries" class="collapse" aria-labelledby="enquiries" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <a class="collapse-item bi bi-dash-circle" href="get_in_touch"><span>Get In Touch</span></a>
                 <a class="collapse-item bi bi-dash-circle" href="call_request"><span>Call Request(Virtual Course)</span></a>
@@ -361,12 +385,12 @@ if (!headers_sent()) {
    
         <!-- Reports -->
    <li class="nav-item reports">
-                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#reports"
+                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#reports" data-bs-toggle="collapse" data-bs-target="#reports"
                     aria-expanded="true" aria-controls="reports">
                     <i class="bi bi-journals"></i>
                     <span>Reports</span>
                 </a>
-                <div id="reports" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+                <div id="reports" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
                     <div class="bg_main py-2 m-0 collapse-inner rounded">
                         <a class="collapse-item bi bi-dash-circle" href="task_reports">
                             <span>Task Reports</span>
@@ -394,11 +418,11 @@ if (!headers_sent()) {
 
     <!-- Users -->
     <li class="nav-item">
-        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#users" aria-expanded="true" aria-controls="users">
+        <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#users" data-bs-toggle="collapse" data-bs-target="#users" aria-expanded="true" aria-controls="users">
             <i class="bi bi-people"></i>
             <span>Users</span>
         </a>
-        <div id="users" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
+        <div id="users" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar" data-bs-parent="#accordionSidebar">
             <div class="bg_main py-2 m-0 collapse-inner rounded">
                 <a class="collapse-item" href="users">All Users</a>
                 <a class="collapse-item" href="create_role?action=get_user">Assign Roles</a>

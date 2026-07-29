@@ -1,12 +1,13 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { @session_start(); }
 require_once 'header.php';                     // auth.php -> $conn, $role, $staff_id
-require "../../function.php";
+require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 
-if (!in_array(777, $role)) {
-    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Supervisors only.</div></div>';
+// WhatsApp users (role 44) may view; editing stays supervisor-only (enforced in includes/wa_process.php).
+if (!in_array(WA_ROLE, $role)) {
+    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Access denied.</div></div>';
     require_once 'footer.php';
     exit;
 }
