@@ -2,24 +2,82 @@
 
 /* ============================================================
  * Shared ERP lookups — previously supplied by an external function.php that
- * pages reached via "../../function.php". Re-homed here so every page that
- * includes function.php keeps these helpers. Guarded with function_exists so a
- * page-local copy can never double-declare.
+ * pages reached via "../../function.php". Re-homed here (verbatim from the
+ * original) so every page that includes function.php keeps these helpers. Each
+ * is guarded with function_exists so a page-local copy can never double-declare.
  * ============================================================ */
+if (!function_exists('check_course_res')) {
+    function check_course_res($conn, $course_id) {
+        $check = mysqli_query($conn, "SELECT * FROM `course` where course_id='$course_id' ") or die(mysqli_error($conn));
+        return mysqli_fetch_array($check)['course'];
+    }
+}
 if (!function_exists('check_course')) {
-    function check_course($conn, $id) {
-        $id = mysqli_real_escape_string($conn, (string)$id);
-        $res = mysqli_query($conn, "SELECT course FROM course WHERE course_id = '$id' LIMIT 1");
-        if ($res && mysqli_num_rows($res) > 0) { return mysqli_fetch_assoc($res)['course']; }
-        return $id;
+    function check_course($conn, $course_id) {
+        $check = mysqli_query($conn, "SELECT * FROM `course` where course_id='$course_id' ") or die(mysqli_error($conn));
+        if (mysqli_num_rows($check) > 0) {
+            return mysqli_fetch_array($check)['course'];
+        } else {
+            $check = mysqli_query($conn, "SELECT * FROM `Event` WHERE `event_id`='$course_id'") or die(mysqli_error($conn));
+            if (mysqli_num_rows($check) > 0) {
+                return mysqli_fetch_array($check)["location"];
+            } else {
+                return "none";
+            }
+        }
+    }
+}
+if (!function_exists('check_course_price')) {
+    function check_course_price($conn, $course_id) {
+        $check = mysqli_query($conn, "SELECT * FROM `course` where course_id='$course_id' ") or die(mysqli_error($conn));
+        return mysqli_fetch_array($check)['price_usd'];
     }
 }
 if (!function_exists('check_event')) {
     function check_event($conn, $event_id, $variable) {
-        $event_id = (int)$event_id;
-        $res = mysqli_query($conn, "SELECT * FROM `Event` WHERE event_id = $event_id LIMIT 1");
-        $row = $res ? mysqli_fetch_assoc($res) : null;
-        return $row[$variable] ?? '';
+        $check = mysqli_query($conn, "SELECT * FROM `Event` WHERE `event_id`='$event_id'") or die(mysqli_error($conn));
+        return mysqli_fetch_array($check)[$variable];
+    }
+}
+if (!function_exists('limit_words')) {
+    function limit_words($string, $limit = 5) {
+        $words = explode(" ", $string);
+        if (count($words) <= $limit) { return $string; }
+        return implode(" ", array_slice($words, 0, $limit)) . "...";
+    }
+}
+if (!function_exists('check_name')) {
+    function check_name($conn, $email) {
+        $check = mysqli_query($conn, "SELECT * FROM register where email='$email' LIMIT 1") or die(mysqli_error($conn));
+        if (mysqli_num_rows($check) > 0) {
+            $row = mysqli_fetch_array($check);
+            return ucfirst(strtolower($row['firstname'] . " " . $row['lastname']));
+        } else {
+            $check = mysqli_query($conn, "SELECT * FROM ticket_congress where email='$email' LIMIT 1") or die(mysqli_error($conn));
+            if (mysqli_num_rows($check) > 0) {
+                $row = mysqli_fetch_array($check);
+                return ucfirst(strtolower($row['fullname']));
+            } else {
+                return " ";
+            }
+        }
+    }
+}
+if (!function_exists('check_phone')) {
+    function check_phone($conn, $email) {
+        $check = mysqli_query($conn, "SELECT * FROM register where email='$email' LIMIT 1") or die(mysqli_error($conn));
+        if (mysqli_num_rows($check) > 0) {
+            $row = mysqli_fetch_array($check);
+            return $row['phone_number'];
+        } else {
+            $check = mysqli_query($conn, "SELECT * FROM ticket_congress where email='$email' LIMIT 1") or die(mysqli_error($conn));
+            if (mysqli_num_rows($check) > 0) {
+                $row = mysqli_fetch_array($check);
+                return $row['phone_number'];
+            } else {
+                return " ";
+            }
+        }
     }
 }
 if (!function_exists('check_source')) {
