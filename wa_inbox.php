@@ -17,10 +17,9 @@ wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before the inbo
 $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);
 
+// All WhatsApp staff (role 44) now see every conversation, so anyone can find a chat
+// to switch its course or reassign it (previously non-supervisors saw only their own).
 $where = '';
-if (!$is_supervisor) {
-    $where = ' WHERE cv.assigned_user_id = ' . (int)$staff_id . ' ';
-}
 
 $sql = "
     SELECT cv.id, cv.ref_type, cv.ref_id, cv.handler, cv.escalated, cv.last_message_at,

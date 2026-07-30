@@ -28,9 +28,10 @@ $res = mysqli_query($conn,
       WHERE cv.id = $conv_id LIMIT 1");
 $conv = $res ? mysqli_fetch_assoc($res) : null;
 
-// Access check: supervisor any; otherwise only your own.
-if (!$conv || (!$is_supervisor && (int)$conv['assigned_user_id'] !== (int)$staff_id)) {
-    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-warning">That conversation is not assigned to you.</div></div>';
+// Any WhatsApp staff (role 44, gated above) may open any conversation — so anyone can
+// switch its course or reassign it. Supervisors already had this; now everyone does.
+if (!$conv) {
+    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-warning">Conversation not found.</div></div>';
     require_once 'footer.php';
     exit;
 }
@@ -39,7 +40,7 @@ $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);
 // Course/event-scoped + global quick replies for this chat.
 $quickReplies = wa_quick_replies_for($conn, $conv['ref_type'] ?? '', (int)($conv['ref_id'] ?? 0));
-if ($is_supervisor) { $courses = wa_active_courses($conn); $events = wa_active_events($conn); }
+$courses = wa_active_courses($conn); $events = wa_active_events($conn);   // for the manual course/event switch (all staff)
 $curScope = (in_array($conv['ref_type'] ?? '', ['course', 'event'], true) && $conv['ref_id'])
     ? $conv['ref_type'] . ':' . (int)$conv['ref_id'] : '';
 
@@ -51,13 +52,11 @@ $open = wa_within_window($conv['last_inbound_at']);
 $lastMsgId = 0;
 foreach ($messages as $m) { if ((int)$m['id'] > $lastMsgId) { $lastMsgId = (int)$m['id']; } }
 
-// Staff for the reassign dropdown (supervisor only).
+// Staff for the reassign dropdown (available to all WhatsApp staff now).
 $staffOptions = [];
-if ($is_supervisor) {
-    $r = mysqli_query($conn,
-        "SELECT id, fullname FROM registered_users WHERE FIND_IN_SET('44', role) ORDER BY fullname");
-    if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
-}
+$r = mysqli_query($conn,
+    "SELECT id, fullname FROM registered_users WHERE FIND_IN_SET('44', role) ORDER BY fullname");
+if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
 ?>
 
 <section id="content-wrapper" class="d-flex flex-column">
@@ -263,7 +262,7 @@ if ($is_supervisor) {
                         </div>
                     <?php endif; ?>
 
-                    <?php if ($is_supervisor): ?>
+                    <?php /* Manual reassign + course/event switch — available to all WhatsApp staff. */ ?>
                         <form method="post" action="includes/wa_process.php" class="d-flex gap-2 mt-2 align-items-center">
                             <input type="hidden" name="action" value="reassign">
                             <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
@@ -300,7 +299,6 @@ if ($is_supervisor) {
                             </select>
                             <button type="submit" class="btn btn-sm btn-outline-secondary">Link</button>
                         </form>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>

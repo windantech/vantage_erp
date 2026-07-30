@@ -129,23 +129,19 @@ switch ($action) {
     }
 
     // ---- Thread: reassign to another staff member (supervisor only) ----
+    // ---- Thread: reassign this chat to another staff member (any WhatsApp staff) ----
     case 'reassign': {
         $conv_id = (int)($_POST['id'] ?? 0);
-        if (!$is_supervisor) {
-            wa_flash('danger', 'Supervisors only.');
-            wa_redirect('../wa_thread.php?id=' . $conv_id);
-        }
         $newUser = (int)($_POST['assigned_user_id'] ?? 0);
         mysqli_query($conn,
-            "UPDATE wa_conversations SET assigned_user_id = $newUser WHERE id = $conv_id");
+            "UPDATE wa_conversations SET assigned_user_id = $newUser, last_route_reason = 'manual' WHERE id = $conv_id");
         wa_flash('success', 'Conversation reassigned.');
         wa_redirect('../wa_thread.php?id=' . $conv_id);
     }
 
-    // ---- Thread: link this chat to a course/event (supervisor only) ----
+    // ---- Thread: link this chat to a course/event (any WhatsApp staff) ----
     case 'set_ref': {
         $conv_id = (int)($_POST['id'] ?? 0);
-        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_thread.php?id=' . $conv_id); }
         $refType = ''; $refId = 0;
         $scope = (string)($_POST['scope'] ?? '');
         if (strpos($scope, ':') !== false) { list($refType, $refId) = explode(':', $scope, 2); }

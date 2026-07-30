@@ -534,7 +534,10 @@ function wa_assign_conversation($conn, $contactId, $refType, $refId, $userId, $r
               VALUES ($contactId, $refType, $refIdSql, $userSql, 'ai', $reasonSql, $confSql, NOW())
          ON DUPLICATE KEY UPDATE
               ref_type = VALUES(ref_type), ref_id = VALUES(ref_id),
-              assigned_user_id = VALUES(assigned_user_id),
+              -- Reassign when the new topic HAS an owner; never wipe an existing owner
+              -- just because the new course/event has none (keeps chats from going
+              -- un-owned on a topic switch).
+              assigned_user_id = COALESCE(VALUES(assigned_user_id), assigned_user_id),
               last_route_reason = VALUES(last_route_reason),
               last_route_confidence = VALUES(last_route_confidence),
               last_message_at = NOW()");
