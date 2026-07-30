@@ -3592,13 +3592,13 @@ function wa_run_payment_confirms($conn, $limit = 20) {
 function wa_run_unanswered_sweep($conn, $staleSecs = 600, $limit = 30) {
     $staleSecs = max(60, (int)$staleSecs);
     $limit = (int)$limit;
+    // EVERY unanswered chat — including human-owned and already-escalated ones — because
+    // a client must NEVER be left on read under any circumstance.
     $res = mysqli_query($conn,
-        "SELECT c.id AS contact_id, c.wa_id, cv.id AS conv_id
+        "SELECT c.id AS contact_id, c.wa_id, c.last_inbound_at, cv.id AS conv_id, cv.handler, cv.escalated
            FROM wa_contacts c
            JOIN wa_conversations cv ON cv.contact_id = c.id
-          WHERE cv.handler <> 'human'
-            AND cv.escalated = 0
-            AND c.opted_out = 0
+          WHERE c.opted_out = 0
             AND c.last_inbound_at IS NOT NULL
             AND c.last_inbound_at <= (NOW() - INTERVAL $staleSecs SECOND)
             AND NOT EXISTS (
@@ -3612,9 +3612,27 @@ function wa_run_unanswered_sweep($conn, $staleSecs = 600, $limit = 30) {
     while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; }
     $swept = 0;
     foreach ($rows as $r) {
-        $convId = (int)$r['conv_id'];
-        $cid    = (int)$r['contact_id'];
-        // Drop any stale scheduled-reply flag — we're forcing the answer now.
+        $convId   = (int)$r['conv_id'];
+        $cid      = (int)$r['contact_id'];
+        $inWindow = wa_within_window($r['last_inbound_at'] ?? null);
+
+        // A human OWNS this chat but hasn't replied. Don't talk over them with a full AI
+        // answer — but never leave the client silent either: send one brief holding line
+        // (only if WhatsApp's window still allows it) and flag the chat for the human.
+        if ($r['handler'] === 'human') {
+            if ($inWindow) {
+                wa_send_text($conn, (string)$r['wa_id'],
+                    "Thanks for your patience — I'm getting this sorted for you and will come right back to you shortly.");
+            }
+            if ((int)$r['escalated'] !== 1) {
+                mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+            }
+            wa_ai_post_note($conn, $cid, 'A client is still waiting and this chat is on Human — please reply.');
+            $swept++;
+            continue;
+        }
+
+        // AI-owned: drop any stale scheduled-reply flag and force the answer now.
         mysqli_query($conn, "UPDATE wa_conversations SET ai_reply_due_at = NULL WHERE id = $convId");
         $lr = mysqli_query($conn,
             "SELECT body FROM wa_messages WHERE contact_id = $cid AND direction = 'inbound' AND body <> ''
