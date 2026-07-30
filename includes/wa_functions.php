@@ -2053,7 +2053,7 @@ function wa_program_events($conn, $program, $limit = 20) {
     // Academic programmes (location 'ACADEMIC#…') are intake-based — always
     // listed regardless of date. Location-based events keep the upcoming filter.
     $res = mysqli_query($conn,
-        "SELECT event_id, event_title, location, start_on, end_on
+        "SELECT event_id, event_title, location, start_on, end_on, COALESCE(early_amount,0) AS early_amount
            FROM `Event`
           WHERE status = 1 AND $match
             AND (location LIKE 'ACADEMIC#%'
@@ -2077,7 +2077,8 @@ function wa_program_events($conn, $program, $limit = 20) {
         }
         $out[] = ['event_id' => (int)($r['event_id'] ?? 0),
                   'location' => trim((string)($r['location'] ?? '')), 'when' => $when,
-                  'title' => trim((string)$r['event_title'])];
+                  'title' => trim((string)$r['event_title']),
+                  'early_amount' => (float)($r['early_amount'] ?? 0)];
     }
     return $out;
 }
@@ -2102,6 +2103,10 @@ function wa_programs_catalog($conn) {
         $sessions = [];
         foreach (wa_program_events($conn, $p) as $e) {
             $line = wa_event_display($e['location'], $e['when']);
+            // This session's OWN in-person fee (do NOT quote the online/virtual fee for
+            // an in-person session — they differ).
+            $fee = (float)($e['early_amount'] ?? 0);
+            if ($fee > 0) { $line .= ' — in-person fee: USD ' . rtrim(rtrim(number_format($fee, 2), '0'), '.'); }
             // This session's OWN registration link (from that event's knowledge),
             // so a location-specific request (e.g. Eswatini) gets the right link —
             // NOT the programme's general one.
@@ -2110,7 +2115,8 @@ function wa_programs_catalog($conn) {
             if ($sLink !== '') { $line .= ' — register: ' . $sLink; }
             $sessions[] = $line;
         }
-        $block .= "\nSessions / availability (use a session's OWN register link for that location): "
+        $block .= "\nSessions / availability (each session's OWN in-person fee + register link — use these for the "
+                . "in-person option, not the online fee/link): "
                 . ($sessions ? implode('; ', $sessions) : 'none scheduled yet — dates on request');
         $blocks[] = $block;
     }
@@ -2778,7 +2784,13 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "in-person sessions, it is offered in both), you MUST ask which one they want BEFORE quoting any dates, "
         . "fees, venue, schedule or link — a quick 'Would you like the online or the in-person option?'. Never "
         . "assume a mode or answer for only one without checking. Once they choose, keep EVERY detail — schedule, "
-        . "price, venue, link — specific to that mode and never mix the two.\n\n"
+        . "price, venue, link — specific to that mode and never mix the two.\n"
+        . "  SOURCES (critical): the ONLINE/virtual fee and registration link come from the programme's own "
+        . "KNOWLEDGE below. The IN-PERSON fee and link come from the SPECIFIC session in the TRAINING PROGRAMMES "
+        . "list above (its 'in-person fee' and 'register' entries). NEVER quote the online fee or link for an "
+        . "in-person request, or the in-person fee or link for an online request. If you don't have the exact fee "
+        . "or link for the mode they chose, do the human hold (get it for them and come back) rather than "
+        . "borrowing the other mode's figure.\n\n"
 
         . "CONVERSATION FLOW (follow this order — do NOT skip ahead):\n"
         . "1. First greeting or vague interest ('Hi', 'I'm interested in X') → reply briefly and warmly and ask "
