@@ -241,6 +241,48 @@ switch ($action) {
         wa_redirect('../wa_assignments.php');
     }
 
+    // ---- Assignments: add / remove / set-primary ONE rep at a time ----
+    // Powers the chip UI on wa_assignments.php: ✕ removes a rep, ★ makes a rep
+    // primary, the dropdown adds one. All three write the same fields as
+    // assign_owner (ERP comma-list + the single primary override) so CEO
+    // Performance and chat routing stay in sync.
+    case 'manage_owner': {
+        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_assignments.php'); }
+        $rt  = ($_POST['ref_type'] ?? '') === 'event' ? 'event' : 'course';
+        $rid = (int)($_POST['ref_id'] ?? 0);
+        $op  = (string)($_POST['op'] ?? '');
+        $uid = (int)($_POST['user_id'] ?? 0);
+        if ($rid > 0 && $uid > 0 && in_array($op, ['add', 'remove', 'primary'], true)) {
+            // Current state.
+            $cur = [];
+            foreach (wa_owners($conn, $rt, $rid) as $o) { $cur[] = (int)$o['user_id']; }
+            $primary = (int) wa_owner_override($conn, $rt, $rid);
+
+            if ($op === 'add') {
+                if (!in_array($uid, $cur, true)) { $cur[] = $uid; }
+                if ($primary <= 0) { $primary = $uid; }              // first rep becomes primary
+            } elseif ($op === 'remove') {
+                $cur = array_values(array_filter($cur, function ($x) use ($uid) { return $x !== $uid; }));
+                if ($primary === $uid) { $primary = $cur ? $cur[0] : 0; } // promote next, or clear
+            } elseif ($op === 'primary') {
+                if (in_array($uid, $cur, true)) { $primary = $uid; }
+            }
+
+            // Write back — same shape as assign_owner.
+            $list = $cur ? "'" . implode(',', $cur) . "'" : "''";
+            wa_owner_override_set($conn, $rt, $rid, $primary);
+            if ($rt === 'event') {
+                mysqli_query($conn, "UPDATE `Event` SET assigned_to = $list WHERE event_id = $rid");
+            } else {
+                $pval = $primary > 0 ? "'" . $primary . "'" : "''";
+                mysqli_query($conn, "UPDATE course SET assigned_to = $list WHERE course_id = $rid");
+                mysqli_query($conn, "UPDATE intake SET assigned_to = $pval WHERE course_id = $rid");
+            }
+            wa_flash('success', $op === 'remove' ? 'Rep removed.' : ($op === 'primary' ? 'Primary updated.' : 'Rep added.'));
+        }
+        wa_redirect('../wa_assignments.php');
+    }
+
     // ---- Templates: record locally / delete (supervisor only) ----
     // (Creation + Meta submission happen in the 360dialog Hub — the messaging
     //  API key can't manage templates. Here we just record them for broadcasting.)
