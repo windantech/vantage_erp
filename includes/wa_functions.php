@@ -2053,7 +2053,10 @@ function wa_program_events($conn, $program, $limit = 20) {
     // Academic programmes (location 'ACADEMIC#…') are intake-based — always
     // listed regardless of date. Location-based events keep the upcoming filter.
     $res = mysqli_query($conn,
-        "SELECT event_id, event_title, location, start_on, end_on, COALESCE(early_amount,0) AS early_amount
+        "SELECT event_id, event_title, location, start_on, end_on,
+                early_amount, early_start_on, early_end_on,
+                advance_amount, advance_start_on, advance_end_on,
+                gate_amount, gate_start_on, gate_end_on
            FROM `Event`
           WHERE status = 1 AND $match
             AND (location LIKE 'ACADEMIC#%'
@@ -2078,7 +2081,14 @@ function wa_program_events($conn, $program, $limit = 20) {
         $out[] = ['event_id' => (int)($r['event_id'] ?? 0),
                   'location' => trim((string)($r['location'] ?? '')), 'when' => $when,
                   'title' => trim((string)$r['event_title']),
-                  'early_amount' => (float)($r['early_amount'] ?? 0)];
+                  // All three in-person fee tiers + their date windows (raw strings).
+                  'early_amount'   => trim((string)($r['early_amount']   ?? '')),
+                  'early_start_on' => trim((string)($r['early_start_on'] ?? '')),
+                  'early_end_on'   => trim((string)($r['early_end_on']   ?? '')),
+                  'advance_amount' => trim((string)($r['advance_amount'] ?? '')),
+                  'advance_end_on' => trim((string)($r['advance_end_on'] ?? '')),
+                  'gate_amount'    => trim((string)($r['gate_amount']    ?? '')),
+                  'gate_start_on'  => trim((string)($r['gate_start_on']  ?? ''))];
     }
     return $out;
 }
@@ -2089,6 +2099,37 @@ function wa_program_events($conn, $program, $limit = 20) {
  * the old flat "list every event" catalogue. '' if no programmes are defined
  * (callers fall back to wa_events_catalog()).
  */
+/** Format an in-person event's full fee schedule — early bird, advance and standard,
+ *  each with its date window — from the tier fields on a wa_program_events() row.
+ *  '' if no priced tier. Amounts are shown as stored (a currency word is kept; a bare
+ *  number is prefixed 'USD'). */
+function wa_event_pricing($e) {
+    $fmtDate = function ($d) {
+        $d = trim((string)$d);
+        if ($d === '' || strpos($d, '0000-00-00') === 0) { return ''; }
+        try { return (new DateTime($d))->format('j M Y'); } catch (Throwable $ex) { return $d; }
+    };
+    $money = function ($a) {
+        $a = trim((string)$a);
+        if ($a === '' || $a === '0' || $a === '0.00') { return ''; }
+        return preg_match('/[a-zA-Z$€£]/', $a) ? $a : ('USD ' . rtrim(rtrim($a, '0'), '.'));
+    };
+    $tiers = [];
+    if (($m = $money($e['early_amount'] ?? '')) !== '') {
+        $by = $fmtDate($e['early_end_on'] ?? '');
+        $tiers[] = 'early bird ' . $m . ($by !== '' ? ' (until ' . $by . ')' : '');
+    }
+    if (($m = $money($e['advance_amount'] ?? '')) !== '') {
+        $by = $fmtDate($e['advance_end_on'] ?? '');
+        $tiers[] = 'advance ' . $m . ($by !== '' ? ' (until ' . $by . ')' : '');
+    }
+    if (($m = $money($e['gate_amount'] ?? '')) !== '') {
+        $from = $fmtDate($e['gate_start_on'] ?? '');
+        $tiers[] = 'standard ' . $m . ($from !== '' ? ' (from ' . $from . ')' : '');
+    }
+    return $tiers ? implode(', ', $tiers) : '';
+}
+
 function wa_programs_catalog($conn) {
     $progs = wa_programs_list($conn, true);
     if (!$progs) { return ''; }
@@ -2103,10 +2144,11 @@ function wa_programs_catalog($conn) {
         $sessions = [];
         foreach (wa_program_events($conn, $p) as $e) {
             $line = wa_event_display($e['location'], $e['when']);
-            // This session's OWN in-person fee (do NOT quote the online/virtual fee for
-            // an in-person session — they differ).
-            $fee = (float)($e['early_amount'] ?? 0);
-            if ($fee > 0) { $line .= ' — in-person fee: USD ' . rtrim(rtrim(number_format($fee, 2), '0'), '.'); }
+            // This session's OWN full in-person fee schedule — early bird, advance and
+            // standard, each with its date window (do NOT quote the online/virtual fee
+            // for an in-person session — they differ).
+            $pricing = wa_event_pricing($e);
+            if ($pricing !== '') { $line .= ' — in-person fees: ' . $pricing; }
             // This session's OWN registration link (from that event's knowledge),
             // so a location-specific request (e.g. Eswatini) gets the right link —
             // NOT the programme's general one.
@@ -2735,6 +2777,8 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "Sound like a trusted, knowledgeable admissions advisor — not a chatbot. Your job is to build genuine "
         . "interest and trust, then guide the prospect towards registering.\n\n"
 
+        . "Today's date is " . date('j M Y') . " — use it to work out which fee tier or upcoming session applies.\n\n"
+
         . ($profile !== ''
             ? "WHAT YOU ALREADY KNOW ABOUT THIS PROSPECT (use it — do NOT ask again for anything listed here):\n"
               . $profile . "\n"
@@ -2786,11 +2830,13 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "assume a mode or answer for only one without checking. Once they choose, keep EVERY detail — schedule, "
         . "price, venue, link — specific to that mode and never mix the two.\n"
         . "  SOURCES (critical): the ONLINE/virtual fee and registration link come from the programme's own "
-        . "KNOWLEDGE below. The IN-PERSON fee and link come from the SPECIFIC session in the TRAINING PROGRAMMES "
-        . "list above (its 'in-person fee' and 'register' entries). NEVER quote the online fee or link for an "
-        . "in-person request, or the in-person fee or link for an online request. If you don't have the exact fee "
-        . "or link for the mode they chose, do the human hold (get it for them and come back) rather than "
-        . "borrowing the other mode's figure.\n\n"
+        . "KNOWLEDGE below. The IN-PERSON fees and link come from the SPECIFIC session in the TRAINING PROGRAMMES "
+        . "list above (its 'in-person fees' and 'register' entries). For an IN-PERSON event, present ALL the fee "
+        . "tiers shown for that session — early bird, advance and standard — each WITH its date window, so the "
+        . "customer can see the full schedule, and point out which rate currently applies based on today's date. "
+        . "NEVER quote the online fee or link for an in-person request, or the in-person fee or link for an online "
+        . "request. If you don't have the exact fees or link for the mode they chose, do the human hold (get it for "
+        . "them and come back) rather than borrowing the other mode's figure.\n\n"
 
         . "CONVERSATION FLOW (follow this order — do NOT skip ahead):\n"
         . "1. First greeting or vague interest ('Hi', 'I'm interested in X') → reply briefly and warmly and ask "
