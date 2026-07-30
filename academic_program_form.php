@@ -513,17 +513,24 @@ document.getElementById('addLecturerRow').addEventListener('click', function() {
     document.getElementById('lecturerRows').appendChild(t.content.cloneNode(true));
 });
 document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('remove-curriculum')) {
-        var row = e.target.closest('.curriculum-row');
+    // Use closest() so a click anywhere on the button (or an inner node) still matches.
+    var rc = e.target.closest('.remove-curriculum');
+    if (rc) {
+        var row = rc.closest('.curriculum-row');
         if (row && document.querySelectorAll('.curriculum-row').length > 1) row.remove();
+        return;
     }
-    if (e.target.classList.contains('remove-outcome')) {
-        var r2 = e.target.closest('.outcome-row');
+    var ro = e.target.closest('.remove-outcome');
+    if (ro) {
+        var r2 = ro.closest('.outcome-row');
         if (r2 && document.querySelectorAll('.outcome-row').length > 1) r2.remove();
+        return;
     }
-    if (e.target.classList.contains('remove-lecturer')) {
-        var r3 = e.target.closest('.lecturer-row');
-        if (r3 && document.querySelectorAll('.lecturer-row').length > 1) r3.remove();
+    var rl = e.target.closest('.remove-lecturer');
+    if (rl) {
+        // Lecturers are optional — allow removing every row, including the last one.
+        var r3 = rl.closest('.lecturer-row');
+        if (r3) r3.remove();
     }
 });
 </script>
