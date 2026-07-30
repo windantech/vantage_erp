@@ -197,6 +197,7 @@ if ($action === 'resend') {
 
 // ---- Inbox list (with per-conversation unread count) ----
 if ($action === 'inbox') {
+    wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before we read it
     $where = $is_supervisor ? '' : ' WHERE cv.assigned_user_id = ' . (int)$staff_id . ' ';
     $sql = "
         SELECT cv.id, cv.handler, cv.escalated, cv.last_message_at,
@@ -207,6 +208,8 @@ if ($action === 'inbox') {
                END AS ref_name,
                COALESCE(NULLIF(s.full_name,''), ru.fullname) AS owner_name,
                (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
+               (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
+                  FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
                (SELECT COUNT(*) FROM wa_messages m
                   WHERE m.contact_id = c.id AND m.direction = 'inbound'
                     AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at)) AS unread
@@ -229,6 +232,7 @@ if ($action === 'inbox') {
                 'handler'   => $r['handler'],
                 'escalated' => (int)$r['escalated'],
                 'last_body' => mb_strimwidth((string)$r['last_body'], 0, 60, '…'),
+                'last_kind' => $r['last_kind'] ?: 'in',
                 'unread'    => (int)$r['unread'],
             ];
         }

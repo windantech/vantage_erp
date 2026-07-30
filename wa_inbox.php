@@ -12,6 +12,7 @@ if (!in_array(WA_ROLE, $role)) {
     exit;
 }
 $is_supervisor = in_array(777, $role);
+wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before the inbox query reads it
 
 $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);
@@ -30,6 +31,8 @@ $sql = "
            END AS ref_name,
            COALESCE(NULLIF(s.full_name,''), ru.fullname) AS owner_name,
            (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
+           (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
+              FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
            (SELECT COUNT(*) FROM wa_messages m
               WHERE m.contact_id = c.id AND m.direction = 'inbound'
                 AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at)) AS unread
@@ -161,6 +164,9 @@ if ($result) {
                                             <span class="badge <?php echo $hc; ?>"><?php echo wa_e($row['handler']); ?></span>
                                         </td>
                                         <td class="<?php echo $u ? 'fw-semibold' : ''; ?>">
+                                            <?php $lk = $row['last_kind'] ?? 'in';
+                                                if ($lk === 'ai')    echo '<span title="Last reply: AI">🤖</span> ';
+                                                elseif ($lk === 'human') echo '<span title="Last reply: agent">👤</span> '; ?>
                                             <?php echo wa_e(mb_strimwidth((string)$row['last_body'], 0, 60, '…')); ?>
                                         </td>
                                         <td class="text-end pe-3" onclick="event.stopPropagation();">
@@ -214,6 +220,7 @@ if ($result) {
     var unreadEl = document.getElementById('waUnread');
 
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+    function kindIcon(k) { return k === 'ai' ? '🤖 ' : (k === 'human' ? '👤 ' : ''); }   // last-reply sender
 
     // Actions dropdown for a conversation row (mirrors the PHP-rendered one).
     function actForm(id, action, label, icon, cls, extra) {
@@ -326,7 +333,7 @@ if ($result) {
                  + '<td>' + esc(c.ref_name || 'Unassigned') + '</td>'
                  + '<td>' + esc(c.owner || '—') + '</td>'
                  + '<td><span class="badge ' + hc + '">' + esc(c.handler) + '</span></td>'
-                 + '<td class="' + (c.unread ? 'fw-semibold' : '') + '">' + esc(c.last_body) + '</td>'
+                 + '<td class="' + (c.unread ? 'fw-semibold' : '') + '">' + kindIcon(c.last_kind) + esc(c.last_body) + '</td>'
                  + actionsCell(c)
                  + '</tr>';
         });
