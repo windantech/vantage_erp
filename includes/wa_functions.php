@@ -257,6 +257,7 @@ function wa_save_inbound($conn, $contactId, $m) {
 }
 
 function wa_save_outbound($conn, $contactId, $m) {
+    wa_message_flags_ensure($conn);
     $contactId = (int)$contactId;
     $wamid  = wa_sql($conn, $m['wa_message_id'] ?? null);
     $type   = wa_sql($conn, $m['type'] ?? 'text');
@@ -265,9 +266,13 @@ function wa_save_outbound($conn, $contactId, $m) {
     $mime   = wa_sql($conn, $m['media_mime'] ?? null);
     $status = wa_sql($conn, $m['status'] ?? 'sent');
     $raw    = wa_sql($conn, isset($m['raw_payload']) ? json_encode($m['raw_payload'], JSON_UNESCAPED_UNICODE) : null);
+    // A human agent's reply sets $GLOBALS['WA_SENT_BY_STAFF'] just before sending; every
+    // other send (AI answer, follow-up, payment confirm, broadcast) leaves it unset = AI.
+    $sentBy = (isset($GLOBALS['WA_SENT_BY_STAFF']) && (int)$GLOBALS['WA_SENT_BY_STAFF'] > 0)
+        ? (int)$GLOBALS['WA_SENT_BY_STAFF'] : 'NULL';
     mysqli_query($conn,
-        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload)
-         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw)");
+        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff)
+         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy)");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -342,14 +347,22 @@ function wa_message_flags_ensure($conn) {
     $done = true;
     @mysqli_query($conn, "ALTER TABLE `wa_messages`
         ADD COLUMN IF NOT EXISTS `deleted_at` DATETIME NULL DEFAULT NULL");
+    // Which staff member typed this outbound message (NULL = AI / automated).
+    @mysqli_query($conn, "ALTER TABLE `wa_messages`
+        ADD COLUMN IF NOT EXISTS `sent_by_staff` INT UNSIGNED NULL DEFAULT NULL");
 }
 
 function wa_thread($conn, $contactId, $limit = 100) {
     wa_message_flags_ensure($conn);
     $contactId = (int)$contactId;
     $limit = (int)$limit;
+    // Resolve who sent each outbound message: a staff name (human agent) or nobody (AI).
     $res = mysqli_query($conn,
-        "SELECT * FROM wa_messages WHERE contact_id = $contactId ORDER BY id DESC LIMIT $limit");
+        "SELECT m.*, COALESCE(NULLIF(s.full_name,''), ru.fullname) AS sent_by_name
+           FROM wa_messages m
+      LEFT JOIN registered_users ru ON ru.id = m.sent_by_staff
+      LEFT JOIN staff s             ON s.system_user_id = m.sent_by_staff
+          WHERE m.contact_id = $contactId ORDER BY m.id DESC LIMIT $limit");
     $rows = [];
     if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
     return array_reverse($rows);

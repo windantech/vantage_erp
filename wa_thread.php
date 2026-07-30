@@ -172,11 +172,13 @@ if ($is_supervisor) {
                         $out     = $m['direction'] === 'outbound';
                         $failed  = $out && $m['status'] === 'failed';
                         $deleted = !empty($m['deleted_at'] ?? null);
-                        // Failed sends get a red-outlined light bubble; a retracted reply (#19)
-                        // becomes a muted placeholder that keeps the row for review.
+                        $byHuman = $out && !empty($m['sent_by_name']);   // a staff agent typed it
+                        // Failed = red-outline; retracted (#19) = muted; human agent = BLUE,
+                        // AI = GREEN — so the two are visually distinct at a glance.
                         $bubbleClass = $deleted ? 'bg-light border text-muted fst-italic'
                             : (!$out ? 'bg-white border'
-                                : ($failed ? 'bg-white border border-danger text-dark' : 'bg-success text-white'));
+                                : ($failed ? 'bg-white border border-danger text-dark'
+                                    : ($byHuman ? 'bg-primary text-white' : 'bg-success text-white')));
                         $metaClass = ($deleted || !$out || $failed) ? 'text-muted' : 'text-white-50';
                         ?>
                         <div class="d-flex mb-2 <?php echo $out ? 'justify-content-end' : 'justify-content-start'; ?>">
@@ -199,6 +201,7 @@ if ($is_supervisor) {
                                         <?php echo wa_media_html($m['type'], (int)$m['id'], $m['media_mime'] ?? '', $m['body'] ?? ''); ?>
                                     <?php endif; ?>
                                     <div class="small <?php echo $metaClass; ?> waMeta" style="font-size:11px">
+                                        <?php if ($out): ?><span class="fw-semibold"><?php echo $byHuman ? '👤 ' . wa_e($m['sent_by_name']) : '🤖 AI'; ?></span> · <?php endif; ?>
                                         <?php echo wa_e($m['wa_timestamp'] ?: $m['created_at']); ?>
                                         <?php if ($failed): ?>
                                             · <span class="text-danger fw-semibold">not sent</span>

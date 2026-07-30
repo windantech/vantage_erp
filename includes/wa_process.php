@@ -44,6 +44,9 @@ switch ($action) {
         } elseif ($hasFile && $_FILES['file']['size'] > 16 * 1024 * 1024) {
             wa_flash('warning', 'File too large (max 16 MB).');
         } else {
+            // Tag this outbound as a human agent's message (so it's labelled separately
+            // from AI replies in the thread). AI/automated sends leave this unset.
+            $GLOBALS['WA_SENT_BY_STAFF'] = (int)$staff_id;
             if ($hasFile) {
                 $f = $_FILES['file'];
                 $mime = $f['type'] ?: 'application/octet-stream';
@@ -51,6 +54,7 @@ switch ($action) {
             } else {
                 $res = wa_send_text($conn, $conv['wa_id'], $body);
             }
+            unset($GLOBALS['WA_SENT_BY_STAFF']);
             if (!empty($res['ok'])) {
                 // Record the human reply (clears escalation, pauses the AI for a while)
                 // but do NOT permanently mute the AI — that's the explicit Human toggle.
