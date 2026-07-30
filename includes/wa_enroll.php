@@ -551,7 +551,7 @@ function wa_enroll_finalize_event($conn, $sess, $data) {
 
     $title = $eventTitle ?: 'the training';
     wa_send_text($conn, $waId,
-        "You're registered for *{}*.\n\nYour admission letter and invoice are on the way to *{$email}* (please check spam too). Our team will follow up on payment shortly. Karibu!");
+        "You're registered for *{$title}*.\n\nYour admission letter and invoice are on the way to *{$email}* (please check spam too). Our team will follow up on payment shortly. Karibu!");
 }
 
 /** COURSE: register insert + admission email + Moodle (mirrors course-details.php). */
