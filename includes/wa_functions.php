@@ -718,6 +718,45 @@ function wa_ai_classify_course($conn, $text, $courses) {
 }
 
 /**
+ * AI inference for IN-PERSON events, matched by MEANING — crucially by COUNTRY, not
+ * just the city stored in `location`. The keyword classifier only sees the city
+ * ('Maseru'), so a client saying 'in person Lesotho' never binds; the AI knows Maseru
+ * is in Lesotho and picks it. Only runs when the provider has a key.
+ * Returns ['event_id'=>?int, 'confidence'=>float].
+ */
+function wa_ai_classify_event($conn, $text) {
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $res = mysqli_query($conn,
+        "SELECT event_id, event_title, location FROM `Event`
+          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%'
+            AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
+                 OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
+          ORDER BY event_title ASC LIMIT 60");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    if (!$rows) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $lines = [];
+    foreach ($rows as $r) { $lines[] = (int)$r['event_id'] . ': ' . $r['event_title'] . ' — ' . $r['location']; }
+    $system = 'You match a prospective student\'s WhatsApp message to exactly one in-person training event '
+            . 'from the list, by MEANING and by COUNTRY. Each item is "id: title — city". Use your knowledge of '
+            . 'which country each city is in (e.g. Maseru is in Lesotho, Douala is in Cameroon, Kampala is in '
+            . 'Uganda), so "in-person Lesotho" matches the Maseru event. Match the topic AND the place. If none '
+            . 'clearly fits, return null. Reply with ONLY JSON: {"event_id": <id or null>, "confidence": <0-1>}.';
+    $user = "Events:\n" . implode("\n", $lines) . "\n\nMessage: \"" . $text . "\"";
+    $ans = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]], ['json' => true, 'max_tokens' => 150]);
+    if (empty($ans['ok'])) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $data = wa_json_extract($ans['text']);
+    if (!$data) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $eid = (isset($data['event_id']) && $data['event_id'] !== null) ? (int)$data['event_id'] : null;
+    $valid = false;
+    foreach ($rows as $r) { if ((int)$r['event_id'] === $eid) { $valid = true; break; } }
+    if (!$valid) { return ['event_id' => null, 'confidence' => 0.0]; }
+    $conf = isset($data['confidence']) ? (float)$data['confidence'] : 0.6;
+    return ['event_id' => $eid, 'confidence' => max(0.0, min(1.0, $conf))];
+}
+
+/**
  * AI inference for ACADEMIC / online courses (Event 'ACADEMIC#…' rows), matched by
  * MEANING rather than shared words — so abbreviations and synonyms the title keyword
  * matcher misses ("CPA" -> Certified Public Accountant, "AI course" -> AI for Leaders)
@@ -794,12 +833,21 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     // Routes the chat to that Event so it answers from the full event knowledge
     // (venue, dates, price, outline). Applies to new and returning contacts.
     $evGuess = wa_classify_event($conn, $text);
+    $evMethod = 'event_location';
+    // Keyword match (city-based) weak? If the message signals a place / in-person intent,
+    // ask the AI, which can match by COUNTRY ('in-person Lesotho' -> the Maseru event).
+    // Gated on a location cue so routine chatter doesn't spend an AI call every message.
+    if (($evGuess['event_id'] === null || $evGuess['confidence'] < 0.60)
+        && preg_match('/\b(in[\s-]?person|on[\s-]?site|physical|venue|country|from|based\s+in|attend|onsite)\b/i', $text)) {
+        $aiEv = wa_ai_classify_event($conn, $text);
+        if ($aiEv['event_id'] !== null && $aiEv['confidence'] >= 0.60) { $evGuess = $aiEv; $evMethod = 'event_ai'; }
+    }
     if ($evGuess['event_id'] !== null && $evGuess['confidence'] >= 0.60) {
         $eid = (int)$evGuess['event_id'];
         if (!$returning || (int)$conv['ref_id'] !== $eid || $conv['ref_type'] !== 'event') {
             $uid = wa_first_owner($conn, 'event', $eid);
-            wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, 'event_location', $evGuess['confidence']);
-            return wa_route_result($conn, 'assigned', 'event_location', 'event', $eid, $uid);
+            wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, $evMethod, $evGuess['confidence']);
+            return wa_route_result($conn, 'assigned', $evMethod, 'event', $eid, $uid);
         }
         // already on this event — keep it
         $uid = $conv['assigned_user_id'] !== null ? (int)$conv['assigned_user_id'] : null;
@@ -2124,8 +2172,12 @@ function wa_event_pricing($e) {
     };
     $money = function ($a) {
         $a = trim((string)$a);
-        if ($a === '' || $a === '0' || $a === '0.00') { return ''; }
-        return preg_match('/[a-zA-Z$€£]/', $a) ? $a : ('USD ' . rtrim(rtrim($a, '0'), '.'));
+        if ($a === '' || (float)$a == 0.0) { return ''; }
+        if (preg_match('/[a-zA-Z$€£]/', $a)) { return $a; }          // already has a currency word/symbol
+        // Strip trailing zeros ONLY after a decimal point (so "380" stays 380, not 38;
+        // "380.00" -> 380; "380.50" -> 380.5).
+        if (strpos($a, '.') !== false) { $a = rtrim(rtrim($a, '0'), '.'); }
+        return 'USD ' . $a;
     };
     $tiers = [];
     if (($m = $money($e['early_amount'] ?? '')) !== '') {
