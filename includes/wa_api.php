@@ -198,7 +198,7 @@ if ($action === 'resend') {
 // ---- Inbox list (with per-conversation unread count) ----
 if ($action === 'inbox') {
     wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before we read it
-    $where = '';   // all WhatsApp staff see every conversation (so anyone can reassign/switch)
+    $where = wa_inbox_scope_where($staff_id, $is_supervisor);   // reps see their own courses' chats
     $sql = "
         SELECT cv.id, cv.handler, cv.escalated, cv.last_message_at,
                c.wa_id, c.profile_name,

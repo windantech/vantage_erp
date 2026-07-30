@@ -406,6 +406,37 @@ function wa_first_owner($conn, $kind, $refId) {
     return $owners ? (int)$owners[0]['user_id'] : null;
 }
 
+/** Can this staff member see/act on a conversation? Supervisors: any. Everyone else:
+ *  chats assigned to them, OR chats for a course/event they are a rep of (primary or
+ *  contributor). So reps see their OWN courses' enquiries — not every course's. */
+function wa_user_can_see_conv($conn, $conv, $staffId, $isSupervisor) {
+    if ($isSupervisor) { return true; }
+    if (!$conv) { return false; }
+    $sid = (int)$staffId;
+    if ((int)($conv['assigned_user_id'] ?? 0) === $sid && $sid > 0) { return true; }
+    $rt = $conv['ref_type'] ?? '';
+    $rid = (int)($conv['ref_id'] ?? 0);
+    if ($rid > 0 && in_array($rt, ['course', 'event'], true)) {
+        foreach (wa_owners($conn, $rt, $rid) as $o) { if ((int)$o['user_id'] === $sid) { return true; } }
+        if ((int)wa_owner_override($conn, $rt, $rid) === $sid) { return true; }
+    }
+    return false;
+}
+
+/** WHERE fragment (incl. leading WHERE) that limits the inbox list to what $staffId may
+ *  see under the same rule as wa_user_can_see_conv(). '' for supervisors (see all).
+ *  Assumes the wa_conversations alias is 'cv'. */
+function wa_inbox_scope_where($staffId, $isSupervisor) {
+    if ($isSupervisor) { return ''; }
+    $sid = (int)$staffId;
+    return " WHERE (
+        cv.assigned_user_id = $sid
+        OR (cv.ref_type = 'course' AND EXISTS (SELECT 1 FROM course c  WHERE c.course_id = cv.ref_id AND FIND_IN_SET($sid, c.assigned_to) > 0))
+        OR (cv.ref_type = 'event'  AND EXISTS (SELECT 1 FROM `Event` e WHERE e.event_id  = cv.ref_id AND FIND_IN_SET($sid, e.assigned_to) > 0))
+        OR EXISTS (SELECT 1 FROM wa_course_owner wo WHERE wo.ref_type = cv.ref_type AND wo.ref_id = cv.ref_id AND wo.user_id = $sid)
+    ) ";
+}
+
 /** Manually-assigned rep for a course/event (fallback), or null. */
 function wa_owner_override($conn, $kind, $refId) {
     $k = "'" . mysqli_real_escape_string($conn, $kind) . "'";

@@ -17,9 +17,9 @@ wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before the inbo
 $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);
 
-// All WhatsApp staff (role 44) now see every conversation, so anyone can find a chat
-// to switch its course or reassign it (previously non-supervisors saw only their own).
-$where = '';
+// Scope: supervisors see all; every other rep sees chats for courses/events they're a
+// rep of (primary or contributor), plus any assigned to them — not every course's.
+$where = wa_inbox_scope_where($staff_id, $is_supervisor);
 
 $sql = "
     SELECT cv.id, cv.ref_type, cv.ref_id, cv.handler, cv.escalated, cv.last_message_at,

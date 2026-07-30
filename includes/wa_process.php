@@ -464,8 +464,9 @@ function wa_load_conversation($conn, $conv_id) {
     return $res ? mysqli_fetch_assoc($res) : null;
 }
 
-/** Supervisors may touch any conversation; everyone else only their own. */
+/** Supervisors may touch any conversation; everyone else may touch chats assigned to
+ *  them OR for a course/event they're a rep of (same rule as inbox visibility). */
 function wa_can_touch($conv, $is_supervisor, $staff_id) {
-    if (!$conv) { return false; }
-    return $is_supervisor || (int)$conv['assigned_user_id'] === (int)$staff_id;
+    global $conn;
+    return wa_user_can_see_conv($conn, $conv, $staff_id, $is_supervisor);
 }

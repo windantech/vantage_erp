@@ -28,10 +28,13 @@ $res = mysqli_query($conn,
       WHERE cv.id = $conv_id LIMIT 1");
 $conv = $res ? mysqli_fetch_assoc($res) : null;
 
-// Any WhatsApp staff (role 44, gated above) may open any conversation — so anyone can
-// switch its course or reassign it. Supervisors already had this; now everyone does.
-if (!$conv) {
-    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-warning">Conversation not found.</div></div>';
+// Scope: supervisors, the assigned rep, or any rep of this chat's course/event may open
+// it (so course reps — primary or contributor — can view/switch/reassign their courses'
+// chats, but not other courses').
+if (!$conv || !wa_user_can_see_conv($conn, $conv, $staff_id, $is_supervisor)) {
+    echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-warning">'
+       . (!$conv ? 'Conversation not found.' : 'That conversation is not for one of your courses.')
+       . '</div></div>';
     require_once 'footer.php';
     exit;
 }
