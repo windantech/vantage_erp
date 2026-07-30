@@ -74,8 +74,8 @@ function wa_render_assign_row($r, $staff, $staffMap) {
     ob_start(); ?>
     <tr data-assigned="<?php echo $assigned ? '1' : '0'; ?>" style="<?php echo $assigned ? '' : 'border-left:4px solid #ffc107;'; ?>">
         <td class="ps-3 align-middle" style="min-width:170px"><strong><?php echo wa_e($r['name']); ?></strong></td>
-        <td>
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-2" aria-label="Assigned reps for <?php echo wa_e($r['name']); ?>">
+        <td class="align-middle">
+            <div class="d-flex flex-wrap align-items-center gap-2" aria-label="Assigned reps for <?php echo wa_e($r['name']); ?>">
                 <?php if ($assignees): ?>
                     <?php foreach ($assignees as $aid): $isP = ($aid === $primary); $nm = $staffMap[$aid] ?? ('#' . $aid); ?>
                         <span class="badge <?php echo $isP ? 'bg-primary' : 'bg-secondary'; ?> d-inline-flex align-items-center gap-1 py-1 ps-2 pe-1">
@@ -92,6 +92,8 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                     <span class="text-muted small">No reps assigned yet</span>
                 <?php endif; ?>
             </div>
+        </td>
+        <td class="align-middle">
             <?php
             $available = array_filter($staff, function ($s) use ($assignees) { return !in_array((int)$s['id'], $assignees, true); });
             if ($available): ?>
@@ -164,15 +166,16 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                         <table class="table table-hover mb-0 assignTable">
                             <thead class="bg-light">
                                 <tr>
-                                    <th scope="col" class="ps-3" style="width:28%"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
+                                    <th scope="col" class="ps-3" style="width:26%"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
                                     <th scope="col">Assigned reps <small class="text-muted fw-normal">— ✕ removes · ★ sets primary</small></th>
+                                    <th scope="col" style="width:230px">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if ($g['rows']): ?>
                                     <?php foreach ($g['rows'] as $r) { echo wa_render_assign_row($r, $staff, $staffMap); } ?>
                                 <?php else: ?>
-                                    <tr><td colspan="2" class="text-center py-4 text-muted">None found.</td></tr>
+                                    <tr><td colspan="3" class="text-center py-4 text-muted">None found.</td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
