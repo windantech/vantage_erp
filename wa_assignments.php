@@ -79,11 +79,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                 <?php if ($assignees): ?>
                     <?php foreach ($assignees as $aid): $isP = ($aid === $primary); $nm = $staffMap[$aid] ?? ('#' . $aid); ?>
                         <span class="badge <?php echo $isP ? 'bg-primary' : 'bg-secondary'; ?> d-inline-flex align-items-center gap-1 py-1 ps-2 pe-1">
-                            <?php if ($isP): ?>
-                                <i class="bi bi-star-fill" title="Primary — handles chats" aria-hidden="true"></i><span class="visually-hidden">Primary: </span>
-                            <?php else: ?>
-                                <?php echo wa_owner_op_form($r, 'primary', $aid, 'bi-star', 'Make ' . $nm . ' primary', 'text-white opacity-75'); ?>
-                            <?php endif; ?>
+                            <?php if ($isP): ?><i class="bi bi-star-fill" title="Primary — handles chats" aria-hidden="true"></i><span class="visually-hidden">Primary: </span><?php endif; ?>
                             <span><?php echo wa_e($nm); ?></span>
                             <?php echo wa_owner_op_form($r, 'remove', $aid, 'bi-x-lg', 'Remove ' . $nm, 'text-white'); ?>
                         </span>
@@ -93,17 +89,17 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                 <?php endif; ?>
             </div>
         </td>
-        <td class="align-middle">
+        <td class="align-middle" style="min-width:230px">
             <?php
             $available = array_filter($staff, function ($s) use ($assignees) { return !in_array((int)$s['id'], $assignees, true); });
             if ($available): ?>
-            <form method="post" action="includes/wa_process.php" class="d-flex flex-wrap gap-2 align-items-center">
+            <form method="post" action="includes/wa_process.php" class="d-flex flex-wrap gap-2 align-items-center mb-2">
                 <input type="hidden" name="action" value="manage_owner">
                 <input type="hidden" name="op" value="add">
                 <input type="hidden" name="ref_type" value="<?php echo $r['type']; ?>">
                 <input type="hidden" name="ref_id" value="<?php echo (int)$r['id']; ?>">
                 <label class="visually-hidden" for="add_<?php echo $uid; ?>">Add a rep to <?php echo wa_e($r['name']); ?></label>
-                <select name="user_id" id="add_<?php echo $uid; ?>" class="form-select form-select-sm" style="min-width:180px" required>
+                <select name="user_id" id="add_<?php echo $uid; ?>" class="form-select form-select-sm" style="min-width:170px" required>
                     <option value="">+ Add a rep…</option>
                     <?php foreach ($available as $s): ?>
                         <option value="<?php echo (int)$s['id']; ?>"><?php echo wa_e($s['fullname']); ?></option>
@@ -112,7 +108,23 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                 <button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
             </form>
             <?php else: ?>
-                <span class="text-muted small"><i class="bi bi-check2 me-1"></i>All reps assigned</span>
+                <div class="text-muted small mb-2"><i class="bi bi-check2 me-1"></i>All reps assigned</div>
+            <?php endif; ?>
+
+            <?php if ($assignees): ?>
+            <form method="post" action="includes/wa_process.php" class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="hidden" name="action" value="manage_owner">
+                <input type="hidden" name="op" value="primary">
+                <input type="hidden" name="ref_type" value="<?php echo $r['type']; ?>">
+                <input type="hidden" name="ref_id" value="<?php echo (int)$r['id']; ?>">
+                <label class="small text-muted mb-0" for="prim_<?php echo $uid; ?>">Primary</label>
+                <select name="user_id" id="prim_<?php echo $uid; ?>" class="form-select form-select-sm" style="min-width:150px">
+                    <?php foreach ($assignees as $aid): $nm = $staffMap[$aid] ?? ('#' . $aid); ?>
+                        <option value="<?php echo (int)$aid; ?>" <?php echo $aid === $primary ? 'selected' : ''; ?>><?php echo wa_e($nm); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-star-fill me-1"></i>Set</button>
+            </form>
             <?php endif; ?>
         </td>
     </tr>
@@ -128,7 +140,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
                     <h4 class="mb-1"><i class="bi bi-people me-2"></i>Course &amp; Event Assignments</h4>
-                    <p class="text-muted mb-0">Add a rep from the dropdown; click <strong>✕</strong> on a chip to remove them, or <strong>★</strong> to make them <strong>Primary</strong> (the starred rep handles incoming WhatsApp chats). All assigned reps sync to CEO&nbsp;Dashboard&nbsp;&rarr;&nbsp;Performance.</p>
+                    <p class="text-muted mb-0">Add a rep from the dropdown, click <strong>✕</strong> on a chip to remove them, and pick the <strong>Primary</strong> (starred, handles incoming WhatsApp chats) in Actions. All assigned reps sync to CEO&nbsp;Dashboard&nbsp;&rarr;&nbsp;Performance.</p>
                 </div>
                 <div class="d-flex gap-2">
                     <a href="wa_settings.php" class="btn btn-outline-secondary"><i class="bi bi-gear me-1"></i>Settings</a>
@@ -167,8 +179,8 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                             <thead class="bg-light">
                                 <tr>
                                     <th scope="col" class="ps-3" style="width:26%"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
-                                    <th scope="col">Assigned reps <small class="text-muted fw-normal">— ✕ removes · ★ sets primary</small></th>
-                                    <th scope="col" style="width:230px">Actions</th>
+                                    <th scope="col">Assigned reps <small class="text-muted fw-normal">— ★ = primary · ✕ removes</small></th>
+                                    <th scope="col" style="width:250px">Actions <small class="text-muted fw-normal">— add rep · set primary</small></th>
                                 </tr>
                             </thead>
                             <tbody>
