@@ -51,19 +51,20 @@ foreach ($rows as $r) { $groups[$r['cat']]['rows'][] = $r; }
 $nUnassigned = 0;
 foreach ($rows as $r) { if (empty($r['assignees']) && $r['primary'] <= 0) { $nUnassigned++; } }
 
-/** Render one assignment row (name, current reps, edit form). */
+/** Render one assignment row (name, current reps, accessible edit form). */
 function wa_render_assign_row($r, $staff, $staffMap) {
     $assignees = $r['assignees'];
     $primary   = (int)$r['primary'];
     $assigned  = !empty($assignees) || $primary > 0;
+    $uid       = $r['type'] . $r['id'];   // unique prefix for control ids
     ob_start(); ?>
     <tr data-assigned="<?php echo $assigned ? '1' : '0'; ?>" style="<?php echo $assigned ? '' : 'border-left:4px solid #ffc107;'; ?>">
-        <td class="ps-3" style="min-width:180px"><strong><?php echo wa_e($r['name']); ?></strong></td>
-        <td style="min-width:160px">
+        <td class="ps-3 align-middle" style="min-width:170px"><strong><?php echo wa_e($r['name']); ?></strong></td>
+        <td class="align-middle" style="min-width:150px">
             <?php if ($assignees): ?>
-                <?php foreach ($assignees as $aid): ?>
-                    <span class="badge <?php echo $aid === $primary ? 'bg-primary' : 'bg-secondary'; ?> me-1 mb-1">
-                        <?php if ($aid === $primary): ?><i class="bi bi-star-fill me-1"></i><?php endif; ?><?php echo wa_e($staffMap[$aid] ?? ('#' . $aid)); ?>
+                <?php foreach ($assignees as $aid): $isP = ($aid === $primary); ?>
+                    <span class="badge <?php echo $isP ? 'bg-primary' : 'bg-secondary'; ?> me-1 mb-1"<?php echo $isP ? ' title="Primary — handles chats"' : ''; ?>>
+                        <?php if ($isP): ?><i class="bi bi-star-fill me-1" aria-hidden="true"></i><span class="visually-hidden">Primary: </span><?php endif; ?><?php echo wa_e($staffMap[$aid] ?? ('#' . $aid)); ?>
                     </span>
                 <?php endforeach; ?>
             <?php else: ?>
@@ -71,28 +72,33 @@ function wa_render_assign_row($r, $staff, $staffMap) {
             <?php endif; ?>
         </td>
         <td>
-            <form method="post" action="includes/wa_process.php" class="d-flex flex-wrap gap-2 align-items-end">
+            <form method="post" action="includes/wa_process.php" aria-label="Manage reps for <?php echo wa_e($r['name']); ?>">
                 <input type="hidden" name="action" value="assign_owner">
                 <input type="hidden" name="ref_type" value="<?php echo $r['type']; ?>">
                 <input type="hidden" name="ref_id" value="<?php echo (int)$r['id']; ?>">
-                <div>
-                    <label class="form-label small mb-1">Assigned reps <small class="text-muted">(Ctrl/Cmd-click for several)</small></label>
-                    <select name="user_ids[]" multiple size="4" class="form-select form-select-sm" style="min-width:190px">
-                        <?php foreach ($staff as $s): $sid = (int)$s['id']; ?>
-                            <option value="<?php echo $sid; ?>" <?php echo in_array($sid, $assignees, true) ? 'selected' : ''; ?>><?php echo wa_e($s['fullname']); ?></option>
+                <fieldset class="border-0 p-0 m-0">
+                    <legend class="form-label small fw-semibold mb-1" style="font-size:.8rem;float:none;width:auto">Assigned reps <span class="text-muted fw-normal">— tick to assign, untick to remove</span></legend>
+                    <div class="d-flex flex-wrap gap-3 mb-2">
+                        <?php foreach ($staff as $s): $sid = (int)$s['id']; $cb = 'rep_' . $uid . '_' . $sid; ?>
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" name="user_ids[]" value="<?php echo $sid; ?>" id="<?php echo $cb; ?>" <?php echo in_array($sid, $assignees, true) ? 'checked' : ''; ?>>
+                                <label class="form-check-label small" for="<?php echo $cb; ?>"><?php echo wa_e($s['fullname']); ?></label>
+                            </div>
                         <?php endforeach; ?>
-                    </select>
-                </div>
-                <div>
-                    <label class="form-label small mb-1">Primary <small class="text-muted">(routes chats)</small></label>
-                    <select name="primary_id" class="form-select form-select-sm" style="min-width:150px">
-                        <option value="0">— none —</option>
-                        <?php foreach ($staff as $s): $sid = (int)$s['id']; ?>
-                            <option value="<?php echo $sid; ?>" <?php echo $sid === $primary ? 'selected' : ''; ?>><?php echo wa_e($s['fullname']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div><button type="submit" class="btn btn-sm btn-primary">Save</button></div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-end">
+                        <div>
+                            <label class="form-label small mb-1" for="primary_<?php echo $uid; ?>">Primary <span class="text-muted">(routes chats)</span></label>
+                            <select name="primary_id" id="primary_<?php echo $uid; ?>" class="form-select form-select-sm" style="min-width:160px">
+                                <option value="0">— none —</option>
+                                <?php foreach ($staff as $s): $sid = (int)$s['id']; ?>
+                                    <option value="<?php echo $sid; ?>" <?php echo $sid === $primary ? 'selected' : ''; ?>><?php echo wa_e($s['fullname']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                    </div>
+                </fieldset>
             </form>
         </td>
     </tr>
@@ -108,7 +114,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
                     <h4 class="mb-1"><i class="bi bi-people me-2"></i>Course &amp; Event Assignments</h4>
-                    <p class="text-muted mb-0">Assign one or more reps per programme. The <strong>Primary</strong> (starred) handles incoming WhatsApp chats; all assigned reps sync to CEO&nbsp;Dashboard&nbsp;&rarr;&nbsp;Performance.</p>
+                    <p class="text-muted mb-0">Tick a rep to assign them, untick to remove. The <strong>Primary</strong> (starred) handles incoming WhatsApp chats; all assigned reps sync to CEO&nbsp;Dashboard&nbsp;&rarr;&nbsp;Performance.</p>
                 </div>
                 <div class="d-flex gap-2">
                     <a href="wa_settings.php" class="btn btn-outline-secondary"><i class="bi bi-gear me-1"></i>Settings</a>
@@ -146,9 +152,9 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                         <table class="table table-hover mb-0 assignTable">
                             <thead class="bg-light">
                                 <tr>
-                                    <th class="ps-3"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
-                                    <th>Assigned reps</th>
-                                    <th>Assign</th>
+                                    <th scope="col" class="ps-3"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
+                                    <th scope="col">Assigned reps</th>
+                                    <th scope="col">Manage reps</th>
                                 </tr>
                             </thead>
                             <tbody>
