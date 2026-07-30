@@ -91,7 +91,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
         </td>
         <td class="align-middle" style="min-width:430px">
             <?php $available = array_filter($staff, function ($s) use ($assignees) { return !in_array((int)$s['id'], $assignees, true); }); ?>
-            <div class="d-flex flex-wrap align-items-center gap-3">
+            <div class="d-flex flex-nowrap align-items-center gap-3">
                 <?php if ($available): ?>
                 <form method="post" action="includes/wa_process.php" class="d-flex flex-nowrap gap-2 align-items-center m-0">
                     <input type="hidden" name="action" value="manage_owner">
@@ -99,7 +99,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                     <input type="hidden" name="ref_type" value="<?php echo $r['type']; ?>">
                     <input type="hidden" name="ref_id" value="<?php echo (int)$r['id']; ?>">
                     <label class="visually-hidden" for="add_<?php echo $uid; ?>">Add a rep to <?php echo wa_e($r['name']); ?></label>
-                    <select name="user_id" id="add_<?php echo $uid; ?>" class="form-select form-select-sm" style="width:150px" required>
+                    <select name="user_id" id="add_<?php echo $uid; ?>" class="form-select form-select-sm" style="width:140px" required>
                         <option value="">+ Add a rep…</option>
                         <?php foreach ($available as $s): ?>
                             <option value="<?php echo (int)$s['id']; ?>"><?php echo wa_e($s['fullname']); ?></option>
@@ -118,7 +118,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                     <input type="hidden" name="ref_type" value="<?php echo $r['type']; ?>">
                     <input type="hidden" name="ref_id" value="<?php echo (int)$r['id']; ?>">
                     <label class="visually-hidden" for="prim_<?php echo $uid; ?>">Primary rep</label>
-                    <select name="user_id" id="prim_<?php echo $uid; ?>" class="form-select form-select-sm" style="width:150px" title="Primary rep">
+                    <select name="user_id" id="prim_<?php echo $uid; ?>" class="form-select form-select-sm" style="width:140px" title="Primary rep">
                         <?php foreach ($assignees as $aid): $nm = $staffMap[$aid] ?? ('#' . $aid); ?>
                             <option value="<?php echo (int)$aid; ?>" <?php echo $aid === $primary ? 'selected' : ''; ?>><?php echo wa_e($nm); ?><?php echo $aid === $primary ? ' ★' : ''; ?></option>
                         <?php endforeach; ?>
