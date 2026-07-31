@@ -7,22 +7,25 @@ require_once 'header.php';
         <?php
         require_once 'top_nav.php';
 
-        // International events: current/future or undated, excluding academic programmes.
+        // Academic programmes are flagged by an 'academic#' marker in Event.location
+        // (case-insensitive, and not always at the very start). LOWER(...) LIKE
+        // '%academic#%' matches them wherever/however they're cased.
+        // International events: current/future or undated, and NOT academic.
         $events = [];
         $event_result = $conn->query("SELECT event_id, event_title FROM Event
-                    WHERE (location NOT LIKE 'ACADEMIC#%' OR location IS NULL)
+                    WHERE (location IS NULL OR LOWER(location) NOT LIKE '%academic#%')
                       AND (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL)
                     ORDER BY event_title ASC");
         if ($event_result) {
             while ($row = $event_result->fetch_assoc()) { $events[] = $row; }
         }
 
-        // Academic programmes (Event.location begins with 'ACADEMIC#') are evergreen,
-        // so list them ALL regardless of date. Both save their template against
-        // event_id like international — only the picker list differs.
+        // Academic programmes are evergreen, so list them ALL regardless of date.
+        // Both save their template against event_id like international — only the
+        // picker list differs.
         $acad_events = [];
         $acad_result = $conn->query("SELECT event_id, event_title FROM Event
-                    WHERE location LIKE 'ACADEMIC#%'
+                    WHERE LOWER(location) LIKE '%academic#%'
                     ORDER BY event_title ASC");
         if ($acad_result) {
             while ($row = $acad_result->fetch_assoc()) { $acad_events[] = $row; }
