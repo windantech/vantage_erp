@@ -1782,6 +1782,16 @@ function wa_event_display($location, $when) {
 }
 
 /**
+ * Canonical public registration/details link for ANY Event row — academic/online
+ * or in-person/onsite alike. This is the ONE correct link to give a customer who
+ * wants to register for an event; it always resolves to that event's page.
+ */
+function wa_event_register_url($eventId) {
+    $eventId = (int)$eventId;
+    return $eventId > 0 ? "https://vantageafricaleaders.com/program-details.php?id={$eventId}" : '';
+}
+
+/**
  * Compact catalogue of active, upcoming international trainings (the `Event` table
  * = our in-person trainings held in various countries). Injected into EVERY AI
  * prompt so the bot can answer "do you have <topic> training in <country>?" with
@@ -1796,7 +1806,7 @@ function wa_events_catalog($conn, $limit = 40) {
     // Location-based events keep the "not clearly finished" filter (tolerant of
     // legacy zero/NULL dates).
     $res = mysqli_query($conn,
-        "SELECT event_title, location, start_on, end_on
+        "SELECT event_id, event_title, location, start_on, end_on
            FROM `Event`
           WHERE status = 1
             AND (location LIKE 'ACADEMIC#%'
@@ -1818,8 +1828,11 @@ function wa_events_catalog($conn, $limit = 40) {
                 if ($isReal($end)) { $when .= ' – ' . (new DateTime($end))->format('j M Y'); }
             } catch (Throwable $e) { $when = ''; }
         }
-        $lines[] = '• ' . trim((string)$r['event_title']) . ' — '
+        $line = '• ' . trim((string)$r['event_title']) . ' — '
             . wa_event_display($r['location'] ?? '', $when);
+        $reg = wa_event_register_url((int)($r['event_id'] ?? 0));
+        if ($reg !== '') { $line .= ' — register: ' . $reg; }
+        $lines[] = $line;
     }
     return implode("\n", $lines);
 }
@@ -2292,11 +2305,10 @@ function wa_programs_catalog($conn) {
             // for an in-person session — they differ).
             $pricing = wa_event_pricing($e);
             if ($pricing !== '') { $line .= ' — in-person fees: ' . $pricing; }
-            // This session's OWN registration link (from that event's knowledge),
-            // so a location-specific request (e.g. Eswatini) gets the right link —
-            // NOT the programme's general one.
-            $sLink = ((int)$e['event_id'] > 0)
-                ? wa_extract_register_url(wa_knowledge_get($conn, 'event', (int)$e['event_id'])) : '';
+            // This session's OWN canonical registration link (by event_id), so a
+            // location-specific request (e.g. Eswatini) gets THAT event's link —
+            // not the programme's general one.
+            $sLink = wa_event_register_url((int)$e['event_id']);
             if ($sLink !== '') { $line .= ' — register: ' . $sLink; }
             $sessions[] = $line;
         }
@@ -2329,6 +2341,8 @@ function wa_academic_catalog($conn, $limit = 80) {
         $line = '• ' . trim((string)$r['event_title'])
               . ($qual !== '' ? ' — ' . $qual : '')
               . ' (online, intake-based — enrol anytime)';
+        $reg = wa_event_register_url((int)$r['event_id']);
+        if ($reg !== '') { $line .= ' — register: ' . $reg; }
         // Include the course's OWN knowledge base (fees, content, how it works) so
         // the AI can answer about it even when the chat is scoped to another course.
         $kb = wa_knowledge_get_ai($conn, 'event', (int)$r['event_id']);
@@ -3008,6 +3022,10 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
               . "is asking about a specific event, location or session that has its OWN 'register:' link in the "
               . "KNOWLEDGE or the sessions list, share THAT exact link (e.g. an Eswatini session gets the Eswatini "
               . "link, not the general one). Never share a different programme's link. "
+              . "EVENTS AND ONLINE COURSES: every event and academic/online course in the lists above carries its "
+              . "own 'register:' link (a vantageafricaleaders.com/program-details.php?id=… page). That IS the correct, "
+              . "safe registration page for that exact item — when they're ready to register for a specific event or "
+              . "online course, share its 'register:' link directly and with confidence (it is never a login page). "
               . "CRITICAL — NEVER present a portal LOGIN or 'sign in' page (any URL containing /login, or a page to "
               . "log into an existing account) as a way to register: a login page is only for people who ALREADY "
               . "have an account, so sending it to a new prospect is wrong and confusing. If the only URL available "
@@ -3666,6 +3684,10 @@ function wa_run_followups($conn, $afterHours = 23, $limit = 20) {
             AND cv.escalated = 0
             AND cv.status = 'open'
             AND cv.followup_sent_at IS NULL
+            -- Never more than ONE follow-up per contact, ever — even across a second
+            -- conversation. If this person was ever nudged, they're excluded here.
+            AND NOT EXISTS (SELECT 1 FROM wa_conversations cv2
+                             WHERE cv2.contact_id = c.id AND cv2.followup_sent_at IS NOT NULL)
             AND c.opted_out = 0
             AND c.last_inbound_at IS NOT NULL
             AND c.last_inbound_at <= (NOW() - INTERVAL $afterHours HOUR)
