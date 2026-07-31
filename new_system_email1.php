@@ -7,17 +7,25 @@ require_once 'header.php';
         <?php
         require_once 'top_nav.php';
 
-        // Fetch events, then split into International (no marker) and Academic
-        // (Event.location begins with 'ACADEMIC#'). Both are Event rows and both
-        // save their template against event_id — only the picker list differs.
-        $events = [];        // International events
-        $acad_events = [];   // Academic programmes
-        $event_result = $conn->query("SELECT event_id, event_title, location FROM Event WHERE (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL) ORDER BY event_title ASC");
+        // International events: current/future or undated, excluding academic programmes.
+        $events = [];
+        $event_result = $conn->query("SELECT event_id, event_title FROM Event
+                    WHERE (location NOT LIKE 'ACADEMIC#%' OR location IS NULL)
+                      AND (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL)
+                    ORDER BY event_title ASC");
         if ($event_result) {
-            while ($row = $event_result->fetch_assoc()) {
-                if (strpos((string)($row['location'] ?? ''), 'ACADEMIC#') === 0) { $acad_events[] = $row; }
-                else { $events[] = $row; }
-            }
+            while ($row = $event_result->fetch_assoc()) { $events[] = $row; }
+        }
+
+        // Academic programmes (Event.location begins with 'ACADEMIC#') are evergreen,
+        // so list them ALL regardless of date. Both save their template against
+        // event_id like international — only the picker list differs.
+        $acad_events = [];
+        $acad_result = $conn->query("SELECT event_id, event_title FROM Event
+                    WHERE location LIKE 'ACADEMIC#%'
+                    ORDER BY event_title ASC");
+        if ($acad_result) {
+            while ($row = $acad_result->fetch_assoc()) { $acad_events[] = $row; }
         }
         ?>
         <div class="container-fluid mt-5 pt-5">
