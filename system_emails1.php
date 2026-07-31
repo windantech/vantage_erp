@@ -2,12 +2,13 @@
 require_once 'header.php';
 
 // ---- Read filter selections from the URL (server-side filtering) ----
-$f_type   = isset($_GET['f_type'])   ? trim($_GET['f_type'])   : 'all';     // all | virtual | international
+$f_type   = isset($_GET['f_type'])   ? trim($_GET['f_type'])   : 'all';     // all | virtual | international | academic
 $f_course = isset($_GET['f_course']) ? trim($_GET['f_course']) : '';        // course_id
-$f_event  = isset($_GET['f_event'])  ? trim($_GET['f_event'])  : '';        // event_id
+$f_event  = isset($_GET['f_event'])  ? trim($_GET['f_event'])  : '';        // event_id (international)
+$f_acad   = isset($_GET['f_acad'])   ? trim($_GET['f_acad'])   : '';        // event_id (academic)
 
 // Normalise
-if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
+if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
     $f_type = 'all';
 }
 ?>
@@ -20,14 +21,15 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
         // ---- Build the distinct Course / Event lists that ACTUALLY appear in
         //      the system_emails1 table (with their IDs, for accurate filtering) ----
         $course_options = []; // course_id => course name
-        $event_options  = []; // event_id  => event title
+        $event_options  = []; // event_id  => event title (international)
+        $acad_options   = []; // event_id  => programme title (academic)
 
         $opt_q = $conn->query("SELECT DISTINCT se.email_type, se.event_id,
                     c.course AS course_name,
                     e.event_title AS event_name
                     FROM system_emails1 se
                     LEFT JOIN course c ON se.event_id = c.course_id AND (se.email_type = 'virtual' OR se.email_type IS NULL OR se.email_type = '')
-                    LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type = 'international'");
+                    LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic')");
         if ($opt_q) {
             while ($o = $opt_q->fetch_assoc()) {
                 $etype = (!empty($o['email_type'])) ? $o['email_type'] : 'virtual';
@@ -35,6 +37,8 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
                 if ($eid === '') continue;
                 if ($etype === 'international') {
                     if (!empty($o['event_name'])) $event_options[$eid] = $o['event_name'];
+                } elseif ($etype === 'academic') {
+                    if (!empty($o['event_name'])) $acad_options[$eid] = $o['event_name'];
                 } else {
                     if (!empty($o['course_name'])) $course_options[$eid] = $o['course_name'];
                 }
@@ -42,6 +46,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
         }
         asort($course_options);
         asort($event_options);
+        asort($acad_options);
 
         // ---- Full active course & event lists for the Duplicate picker ----
         $all_courses = [];
@@ -71,6 +76,11 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
             if ($f_event !== '') {
                 $where[] = "se.event_id = '" . $conn->real_escape_string($f_event) . "'";
             }
+        } elseif ($f_type === 'academic') {
+            $where[] = "se.email_type = 'academic'";
+            if ($f_acad !== '') {
+                $where[] = "se.event_id = '" . $conn->real_escape_string($f_acad) . "'";
+            }
         }
         $where_sql = !empty($where) ? (' WHERE ' . implode(' AND ', $where)) : '';
 
@@ -80,7 +90,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
             FROM system_emails1 se 
             LEFT JOIN registered_users ru ON se.updated_by = ru.id 
             LEFT JOIN course c ON se.event_id = c.course_id AND (se.email_type = 'virtual' OR se.email_type IS NULL OR se.email_type = '')
-            LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type = 'international'
+            LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic')
             $where_sql
             ORDER BY se.id DESC") or die($conn->error);
 
@@ -91,16 +101,18 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
             $email_type = isset($sm_data['email_type']) && !empty($sm_data['email_type'])
                 ? $sm_data['email_type'] : 'virtual';
 
-            if ($email_type == 'international') {
-                $dedup_key = 'intl|' . trim((string)$sm_data['event_id']) . '|' . trim((string)$sm_data['email_opt']);
+            $is_event = ($email_type === 'international' || $email_type === 'academic');
+            if ($is_event) {
+                $dedup_key = 'evt|' . trim((string)$sm_data['event_id']) . '|' . trim((string)$sm_data['email_opt']);
             } else {
                 $dedup_key = 'virt|' . trim((string)$sm_data['course_opt']) . '|' . trim((string)$sm_data['email_opt']);
             }
             if (isset($seen[$dedup_key])) continue;
             $seen[$dedup_key] = true;
 
-            if ($email_type == 'international') {
-                $course_event_name = !empty($sm_data['event_name_lookup']) ? $sm_data['event_name_lookup'] : $sm_data['course_opt'];
+            if ($is_event) {
+                $course_event_name = !empty($sm_data['event_name_lookup']) ? $sm_data['event_name_lookup']
+                                   : (!empty($sm_data['event_name']) ? $sm_data['event_name'] : $sm_data['course_opt']);
             } else {
                 $course_event_name = !empty($sm_data['course_name']) ? $sm_data['course_name'] : $sm_data['course_opt'];
             }
@@ -137,6 +149,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
                                 <option value="all" <?php echo $f_type === 'all' ? 'selected' : ''; ?>>All Emails</option>
                                 <option value="virtual" <?php echo $f_type === 'virtual' ? 'selected' : ''; ?>>Virtual Courses</option>
                                 <option value="international" <?php echo $f_type === 'international' ? 'selected' : ''; ?>>International Events</option>
+                                <option value="academic" <?php echo $f_type === 'academic' ? 'selected' : ''; ?>>Academic Programmes</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -157,6 +170,17 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
                                 <?php foreach ($event_options as $eid => $ename): ?>
                                 <option value="<?php echo htmlspecialchars($eid); ?>" <?php echo ($f_event !== '' && $f_event == $eid) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($ename); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1">Programme</label>
+                            <select name="f_acad" id="filterAcad" class="form-control rounded-0" <?php echo $f_type === 'academic' ? '' : 'disabled'; ?>>
+                                <option value="">All Programmes</option>
+                                <?php foreach ($acad_options as $aid => $aname): ?>
+                                <option value="<?php echo htmlspecialchars($aid); ?>" <?php echo ($f_acad !== '' && $f_acad == $aid) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($aname); ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
@@ -192,7 +216,9 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
 
                                     $type_badge = $email_type == 'international'
                                         ? '<span class="badge bg-danger">International</span>'
-                                        : '<span class="badge bg-primary">Virtual</span>';
+                                        : ($email_type == 'academic'
+                                            ? '<span class="badge" style="background:#6d1f2b;color:#fff;">Academic</span>'
+                                            : '<span class="badge bg-primary">Virtual</span>');
 
                                     $email_no = trim((string)$sm_data['email_opt']);
                                     $email_no_badge = ($email_no !== '')
@@ -298,22 +324,19 @@ if (!in_array($f_type, ['all', 'virtual', 'international'], true)) {
     var typeSel   = document.getElementById('filterType');
     var courseSel = document.getElementById('filterCourse');
     var eventSel  = document.getElementById('filterEvent');
+    var acadSel   = document.getElementById('filterAcad');
     var resetBtn  = document.getElementById('resetFilter');
 
     // Enable/disable the relevant second dropdown as the type changes
     // (search is only applied when the Search button is clicked).
     typeSel.addEventListener('change', function () {
         var t = this.value;
-        if (t === 'virtual') {
-            courseSel.disabled = false;
-            eventSel.disabled = true;  eventSel.value = '';
-        } else if (t === 'international') {
-            eventSel.disabled = false;
-            courseSel.disabled = true; courseSel.value = '';
-        } else {
-            courseSel.disabled = true; courseSel.value = '';
-            eventSel.disabled  = true; eventSel.value  = '';
-        }
+        courseSel.disabled = true; courseSel.value = '';
+        eventSel.disabled  = true; eventSel.value  = '';
+        if (acadSel) { acadSel.disabled = true; acadSel.value = ''; }
+        if (t === 'virtual')                  courseSel.disabled = false;
+        else if (t === 'international')        eventSel.disabled  = false;
+        else if (t === 'academic' && acadSel) acadSel.disabled   = false;
     });
 
     // Reset clears filters and reloads the unfiltered list

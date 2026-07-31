@@ -7,12 +7,16 @@ require_once 'header.php';
         <?php
         require_once 'top_nav.php';
 
-        // Fetch international events
-        $events = [];
-        $event_result = $conn->query("SELECT event_id, event_title FROM Event WHERE (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL) ORDER BY event_title ASC");
+        // Fetch events, then split into International (no marker) and Academic
+        // (Event.location begins with 'ACADEMIC#'). Both are Event rows and both
+        // save their template against event_id — only the picker list differs.
+        $events = [];        // International events
+        $acad_events = [];   // Academic programmes
+        $event_result = $conn->query("SELECT event_id, event_title, location FROM Event WHERE (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL) ORDER BY event_title ASC");
         if ($event_result) {
             while ($row = $event_result->fetch_assoc()) {
-                $events[] = $row;
+                if (strpos((string)($row['location'] ?? ''), 'ACADEMIC#') === 0) { $acad_events[] = $row; }
+                else { $events[] = $row; }
             }
         }
         ?>
@@ -50,6 +54,7 @@ require_once 'header.php';
                                                     <option value="" hidden>---Select Email Type---</option>
                                                     <option value="virtual">Virtual Courses</option>
                                                     <option value="international">International Events</option>
+                                                    <option value="academic">Academic Programmes</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -85,6 +90,20 @@ require_once 'header.php';
                                                     <?php foreach ($events as $event): ?>
                                                     <option value="<?php echo htmlspecialchars($event['event_title']); ?>" data-id="<?php echo $event['event_id']; ?>">
                                                         <?php echo htmlspecialchars($event['event_title']); ?>
+                                                    </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-xl-6 col-md-6 p-1 d-none" id="academic_container">
+                                            <div class="input-group mb-3 position-relative">
+                                                <span class="input-group-text rounded-0 bg_main" style="min-width: 9rem;" id="basic-addon1">Select Programme</span>
+                                                <select name="academic_opt" id="academic_opt" class="form-control rounded-0 w-100">
+                                                    <option value="" hidden>---Select Academic Programme---</option>
+                                                    <?php foreach ($acad_events as $aev): ?>
+                                                    <option value="<?php echo htmlspecialchars($aev['event_title']); ?>" data-id="<?php echo $aev['event_id']; ?>">
+                                                        <?php echo htmlspecialchars($aev['event_title']); ?>
                                                     </option>
                                                     <?php endforeach; ?>
                                                 </select>
@@ -620,6 +639,7 @@ require_once 'header.php';
     if (localStorage.getItem("email_subject")) $("#email_subject").val(localStorage.getItem("email_subject"));
     if (localStorage.getItem("course_opt"))    $("#course_opt").val(localStorage.getItem("course_opt"));
     if (localStorage.getItem("event_opt"))     $("#event_opt").val(localStorage.getItem("event_opt"));
+    if (localStorage.getItem("academic_opt"))  $("#academic_opt").val(localStorage.getItem("academic_opt"));
     if (localStorage.getItem("email_opt"))     $("#email_opt").val(localStorage.getItem("email_opt"));
     if (localStorage.getItem("temp_opt"))      $("#temp_opt").val(localStorage.getItem("temp_opt"));
 
@@ -628,15 +648,10 @@ require_once 'header.php';
     $("#email_type").change(function () { handleEmailTypeChange($(this).val()); });
 
     function handleEmailTypeChange(selectedType) {
-        if (selectedType === "virtual") {
-            $("#course_container").removeClass("d-none");
-            $("#event_container").addClass("d-none");
-            $("#course_opt").val(""); $("#event_opt").val("");
-        } else if (selectedType === "international") {
-            $("#course_container").addClass("d-none");
-            $("#event_container").removeClass("d-none");
-            $("#course_opt").val(""); $("#event_opt").val("");
-        }
+        $("#course_container, #event_container, #academic_container").addClass("d-none");
+        if (selectedType === "virtual")            $("#course_container").removeClass("d-none");
+        else if (selectedType === "international")  $("#event_container").removeClass("d-none");
+        else if (selectedType === "academic")      $("#academic_container").removeClass("d-none");
     }
 
     function updateComposeHeader() {
@@ -646,6 +661,8 @@ require_once 'header.php';
             $("#compose_header").html("Compose Email (" + localStorage.getItem("course_opt") + " - Email " + emailOpt + ")");
         } else if (emailType === "international" && localStorage.getItem("event_opt") && emailOpt) {
             $("#compose_header").html("Compose Email (" + localStorage.getItem("event_opt") + " - Email " + emailOpt + ")");
+        } else if (emailType === "academic" && localStorage.getItem("academic_opt") && emailOpt) {
+            $("#compose_header").html("Compose Email (" + localStorage.getItem("academic_opt") + " - Email " + emailOpt + ")");
         }
     }
 
@@ -673,6 +690,8 @@ require_once 'header.php';
             courseEventValid = selNotEmpty($("#course_opt"));
         } else if (emailType === "international") {
             courseEventValid = selNotEmptyEvent($("#event_opt"));
+        } else if (emailType === "academic") {
+            courseEventValid = selNotEmptyEvent($("#academic_opt"));
         }
 
         if (isNotEmpty($("#email_subject")) && courseEventValid &&
@@ -692,6 +711,15 @@ require_once 'header.php';
                 localStorage.setItem("event_opt", $("#event_opt").val());
                 localStorage.setItem("event_id", $("#event_opt option:selected").data("id") || "");
                 localStorage.setItem("event_name", $("#event_opt").val());
+                localStorage.setItem("course_opt", "");
+                localStorage.setItem("academic_opt", "");
+            } else if (emailType === "academic") {
+                // Academic programmes are Event rows — save against event_id just
+                // like international, so the admission-letter lookup finds them.
+                localStorage.setItem("academic_opt", $("#academic_opt").val());
+                localStorage.setItem("event_opt", $("#academic_opt").val());
+                localStorage.setItem("event_id", $("#academic_opt option:selected").data("id") || "");
+                localStorage.setItem("event_name", $("#academic_opt").val());
                 localStorage.setItem("course_opt", "");
             }
 
