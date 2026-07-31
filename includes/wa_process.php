@@ -159,19 +159,33 @@ switch ($action) {
             wa_redirect('../wa_inbox.php');
         }
         $tmpl = wa_setting_get($conn, 'reengage_template', '');
-        $lang = wa_setting_get($conn, 'reengage_template_lang', 'en');
         if ($tmpl === '') {
             wa_flash('warning', 'No re-engagement template configured yet (set the reengage_template setting to your approved template name).');
             wa_redirect('../wa_thread.php?id=' . $conv_id);
         }
+        // Language: use the configured code, else auto-detect from the synced template
+        // record, else 'en'. A wrong code causes WhatsApp 132001 "does not exist in <lang>".
+        $lang = trim((string)wa_setting_get($conn, 'reengage_template_lang', ''));
+        if ($lang === '') {
+            $lr = mysqli_query($conn, "SELECT language FROM wa_templates WHERE name = '"
+                . mysqli_real_escape_string($conn, $tmpl) . "' ORDER BY id DESC LIMIT 1");
+            if ($lr && ($lrow = mysqli_fetch_assoc($lr))) { $lang = trim((string)$lrow['language']); }
+            if ($lang === '') { $lang = 'en'; }
+        }
         // {{1}} = customer name, {{2}} = logged-in rep's name, {{3}} = course/programme.
+        // NB: fetch these as strings — wa_scalar() int-casts and would turn names into 0.
         $cid = (int)$conv['contact_id'];
-        $custName = trim((string)(wa_scalar($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid") ?? ''));
+        $custName = '';
+        $cr = mysqli_query($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid LIMIT 1");
+        if ($cr && ($crow = mysqli_fetch_assoc($cr))) { $custName = trim((string)$crow['profile_name']); }
         if ($custName === '') { $custName = 'there'; }
-        $staffName = trim((string)(wa_scalar($conn,
-            "SELECT COALESCE(NULLIF(s.full_name,''), ru.fullname)
-               FROM registered_users ru LEFT JOIN staff s ON s.system_user_id = ru.id
-              WHERE ru.id = " . (int)$staff_id . " LIMIT 1") ?? ''));
+        $staffName = '';
+        $sr = mysqli_query($conn,
+            "SELECT COALESCE(NULLIF(s.full_name,''), ru.fullname) AS nm
+               FROM registered_users ru
+          LEFT JOIN staff s ON s.system_user_id = ru.id
+              WHERE ru.id = " . (int)$staff_id . " LIMIT 1");
+        if ($sr && ($srow = mysqli_fetch_assoc($sr))) { $staffName = trim((string)$srow['nm']); }
         if ($staffName === '') { $staffName = 'the Vantage Africa team'; }
         $course = ($conv['ref_id'] !== null && in_array($conv['ref_type'] ?? '', ['course', 'event', 'program'], true))
             ? trim((string)wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id'])) : '';
