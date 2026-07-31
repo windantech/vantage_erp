@@ -190,14 +190,22 @@ switch ($action) {
         $course = ($conv['ref_id'] !== null && in_array($conv['ref_type'] ?? '', ['course', 'event', 'program'], true))
             ? trim((string)wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id'])) : '';
         if ($course === '') { $course = 'our programmes'; }
-        $components = [[
-            'type' => 'body',
-            'parameters' => [
-                ['type' => 'text', 'text' => $custName],
-                ['type' => 'text', 'text' => $staffName],
-                ['type' => 'text', 'text' => $course],
-            ],
-        ]];
+        // Match the template's ACTUAL variable count (WhatsApp 132000 if we send the wrong
+        // number). 3 vars -> name, rep, course; 2 vars -> name, course; 1 var -> name.
+        $nVars = 3;
+        $br = mysqli_query($conn, "SELECT body FROM wa_templates WHERE name = '"
+            . mysqli_real_escape_string($conn, $tmpl) . "' ORDER BY id DESC LIMIT 1");
+        if ($br && ($brow = mysqli_fetch_assoc($br))
+            && preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string)$brow['body'], $mm) && $mm[1]) {
+            $nVars = max(array_map('intval', $mm[1]));
+        }
+        if ($nVars >= 3)      { $vals = [$custName, $staffName, $course]; }
+        elseif ($nVars === 2) { $vals = [$custName, $course]; }
+        elseif ($nVars === 1) { $vals = [$custName]; }
+        else                  { $vals = []; }
+        $params = [];
+        foreach ($vals as $v) { $params[] = ['type' => 'text', 'text' => $v]; }
+        $components = $params ? [['type' => 'body', 'parameters' => $params]] : [];
         $GLOBALS['WA_SENT_BY_STAFF'] = (int)$staff_id;   // label it as this rep's message
         $res = wa_send_template($conn, $conv['wa_id'], $tmpl, $lang, $components);
         unset($GLOBALS['WA_SENT_BY_STAFF']);
