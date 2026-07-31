@@ -12,8 +12,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $email_opt = $conn->real_escape_string($_POST['email_opt']);
     $temp_opt = $conn->real_escape_string($_POST['temp_opt']);
     
+    // Ensure the email_type enum can store 'academic' (one-time widen so academic
+    // programme templates save with the right type). Cheap check; ALTER runs once.
+    $col = $conn->query("SHOW COLUMNS FROM system_emails1 LIKE 'email_type'");
+    if ($col && ($cr = $col->fetch_assoc()) && stripos($cr['Type'], "'academic'") === false) {
+        $conn->query("ALTER TABLE system_emails1 MODIFY email_type ENUM('virtual','international','academic') NOT NULL DEFAULT 'virtual'");
+    }
+
     // Remove \r\n (carriage return and newline) from email_body
-    $email_body = str_replace(["\r", "\n"], '', $_POST['email_body']); 
+    $email_body = str_replace(["\r", "\n"], '', $_POST['email_body']);
     
     // Convert the email_body to a JSON string
     $body_json = json_encode($email_body);
