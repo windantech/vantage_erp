@@ -1471,6 +1471,29 @@ function wa_send_text($conn, $waId, $body, $force = false) {
     return wa_dialog_dispatch($conn, (int)$contactId, 'text', $body, $payload);
 }
 
+/** Render a template's actual text by filling its {{1}},{{2}}… from the body-parameter
+ *  values in $components. Falls back to '' if the template body isn't known locally. */
+function wa_template_rendered($conn, $name, $lang, $components) {
+    $n = mysqli_real_escape_string($conn, (string)$name);
+    $l = mysqli_real_escape_string($conn, (string)$lang);
+    $res = mysqli_query($conn, "SELECT body FROM wa_templates WHERE name = '$n' AND language = '$l' ORDER BY id DESC LIMIT 1");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    if (!$row) {   // language mismatch (e.g. en vs en_US) — fall back to name only
+        $res = mysqli_query($conn, "SELECT body FROM wa_templates WHERE name = '$n' ORDER BY id DESC LIMIT 1");
+        $row = $res ? mysqli_fetch_assoc($res) : null;
+    }
+    if (!$row) { return ''; }
+    $body = (string)$row['body'];
+    $vals = [];
+    foreach ((array)$components as $c) {
+        if (($c['type'] ?? '') === 'body' && !empty($c['parameters'])) {
+            foreach ($c['parameters'] as $p) { $vals[] = (string)($p['text'] ?? ''); }
+        }
+    }
+    foreach ($vals as $i => $val) { $body = str_replace('{{' . ($i + 1) . '}}', $val, $body); }
+    return $body;
+}
+
 function wa_send_template($conn, $waId, $name, $lang = 'en', $components = []) {
     $contact = wa_find_contact_by_waid($conn, $waId);
     $contactId = $contact['id'] ?? wa_upsert_contact($conn, $waId);
@@ -1480,7 +1503,11 @@ function wa_send_template($conn, $waId, $name, $lang = 'en', $components = []) {
         'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
         'to' => $waId, 'type' => 'template', 'template' => $template,
     ];
-    return wa_dialog_dispatch($conn, (int)$contactId, 'template', "[template:{$name}/{$lang}]", $payload);
+    // Store the ACTUAL rendered text (placeholders filled) so staff see what the client
+    // received, not a raw "[template:…]" reference. Fall back to the reference if unknown.
+    $display = wa_template_rendered($conn, $name, $lang, $components);
+    if (trim($display) === '') { $display = "[template:{$name}/{$lang}]"; }
+    return wa_dialog_dispatch($conn, (int)$contactId, 'template', $display, $payload);
 }
 
 /** Upload a local file to 360dialog. Returns ['ok', 'id'] or ['ok'=>false,'error']. */
