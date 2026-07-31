@@ -3800,6 +3800,10 @@ function wa_run_unanswered_sweep($conn, $staleSecs = 600, $limit = 30) {
           WHERE c.opted_out = 0
             AND c.last_inbound_at IS NOT NULL
             AND c.last_inbound_at <= (NOW() - INTERVAL $staleSecs SECOND)
+            -- Only chats still INSIDE the 24h window: outside it WhatsApp blocks any send,
+            -- so there's nothing to do and we'd just re-process the same chats every run.
+            -- (With the 2-min threshold, chats are answered well before they hit 24h.)
+            AND c.last_inbound_at > (NOW() - INTERVAL 24 HOUR)
             AND NOT EXISTS (
                 SELECT 1 FROM wa_messages m
                  WHERE m.contact_id = c.id AND m.direction = 'outbound' AND m.type <> 'note'
