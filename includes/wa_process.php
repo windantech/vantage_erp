@@ -150,6 +150,48 @@ switch ($action) {
         wa_redirect('../wa_thread.php?id=' . $conv_id);
     }
 
+    // ---- Thread: send the approved re-engagement template (re-opens a closed 24h window) ----
+    case 'reengage': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not for one of your courses.');
+            wa_redirect('../wa_inbox.php');
+        }
+        $tmpl = wa_setting_get($conn, 'reengage_template', '');
+        $lang = wa_setting_get($conn, 'reengage_template_lang', 'en');
+        if ($tmpl === '') {
+            wa_flash('warning', 'No re-engagement template configured yet (set the reengage_template setting to your approved template name).');
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+        // {{1}} = customer name, {{2}} = logged-in rep's name, {{3}} = course/programme.
+        $cid = (int)$conv['contact_id'];
+        $custName = trim((string)(wa_scalar($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid") ?? ''));
+        if ($custName === '') { $custName = 'there'; }
+        $staffName = trim((string)(wa_scalar($conn,
+            "SELECT COALESCE(NULLIF(s.full_name,''), ru.fullname)
+               FROM registered_users ru LEFT JOIN staff s ON s.system_user_id = ru.id
+              WHERE ru.id = " . (int)$staff_id . " LIMIT 1") ?? ''));
+        if ($staffName === '') { $staffName = 'the Vantage Africa team'; }
+        $course = ($conv['ref_id'] !== null && in_array($conv['ref_type'] ?? '', ['course', 'event', 'program'], true))
+            ? trim((string)wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id'])) : '';
+        if ($course === '') { $course = 'our programmes'; }
+        $components = [[
+            'type' => 'body',
+            'parameters' => [
+                ['type' => 'text', 'text' => $custName],
+                ['type' => 'text', 'text' => $staffName],
+                ['type' => 'text', 'text' => $course],
+            ],
+        ]];
+        $GLOBALS['WA_SENT_BY_STAFF'] = (int)$staff_id;   // label it as this rep's message
+        $res = wa_send_template($conn, $conv['wa_id'], $tmpl, $lang, $components);
+        unset($GLOBALS['WA_SENT_BY_STAFF']);
+        wa_flash(!empty($res['ok']) ? 'success' : 'danger',
+            !empty($res['ok']) ? 'Re-engagement message sent.' : ('Send failed: ' . ($res['error'] ?? 'unknown')));
+        wa_redirect('../wa_thread.php?id=' . $conv_id);
+    }
+
     // ---- Settings: active AI provider (supervisor only) ----
     case 'save_provider': {
         if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_settings.php'); }

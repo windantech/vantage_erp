@@ -263,6 +263,16 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         <div class="text-warning small">
                             <i class="bi bi-clock-history me-1"></i>24-hour window closed — free-form replies are blocked. Use an approved template to re-engage.
                         </div>
+                        <?php $reTmpl = wa_setting_get($conn, 'reengage_template', ''); if ($reTmpl !== ''): ?>
+                            <form method="post" action="includes/wa_process.php" class="mt-2"
+                                  onsubmit="return confirm('Send the re-engagement template to this customer?');">
+                                <input type="hidden" name="action" value="reengage">
+                                <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                                <button type="submit" class="btn btn-sm btn-warning">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Send re-engagement template
+                                </button>
+                            </form>
+                        <?php endif; ?>
                     <?php endif; ?>
 
                     <?php /* Manual reassign + course/event switch — available to all WhatsApp staff. */ ?>
