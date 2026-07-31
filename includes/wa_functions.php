@@ -270,9 +270,13 @@ function wa_save_outbound($conn, $contactId, $m) {
     // other send (AI answer, follow-up, payment confirm, broadcast) leaves it unset = AI.
     $sentBy = (isset($GLOBALS['WA_SENT_BY_STAFF']) && (int)$GLOBALS['WA_SENT_BY_STAFF'] > 0)
         ? (int)$GLOBALS['WA_SENT_BY_STAFF'] : 'NULL';
+    // Stamp wa_timestamp = NOW() on every outbound. Without it the column is NULL, and the
+    // unanswered-sweeper's "is there a reply after the customer's message?" test
+    // (wa_timestamp >= last_inbound_at) can never see the reply — so it re-sends the same
+    // answer every minute. NOW() is server time, always >= the inbound timestamp.
     mysqli_query($conn,
-        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff)
-         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy)");
+        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff, wa_timestamp)
+         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy, NOW())");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -3807,7 +3811,9 @@ function wa_run_unanswered_sweep($conn, $staleSecs = 600, $limit = 30) {
             AND NOT EXISTS (
                 SELECT 1 FROM wa_messages m
                  WHERE m.contact_id = c.id AND m.direction = 'outbound' AND m.type <> 'note'
-                   AND m.wa_timestamp >= c.last_inbound_at)
+                   -- COALESCE so replies saved before wa_timestamp was stamped (NULL) still
+                   -- count as answered via their created_at, instead of looping forever.
+                   AND COALESCE(m.wa_timestamp, m.created_at) >= c.last_inbound_at)
           ORDER BY c.last_inbound_at ASC
           LIMIT $limit");
     if (!$res) { return ['ok' => true, 'swept' => 0]; }
