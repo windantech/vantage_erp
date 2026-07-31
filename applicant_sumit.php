@@ -985,8 +985,9 @@ error_log(print_r($result, true));
         $event_id = mysqli_real_escape_string($conn, $_POST['event_id']);
 
         
-        // Get event amount from database
-        $event_query = "SELECT early_amount FROM Event WHERE event_id = '$event_id'";
+        // Get event details from database (title/dates/location are read below and
+        // must be selected here, or the admission letter block gets blank values)
+        $event_query = "SELECT early_amount, event_title, start_on, end_on, location FROM Event WHERE event_id = '$event_id'";
         $event_result = mysqli_query($conn, $event_query);
         $amount = 0;
         if ($event_result && mysqli_num_rows($event_result) > 0) {
@@ -1038,14 +1039,20 @@ $end_on = $date->format('jS M');
                         
                                 
                         generateAdmissionWithInvoice(
-   $email, $fullname, $event_data['title'],
+   $email, $fullname, $title,
     [], // default items
     0, // no discount
     [], // default training areas
     $start_on, // start date
     $end_on, // end date
-   $location,$conn
-);  
+   $location, $conn,
+   $ticket_id,   // ticket_id (used for email logging)
+   null,         // record_id
+   '',           // corporate_variant
+   $amount,      // event_amount
+   '', '', '',   // invite position / organization / country
+   $event_id     // event_id -> REQUIRED so the admission-email template is found
+);
             ?>
             <script>
                 window.alert("International Event Registration Added Successfully!");

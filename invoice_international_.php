@@ -1328,27 +1328,19 @@ function sendAdmissionEmail($client_email, $client_name, $subject, $generatedFil
         error_log('ADMISSION EMAIL: skipped template lookup — conn=' . ($conn ? 'yes' : 'no') . ' event_id=' . var_export($event_id, true));
     }
 
-    // No default body: if we have no template, do not send an empty email.
+    // No bespoke template configured for this event — fall back to a standard
+    // covering note so the admission email still goes out (the full letter is the
+    // attached PDF). A configured template (system_emails1, email_opt=1) overrides this.
     if ($custom_body === null) {
-        error_log('ADMISSION EMAIL: aborting send to ' . $client_email . ' — no usable template body.');
-
-        if ($conn && $ticket_id) {
-            log_email(
-                $conn,
-                'ticket_congress',
-                $ticket_id,
-                'admission_letter',
-                $client_email,
-                $client_name,
-                $subject,
-                $attachments,
-                'failed',
-                'No template body found in system_emails1 for this event',
-                null,
-                $record_id
-            );
-        }
-        return false;
+        error_log('ADMISSION EMAIL: no template for event_id=' . var_export($event_id, true) . ' — using default covering body.');
+        $recipient_name = ucfirst(strtolower((string) $client_name));
+        $prog = trim((string) $event_title);
+        $custom_body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
+            . 'Congratulations! Please find attached your admission letter'
+            . ($prog !== '' ? ' for <strong>' . htmlspecialchars($prog) . '</strong>' : '')
+            . '.<br><br>We are delighted to welcome you to Vantage Africa School of Leadership. '
+            . 'If you have any questions, simply reply to this email and our team will be glad to assist.'
+            . '<br><br>Warm regards,<br>Vantage Africa School of Leadership';
     }
 
     // Corporate variants attach an extra invitation PDF (still applies with template body).
