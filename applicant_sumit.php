@@ -1052,11 +1052,30 @@ error_log(print_r($result, true));
                       }
                   }
 
-                  // Standard admission-letter text (Option 1 — refine per programme later).
+                  // Admission-letter text — enriched with the programme's OWN curriculum
+                  // modules when we can match the event to an academic programme by title.
+                  $modules = [];
+                  $safe_title = mysqli_real_escape_string($conn, $purpose);
+                  $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE LOWER(title) = LOWER('$safe_title') LIMIT 1");
+                  if (!$pq || mysqli_num_rows($pq) === 0) {
+                      // fuzzy: programme title contained in the event title (or vice-versa)
+                      $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE '$safe_title' LIKE CONCAT('%', title, '%') OR title LIKE CONCAT('%', '$safe_title', '%') ORDER BY CHAR_LENGTH(title) DESC LIMIT 1");
+                  }
+                  if ($pq && mysqli_num_rows($pq) > 0) {
+                      $pid = (int) mysqli_fetch_assoc($pq)['id'];
+                      $mq = mysqli_query($conn, "SELECT module_name FROM program_curriculum WHERE program_id = $pid ORDER BY FIELD(curriculum_tier,'foundational','intermediate','advanced'), sort_order ASC, id ASC");
+                      if ($mq) { while ($m = mysqli_fetch_assoc($mq)) { $nm = trim((string) $m['module_name']); if ($nm !== '') { $modules[] = $nm; } } }
+                  }
                   $adm = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>'
                        . '<p>We are pleased to offer you admission to the <strong>' . htmlspecialchars($purpose) . '</strong> '
                        . 'programme at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the '
-                       . 'fees indicated below.</p><p>We look forward to welcoming you to the programme.</p>';
+                       . 'fees indicated below.</p>';
+                  if ($modules) {
+                      $adm .= '<p><strong>Programme Modules</strong></p><ol>';
+                      foreach ($modules as $mn) { $adm .= '<li>' . htmlspecialchars($mn) . '</li>'; }
+                      $adm .= '</ol>';
+                  }
+                  $adm .= '<p>We look forward to welcoming you to the programme.</p>';
 
                   include 'adm_letter.php';   // builds the 2 PDFs + sends the approval email
                   ?>
