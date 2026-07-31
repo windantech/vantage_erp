@@ -99,8 +99,14 @@ $providerReady = wa_provider_ready(wa_active_provider($conn));
                                     <label class="form-label small text-muted">Body (with {{1}} variables) — copy this into the Hub</label>
                                     <textarea id="tBody" name="body" class="form-control" rows="5" required placeholder="Hi {{1}}, our next intake for {{2}} opens soon. Reply to reserve your spot."></textarea>
                                 </div>
-                                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Record template</button>
-                                <p class="text-muted small mt-2 mb-0">Only templates marked <strong>Approved</strong> here can be broadcast.</p>
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-save me-1"></i>Record locally</button>
+                                    <button type="submit" class="btn btn-success"
+                                            onclick="this.form.querySelector('[name=action]').value='submit_template';">
+                                        <i class="bi bi-send me-1"></i>Submit to Meta
+                                    </button>
+                                </div>
+                                <p class="text-muted small mt-2 mb-0"><strong>Submit to Meta</strong> creates the template on WhatsApp for review. Only <strong>Approved</strong> templates can be sent. (Variable examples are added automatically.)</p>
                             </form>
                         </div>
                     </div>

@@ -1359,11 +1359,23 @@ function wa_ai_template_draft($conn, $description) {
 
 /** Submit a template to Meta (via 360dialog) for approval; store it locally. */
 function wa_template_submit($conn, $name, $language, $category, $body) {
+    // Meta requires an example value for every {{n}} variable in the body, or it
+    // rejects the template. Count the variables and supply sample values.
+    preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $mm);
+    $nVars = $mm[1] ? max(array_map('intval', $mm[1])) : 0;
+    $bodyComp = ['type' => 'BODY', 'text' => $body];
+    if ($nVars > 0) {
+        $samples = ['Jane Doe', 'Dorcas Mukami', 'the Senior Management Course', 'next week',
+                    'USD 380', 'Nairobi', '8 August 2026', 'Vantage Africa'];
+        $ex = [];
+        for ($i = 0; $i < $nVars; $i++) { $ex[] = $samples[$i % count($samples)]; }
+        $bodyComp['example'] = ['body_text' => [$ex]];
+    }
     $payload = [
         'name'       => $name,
         'language'   => $language,
         'category'   => strtoupper($category ?: 'MARKETING'),
-        'components' => [['type' => 'BODY', 'text' => $body]],
+        'components' => [$bodyComp],
     ];
     $resp = wa_http_post(rtrim(WA_DIALOG_URL, '/') . '/v1/configs/templates',
         ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY], $payload);

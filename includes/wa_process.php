@@ -354,6 +354,24 @@ switch ($action) {
         wa_flash('success', 'Template recorded.');
         wa_redirect('../wa_templates.php');
     }
+    // ---- Templates: SUBMIT to Meta via 360dialog (creates it for real, then records it) ----
+    case 'submit_template': {
+        if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_templates.php'); }
+        $name = strtolower(trim((string)($_POST['name'] ?? '')));
+        $name = preg_replace('/[^a-z0-9_]+/', '_', $name);
+        $lang = trim((string)($_POST['language'] ?? 'en')) ?: 'en';
+        $cat  = (string)($_POST['category'] ?? 'marketing');
+        $body = trim((string)($_POST['body'] ?? ''));
+        if ($name === '' || $body === '') { wa_flash('warning', 'Name and body are required.'); wa_redirect('../wa_templates.php'); }
+        $res = wa_template_submit($conn, $name, $lang, $cat, $body);
+        if (!empty($res['ok'])) {
+            wa_flash('success', 'Submitted to Meta — status: ' . ($res['status'] ?? 'pending')
+                . '. Meta reviews it (usually minutes–hours); click "Sync from Meta" to refresh the status.');
+        } else {
+            wa_flash('danger', 'Meta rejected the submission: ' . ($res['error'] ?? 'unknown'));
+        }
+        wa_redirect('../wa_templates.php');
+    }
     case 'delete_template': {
         if (!$is_supervisor) { wa_flash('danger', 'Supervisors only.'); wa_redirect('../wa_templates.php'); }
         wa_template_delete($conn, (string)($_POST['name'] ?? ''), (string)($_POST['language'] ?? 'en'));
