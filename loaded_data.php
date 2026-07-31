@@ -1184,6 +1184,10 @@ error_log(print_r($result, true));
             $event_data = mysqli_fetch_assoc($event_result);
             $amount = $event_data['early_amount'];
         }
+        // Fee typed on the form overrides the event's stored amount.
+        if (isset($_POST['amount']) && trim((string) $_POST['amount']) !== '') {
+            $amount = (float) $_POST['amount'];
+        }
         
         // Generate ticket details
         $ticket_id = 'VASL' . time();
@@ -1204,13 +1208,6 @@ error_log(print_r($result, true));
         if ($stmt) {
             
               include 'invoice_international_.php';
-
-              // Academic programmes get ONE approval email (2 attachments) via the
-              // shared helper; non-academic international events keep the event path.
-              require_once 'includes/academic_approval.php';
-              if (is_academic_event($conn, $event_data['location'] ?? '', $event_data['event_title'] ?? '')) {
-                  send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id);
-              } else {
                         $start_on = $event_data['start_on'];
 
 $date = new DateTime($start_on);
@@ -1250,7 +1247,6 @@ $end_on = $date->format('jS M');
    '', '', '',   // invite position / organization / country
    $event_id     // event_id -> REQUIRED so the admission-email template is found
 );
-              }
             ?>
             <script>
                 window.alert("International Event Registration Added Successfully!");

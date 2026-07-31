@@ -128,6 +128,12 @@ require_once 'header.php';
                         </select>
                     </div>
 
+                    <!-- Fee for this event/programme (prints on the invoice) -->
+                    <div class="input-group mb-3" id="eventAmountField" style="display: none;">
+                        <span class="input-group-text rounded-0 bg_main" style="width: 8rem;">Amount (KSh)</span>
+                        <input type="number" name="amount" id="event_amount" class="form-control rounded-0" placeholder="Fee for this course (e.g. 12000)" min="0" step="1">
+                    </div>
+
                     <!-- Additional Fields for International Events (Initially Hidden) -->
                     <div id="internationalFieldss" style="display: block;">
                         <div class="input-group mb-3">
@@ -419,20 +425,23 @@ function toggleProgramFields() {
     var internationalEventField = document.getElementById('internationalEventField');
     var internationalFields = document.getElementById('internationalFields');
     var eventSelect = document.getElementById('event_id');
-    
+    var eventAmountField = document.getElementById('eventAmountField');
+
     if (programType === 'virtual') {
         // Show virtual program field
         virtualProgramField.style.display = 'flex';
         virtualProgram.required = true;
-        
+
         // Hide international fields
         internationalEventField.style.display = 'none';
+        if (eventAmountField) eventAmountField.style.display = 'none';
         internationalFields.style.display = 'none';
         eventSelect.required = false;
         
     } else if (programType === 'international') {
         // Show international event fields
         internationalEventField.style.display = 'flex';
+        if (eventAmountField) eventAmountField.style.display = 'flex';
         internationalFields.style.display = 'block';
         eventSelect.required = true;
         
@@ -994,7 +1003,12 @@ error_log(print_r($result, true));
             $event_data = mysqli_fetch_assoc($event_result);
             $amount = $event_data['early_amount'];
         }
-        
+        // Fee typed on the form overrides the event's stored amount — academic
+        // events have no stored fee, so this is what prints on the invoice.
+        if (isset($_POST['amount']) && trim((string) $_POST['amount']) !== '') {
+            $amount = (float) $_POST['amount'];
+        }
+
         // Generate ticket details
         $ticket_id = 'VASL' . time();
         $ticket_number = 1;
@@ -1014,21 +1028,6 @@ error_log(print_r($result, true));
         if ($stmt) {
             
               include 'invoice_international_.php';
-
-              // Academic programmes get ONE approval email (admission letter with the
-              // programme's curriculum + fee structure, and a proforma invoice, as two
-              // attachments) instead of the event path's two separate emails.
-              require_once 'includes/academic_approval.php';
-
-              if (is_academic_event($conn, $event_data['location'] ?? '', $event_data['event_title'] ?? '')) {
-                  send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id);
-                  ?>
-                  <script>
-                      window.alert("Academic Programme Registration Added Successfully!");
-                      window.location.href="loaded_data";
-                  </script>
-                  <?php
-              } else {
                         $start_on = $event_data['start_on'];
 
 $date = new DateTime($start_on);
@@ -1074,7 +1073,6 @@ $end_on = $date->format('jS M');
                 window.location.href="loaded_data";
             </script>
             <?php
-              }
         } else {
             ?>
             <script>
