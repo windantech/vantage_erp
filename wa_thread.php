@@ -263,7 +263,8 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         <div class="text-warning small">
                             <i class="bi bi-clock-history me-1"></i>24-hour window closed — free-form replies are blocked. Use an approved template to re-engage.
                         </div>
-                        <?php $reTmpl = wa_setting_get($conn, 'reengage_template', ''); if ($reTmpl !== ''): ?>
+                        <?php $reTmpl = wa_setting_get($conn, 'reengage_template', ''); ?>
+                        <?php if ($reTmpl !== ''): ?>
                             <form method="post" action="includes/wa_process.php" class="mt-2"
                                   onsubmit="return confirm('Send the re-engagement template to this customer?');">
                                 <input type="hidden" name="action" value="reengage">
@@ -272,6 +273,11 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                                     <i class="bi bi-arrow-repeat me-1"></i>Send re-engagement template
                                 </button>
                             </form>
+                        <?php else: ?>
+                            <div class="small text-muted mt-1">
+                                <i class="bi bi-info-circle me-1"></i>To enable one-click re-engage here, get a template
+                                approved and set the <code>reengage_template</code> setting to its name.
+                            </div>
                         <?php endif; ?>
                     <?php endif; ?>
 
