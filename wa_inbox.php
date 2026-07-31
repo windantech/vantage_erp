@@ -200,6 +200,41 @@ if ($result) {
                             </tbody>
                         </table>
                     </div>
+                    <script>
+                    /* Pre-apply the saved filters to the server-rendered rows BEFORE first
+                       paint, so returning from a chat shows the filtered list straight away
+                       instead of flashing the full "All courses" list, then the live poll
+                       (below) refreshes as normal. */
+                    (function () {
+                        var s; try { s = JSON.parse(sessionStorage.getItem('waInboxFilters') || '{}'); } catch (e) { return; }
+                        if (!s) return;
+                        var cEl = document.getElementById('waCourse'),
+                            hEl = document.getElementById('waHandler'),
+                            sEl = document.getElementById('waSearch');
+                        if (cEl && s.course  != null) cEl.value = s.course;
+                        if (hEl && s.handler != null) hEl.value = s.handler;
+                        if (sEl && s.q       != null) sEl.value = s.q;
+                        if (s.tab) document.querySelectorAll('#waFilters button').forEach(function (x) {
+                            x.classList.toggle('active', x.getAttribute('data-filter') === s.tab);
+                        });
+                        if (!(s.course || (s.tab && s.tab !== 'all') || s.handler || s.q)) return;
+                        var q = (s.q || '').toLowerCase();
+                        document.querySelectorAll('#waRows tr').forEach(function (tr) {
+                            var tds = tr.children; if (tds.length < 6) return;   // skip empty-state row
+                            var course    = (tds[2].textContent || '').trim();
+                            var handler   = (tds[4].textContent || '').trim().toLowerCase();
+                            var unread    = tr.classList.contains('table-active');
+                            var escalated = (tr.getAttribute('style') || '').indexOf('#ffc107') !== -1;
+                            var ok = true;
+                            if (s.tab === 'unread'    && !unread)             ok = false;
+                            if (s.tab === 'escalated' && !escalated)          ok = false;
+                            if (s.course  && course  !== s.course)            ok = false;
+                            if (s.handler && handler !== s.handler)           ok = false;
+                            if (q && (tr.textContent || '').toLowerCase().indexOf(q) === -1) ok = false;
+                            if (!ok) tr.style.display = 'none';
+                        });
+                    })();
+                    </script>
                 </div>
             </div>
 
@@ -217,6 +252,33 @@ if ($result) {
     var handlerEl = document.getElementById('waHandler');
     var countEl  = document.getElementById('waCount');
     var unreadEl = document.getElementById('waUnread');
+
+    // Remember the active filters for the session so opening a chat and coming
+    // back keeps the course/tab/handler/search you had, instead of resetting.
+    var FKEY = 'waInboxFilters';
+    function saveFilters() {
+        try {
+            sessionStorage.setItem(FKEY, JSON.stringify({
+                tab:     currentFilter,
+                course:  courseEl  ? courseEl.value  : '',
+                handler: handlerEl ? handlerEl.value : '',
+                q:       searchEl  ? searchEl.value  : ''
+            }));
+        } catch (e) {}
+    }
+    function restoreFilters() {
+        var s; try { s = JSON.parse(sessionStorage.getItem(FKEY) || '{}'); } catch (e) { s = {}; }
+        if (!s) return;
+        if (courseEl  && s.course  != null) courseEl.value  = s.course;   // unknown value -> '' (All)
+        if (handlerEl && s.handler != null) handlerEl.value = s.handler;
+        if (searchEl  && s.q       != null) searchEl.value  = s.q;
+        if (s.tab) {
+            currentFilter = s.tab;
+            document.querySelectorAll('#waFilters button').forEach(function (x) {
+                x.classList.toggle('active', x.getAttribute('data-filter') === s.tab);
+            });
+        }
+    }
 
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
     function kindIcon(k) { return k === 'ai' ? '🤖 ' : (k === 'human' ? '👤 ' : ''); }   // last-reply sender
@@ -353,18 +415,20 @@ if ($result) {
             .catch(function () {});
     }
 
-    searchEl.addEventListener('input', function () { render(current); });
-    if (courseEl)  courseEl.addEventListener('change', function () { render(current); });
-    if (handlerEl) handlerEl.addEventListener('change', function () { render(current); });
+    searchEl.addEventListener('input', function () { saveFilters(); render(current); });
+    if (courseEl)  courseEl.addEventListener('change', function () { saveFilters(); render(current); });
+    if (handlerEl) handlerEl.addEventListener('change', function () { saveFilters(); render(current); });
     document.querySelectorAll('#waFilters button').forEach(function (b) {
         b.addEventListener('click', function () {
             document.querySelectorAll('#waFilters button').forEach(function (x) { x.classList.remove('active'); });
             b.classList.add('active');
             currentFilter = b.getAttribute('data-filter');
+            saveFilters();
             render(current);
         });
     });
 
+    restoreFilters();               // re-apply the filters you had this session
     poll();                         // hydrate immediately
     setInterval(poll, 6000);        // then live every 6s
 })();
