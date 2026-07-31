@@ -1014,13 +1014,65 @@ error_log(print_r($result, true));
         if ($stmt) {
             
               include 'invoice_international_.php';
+
+              // Academic programmes (Event.location contains an 'academic#' marker)
+              // get the SAME approval email as virtual courses: admission letter (with
+              // fee structure) + proforma invoice, via adm_letter.php. The email body
+              // comes from the Academic template configured in the CRM (system_emails1
+              // by event_id); the letter text is a standard default for now.
+              $is_academic = (stripos((string)($event_data['location'] ?? ''), 'academic#') !== false);
+
+              if ($is_academic) {
+                  // generatePdf.php + email_function.php are already loaded by
+                  // invoice_international_.php; adm_letter.php adds its own generators.
+                  $email_address  = $email;
+                  $recipient_name = ucfirst(strtolower($firstname)) . ' ' . ucfirst(strtolower($lastname));
+                  $subject        = 'Vantage Africa School Of Leadership Approval';
+                  $purpose        = $event_data['event_title'];
+                  $amount         = number_format((float)($event_data['early_amount'] ?? 0), 2, '.', ',');
+                  $adm_no         = 'VASL-' . $ticket_id;
+                  $invoice_no     = $adm_no;
+                  $letter_date    = date('jS F Y');
+                  $invoice_date   = date('jS F Y');
+                  $entry_id       = $ticket_id;   // adm_letter logs against this
+                  $record_id      = null;
+
+                  // Email body: the Academic template from the CRM, else a standard note.
+                  $body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
+                        . 'Congratulations on your admission to <strong>' . htmlspecialchars($purpose) . '</strong>. '
+                        . 'Please find attached your admission letter and proforma invoice. '
+                        . 'Our team will be in touch with the next steps.<br><br>'
+                        . 'Warm regards,<br>Vantage Africa School of Leadership';
+                  $tpl_q = mysqli_query($conn, "SELECT body FROM system_emails1 WHERE event_id = '" . (int)$event_id . "' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
+                  if ($tpl_q && mysqli_num_rows($tpl_q) > 0) {
+                      $tpl_row = mysqli_fetch_assoc($tpl_q);
+                      $tpl_body = json_decode($tpl_row['body'], true);
+                      if (is_string($tpl_body) && trim($tpl_body) !== '') {
+                          $body = str_replace('$name', $recipient_name, $tpl_body);
+                      }
+                  }
+
+                  // Standard admission-letter text (Option 1 — refine per programme later).
+                  $adm = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>'
+                       . '<p>We are pleased to offer you admission to the <strong>' . htmlspecialchars($purpose) . '</strong> '
+                       . 'programme at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the '
+                       . 'fees indicated below.</p><p>We look forward to welcoming you to the programme.</p>';
+
+                  include 'adm_letter.php';   // builds the 2 PDFs + sends the approval email
+                  ?>
+                  <script>
+                      window.alert("Academic Programme Registration Added Successfully!");
+                      window.location.href="loaded_data";
+                  </script>
+                  <?php
+              } else {
                         $start_on = $event_data['start_on'];
-                      
+
 $date = new DateTime($start_on);
 $start_on = $date->format('jS M');
 
                         $end_on = $event_data['end_on'];
-                        
+
                       $title = $event_data['event_title'];
 $code = 0; // default value
 
@@ -1031,13 +1083,13 @@ $code=2;
 } elseif (stripos($title, 'Data Analysis') !== false) {
     $code=3;
 }
-                        
+
 $date = new DateTime($end_on);
 $end_on = $date->format('jS M');
 
                         $location = $event_data['location'];
-                        
-                                
+
+
                         generateAdmissionWithInvoice(
    $email, $fullname, $title,
     [], // default items
@@ -1059,6 +1111,7 @@ $end_on = $date->format('jS M');
                 window.location.href="loaded_data";
             </script>
             <?php
+              }
         } else {
             ?>
             <script>
