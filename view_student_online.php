@@ -1285,13 +1285,20 @@ error_log(print_r($result, true));
         if ($stmt) {
             
               include 'invoice_international_.php';
+
+              // Academic programmes get ONE approval email (2 attachments) via the
+              // shared helper; non-academic international events keep the event path.
+              require_once 'includes/academic_approval.php';
+              if (is_academic_event($conn, $event_data['location'] ?? '', $event_data['event_title'] ?? '')) {
+                  send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id);
+              } else {
                         $start_on = $event_data['start_on'];
-                      
+
 $date = new DateTime($start_on);
 $start_on = $date->format('jS M');
 
                         $end_on = $event_data['end_on'];
-                        
+
                       $title = $event_data['event_title'];
 $code = 0; // default value
 
@@ -1302,13 +1309,13 @@ $code=2;
 } elseif (stripos($title, 'Data Analysis') !== false) {
     $code=3;
 }
-                        
+
 $date = new DateTime($end_on);
 $end_on = $date->format('jS M');
 
                         $location = $event_data['location'];
-                        
-                                
+
+
                         generateAdmissionWithInvoice(
    $email, $fullname, $title,
     [], // default items
@@ -1324,6 +1331,7 @@ $end_on = $date->format('jS M');
    '', '', '',   // invite position / organization / country
    $event_id     // event_id -> REQUIRED so the admission-email template is found
 );
+              }
             ?>
             <script>
                 window.alert("International Event Registration Added Successfully!");

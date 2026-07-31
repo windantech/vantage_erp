@@ -1015,69 +1015,13 @@ error_log(print_r($result, true));
             
               include 'invoice_international_.php';
 
-              // Academic programmes (Event.location contains an 'academic#' marker)
-              // get the SAME approval email as virtual courses: admission letter (with
-              // fee structure) + proforma invoice, via adm_letter.php. The email body
-              // comes from the Academic template configured in the CRM (system_emails1
-              // by event_id); the letter text is a standard default for now.
-              $is_academic = (stripos((string)($event_data['location'] ?? ''), 'academic#') !== false);
+              // Academic programmes get ONE approval email (admission letter with the
+              // programme's curriculum + fee structure, and a proforma invoice, as two
+              // attachments) instead of the event path's two separate emails.
+              require_once 'includes/academic_approval.php';
 
-              if ($is_academic) {
-                  // generatePdf.php + email_function.php are already loaded by
-                  // invoice_international_.php; adm_letter.php adds its own generators.
-                  $email_address  = $email;
-                  $recipient_name = ucfirst(strtolower($firstname)) . ' ' . ucfirst(strtolower($lastname));
-                  $subject        = 'Vantage Africa School Of Leadership Approval';
-                  $purpose        = $event_data['event_title'];
-                  $amount         = number_format((float)($event_data['early_amount'] ?? 0), 2, '.', ',');
-                  $adm_no         = 'VASL-' . $ticket_id;
-                  $invoice_no     = $adm_no;
-                  $letter_date    = date('jS F Y');
-                  $invoice_date   = date('jS F Y');
-                  $entry_id       = $ticket_id;   // adm_letter logs against this
-                  $record_id      = null;
-
-                  // Email body: the Academic template from the CRM, else a standard note.
-                  $body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
-                        . 'Congratulations on your admission to <strong>' . htmlspecialchars($purpose) . '</strong>. '
-                        . 'Please find attached your admission letter and proforma invoice. '
-                        . 'Our team will be in touch with the next steps.<br><br>'
-                        . 'Warm regards,<br>Vantage Africa School of Leadership';
-                  $tpl_q = mysqli_query($conn, "SELECT body FROM system_emails1 WHERE event_id = '" . (int)$event_id . "' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
-                  if ($tpl_q && mysqli_num_rows($tpl_q) > 0) {
-                      $tpl_row = mysqli_fetch_assoc($tpl_q);
-                      $tpl_body = json_decode($tpl_row['body'], true);
-                      if (is_string($tpl_body) && trim($tpl_body) !== '') {
-                          $body = str_replace('$name', $recipient_name, $tpl_body);
-                      }
-                  }
-
-                  // Admission-letter text — enriched with the programme's OWN curriculum
-                  // modules when we can match the event to an academic programme by title.
-                  $modules = [];
-                  $safe_title = mysqli_real_escape_string($conn, $purpose);
-                  $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE LOWER(title) = LOWER('$safe_title') LIMIT 1");
-                  if (!$pq || mysqli_num_rows($pq) === 0) {
-                      // fuzzy: programme title contained in the event title (or vice-versa)
-                      $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE '$safe_title' LIKE CONCAT('%', title, '%') OR title LIKE CONCAT('%', '$safe_title', '%') ORDER BY CHAR_LENGTH(title) DESC LIMIT 1");
-                  }
-                  if ($pq && mysqli_num_rows($pq) > 0) {
-                      $pid = (int) mysqli_fetch_assoc($pq)['id'];
-                      $mq = mysqli_query($conn, "SELECT module_name FROM program_curriculum WHERE program_id = $pid ORDER BY FIELD(curriculum_tier,'foundational','intermediate','advanced'), sort_order ASC, id ASC");
-                      if ($mq) { while ($m = mysqli_fetch_assoc($mq)) { $nm = trim((string) $m['module_name']); if ($nm !== '') { $modules[] = $nm; } } }
-                  }
-                  $adm = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>'
-                       . '<p>We are pleased to offer you admission to the <strong>' . htmlspecialchars($purpose) . '</strong> '
-                       . 'programme at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the '
-                       . 'fees indicated below.</p>';
-                  if ($modules) {
-                      $adm .= '<p><strong>Programme Modules</strong></p><ol>';
-                      foreach ($modules as $mn) { $adm .= '<li>' . htmlspecialchars($mn) . '</li>'; }
-                      $adm .= '</ol>';
-                  }
-                  $adm .= '<p>We look forward to welcoming you to the programme.</p>';
-
-                  include 'adm_letter.php';   // builds the 2 PDFs + sends the approval email
+              if (is_academic_event($conn, $event_data['location'] ?? '', $event_data['event_title'] ?? '')) {
+                  send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id);
                   ?>
                   <script>
                       window.alert("Academic Programme Registration Added Successfully!");
