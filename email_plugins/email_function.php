@@ -27,7 +27,7 @@ $apiKey = 'xkeysib-91b05ff9042c19e32074b94c01fde5e3ac3dbfbeb516edb14cec9451592ed
     $sendSmtpEmail['htmlContent'] = $bodyWithYear;
     $sendSmtpEmail['sender'] = [
         'name' => 'Vantage Africa School Of Leadership',
-        'email' => 'no-reply@vantageafricaleaders.com'
+        'email' => 'info@vantageafricaleaders.com'
     ];
     $sendSmtpEmail['to'] = [[
         'email' => $email_address,
