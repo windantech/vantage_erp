@@ -400,9 +400,16 @@ try {
     $_SESSION['onboarding_name'] = $full_name;
     $_SESSION['onboarding_email'] = $email;
     
-    header('Location: onboarding_success.php');
+    // header('Location: onboarding_success.php');
+    // exit;
+    ?>
+    <script>
+        alert('Onboarding form submitted successfully! Your Staff ID is: <?php echo $staff_id_code; ?>');
+        window.location.href = 'staff_onboarding.php';
+    </script>
+    <?php
     exit;
-    
+
 } catch (Exception $e) {
     // Rollback on error
     mysqli_rollback($conn);
