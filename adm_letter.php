@@ -309,5 +309,5 @@ if (!isset($record_id)) {
     }
 }
 
-// Send email with logging
-sendEmailWithLogging($conn, $entry_id, $record_id, $email_address, $recipient_name, $subject, $adm_letter_path, $invoice_path, $body);
+// Send email with logging (record the result so callers can detect a failed send)
+$GLOBALS['WA_LAST_EMAIL_SENT'] = sendEmailWithLogging($conn, $entry_id, $record_id, $email_address, $recipient_name, $subject, $adm_letter_path, $invoice_path, $body);

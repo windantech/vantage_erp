@@ -133,9 +133,24 @@ if (!function_exists('send_academic_approval_email')) {
 
         // Label the second attachment "ACADEMIC INVOICE" (adm_letter.php reads this
         // global; unset afterwards so the virtual-course flow keeps "PROFORMA INVOICE").
-        $GLOBALS['WA_INVOICE_TITLE'] = 'ACADEMIC INVOICE';
-        include __DIR__ . '/../adm_letter.php';   // builds the 2 PDFs + sends the 1 approval email
+        $GLOBALS['WA_INVOICE_TITLE']   = 'ACADEMIC INVOICE';
+        $GLOBALS['WA_LAST_EMAIL_SENT'] = false;
+        try {
+            if (function_exists('sendEmailWithLogging') && function_exists('generatePdf') && function_exists('generatePdf_invoice')) {
+                // adm_letter.php's functions are already loaded this request — call them
+                // directly instead of re-including the file (a second include would
+                // fatally redeclare its functions).
+                $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm);
+                $invoice_path    = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id);
+                $GLOBALS['WA_LAST_EMAIL_SENT'] = sendEmailWithLogging($conn, $entry_id, $record_id, $email_address, $recipient_name, $subject, $adm_letter_path, $invoice_path, $body);
+            } else {
+                include __DIR__ . '/../adm_letter.php';   // defines the generators AND sends (its tail sets WA_LAST_EMAIL_SENT)
+            }
+        } catch (\Throwable $e) {
+            error_log('[academic] approval email threw: ' . $e->getMessage());
+            $GLOBALS['WA_LAST_EMAIL_SENT'] = false;
+        }
         unset($GLOBALS['WA_INVOICE_TITLE']);
-        return true;
+        return !empty($GLOBALS['WA_LAST_EMAIL_SENT']);
     }
 }

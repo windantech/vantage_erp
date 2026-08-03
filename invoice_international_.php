@@ -1399,8 +1399,16 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     if (function_exists('is_academic_event') && is_academic_event($conn, $location, $training_program)) {
         $ev = ['event_title' => $training_program, 'early_amount' => $event_amount, 'location' => $location];
         $p  = preg_split('/\s+/', trim((string) $client_name), 2);
-        send_academic_approval_email($conn, $event_id, $ev, ($p[0] ?? ''), ($p[1] ?? ''), $client_email, $ticket_id);
-        return;
+        $acad_sent = false;
+        try {
+            $acad_sent = send_academic_approval_email($conn, $event_id, $ev, ($p[0] ?? ''), ($p[1] ?? ''), $client_email, $ticket_id);
+        } catch (\Throwable $e) {
+            error_log('[academic] approval email error, falling back to event path: ' . $e->getMessage());
+        }
+        if ($acad_sent) { return; }
+        // Academic email did NOT send — fall through to the normal event path so a
+        // registration email still goes out (never leave the applicant with nothing).
+        error_log('[academic] approval email not sent for ticket ' . $ticket_id . ' — using event-path fallback');
     }
 
     // Use explicit corporate variant from process_payment (by event title): 'corporate_sldp', 'corporate_me', 'singapore_me' or ''
