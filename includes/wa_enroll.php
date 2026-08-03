@@ -536,7 +536,15 @@ function wa_enroll_finalize_event($conn, $sess, $data) {
             }
             $startFmt = $er['start_on'] ? (new DateTime($er['start_on']))->format('jS M') : '';
             $endFmt   = $er['end_on']   ? (new DateTime($er['end_on']))->format('jS M')   : '';
-            if (function_exists('generateAdmissionWithInvoice')) {
+            $acad_helper = WA_ADMIN_DIR . '/includes/academic_approval.php';
+            if (is_file($acad_helper)) { require_once $acad_helper; }
+            if (function_exists('is_academic_event') && is_academic_event($conn, $er['location'] ?? '', $er['event_title'] ?? '')) {
+                // Academic programme -> single "Approval" email (admission + academic invoice),
+                // just like a virtual course, with per-course content from academic_programs.
+                $wa_parts = preg_split('/\s+/', trim((string) $fullname), 2);
+                send_academic_approval_email($conn, $eventId, $er, ($wa_parts[0] ?? ''), ($wa_parts[1] ?? ''), $email, $ticket_id);
+                error_log('[wa-enroll] academic approval email sent for ticket ' . $ticket_id . ' (' . $email . ')');
+            } elseif (function_exists('generateAdmissionWithInvoice')) {
                 generateAdmissionWithInvoice($email, $fullname, $er['event_title'], [], 0, [], $startFmt, $endFmt,
                     $er['location'], $conn, $ticket_id, null, $corporate_variant, null, $position, $org, $country, $eventId);
                 error_log('[wa-enroll] admission+invoice generated for ticket ' . $ticket_id . ' (' . $email . ')');

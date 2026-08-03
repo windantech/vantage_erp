@@ -156,7 +156,7 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
             <div style="padding: 0 40px; color: #2B5470; border-bottom: solid 5px #A85431;"></div>
 
             <div style="border: solid 2px #FEB958; margin: 0 20px; padding: 10px; font-family: Times New Roman, Times, serif;">
-                <h2 style="margin: 0; text-align: center;"><span style="border-bottom: dashed 2px black">PROFORMA INVOICE</span></h2>
+                <h2 style="margin: 0; text-align: center;"><span style="border-bottom: dashed 2px black">' . (isset($GLOBALS['WA_INVOICE_TITLE']) ? htmlspecialchars($GLOBALS['WA_INVOICE_TITLE']) : 'PROFORMA INVOICE') . '</span></h2>
                 <p style="text-align: left; margin: 1px;"><b>Date:</b> <span style="border-bottom: dotted 1px #A85431;">' . $invoice_date . '</span></p>
                 <p style="text-align: right; margin: 1px;"><b>Invoice No:</b> <span style="border-bottom: dotted 1px #A85431;">' . $invoice_no . '</span></p>
                 <p style="text-align: left; margin-bottom: 1px;"><b>Presented to:</b> <span style="border-bottom: dotted 1px #A85431;">' . $recipient_name . '</span></p>

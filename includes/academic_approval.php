@@ -2,13 +2,16 @@
 /**
  * Academic-programme approval email.
  *
- * Academic programmes are International Events flagged with an 'academic#' marker
- * in Event.location (case-insensitive), or matched to an academic_programs row by
- * title. They get the SAME single "Approval" email as virtual courses: admission
- * letter (with the programme's own curriculum modules + fee structure) and a
- * proforma invoice — TWO attachments on ONE email — instead of the event path's
- * two separate emails. The email body comes from the Academic template configured
- * in the CRM (system_emails1 by event_id) when present, else a standard message.
+ * Academic programmes are registered as International Events flagged with an
+ * 'academic#' marker in Event.location (or matched to an academic_programs row by
+ * title). They get the SAME single "Approval" email as virtual courses — admission
+ * letter + invoice as two attachments on ONE email (via adm_letter.php) — but with
+ * per-course content pulled from `academic_programs` (about + curriculum) and the
+ * invoice relabelled "ACADEMIC INVOICE".
+ *
+ * NOTE on collation: Event.event_title and academic_programs.title use different
+ * collations, so every cross-table title comparison forces COLLATE utf8mb4_general_ci
+ * to avoid MySQL error #1267.
  */
 
 if (!function_exists('is_academic_event')) {
@@ -16,37 +19,50 @@ if (!function_exists('is_academic_event')) {
         if (stripos((string) $location, 'academic#') !== false) {
             return true;
         }
-        // Fallback: the event title matches a configured academic programme.
         $t = mysqli_real_escape_string($conn, trim((string) $event_title));
         if ($t === '') { return false; }
-        $q = mysqli_query($conn, "SELECT id FROM academic_programs WHERE LOWER(title) = LOWER('$t') OR '$t' LIKE CONCAT('%', title, '%') LIMIT 1");
+        $q = mysqli_query($conn, "SELECT id FROM academic_programs
+                WHERE (LOWER(title COLLATE utf8mb4_general_ci) = LOWER('$t')
+                    OR '$t' LIKE CONCAT('%', title COLLATE utf8mb4_general_ci, '%'))
+                  AND status = 'active' LIMIT 1");
         return ($q && mysqli_num_rows($q) > 0);
     }
 }
 
-if (!function_exists('academic_program_modules')) {
-    /** Curriculum module names for the academic programme matching this event title. */
-    function academic_program_modules($conn, $event_title) {
-        $modules = [];
+if (!function_exists('academic_program_row')) {
+    /** The academic_programs row matching an event title (or null). */
+    function academic_program_row($conn, $event_title) {
         $t = mysqli_real_escape_string($conn, trim((string) $event_title));
-        if ($t === '') { return $modules; }
-        $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE LOWER(title) = LOWER('$t') LIMIT 1");
-        if (!$pq || mysqli_num_rows($pq) === 0) {
-            $pq = mysqli_query($conn, "SELECT id FROM academic_programs WHERE '$t' LIKE CONCAT('%', title, '%') OR title LIKE CONCAT('%', '$t', '%') ORDER BY CHAR_LENGTH(title) DESC LIMIT 1");
+        if ($t === '') { return null; }
+        // Exact title first, then fuzzy (longest title wins).
+        $q = mysqli_query($conn, "SELECT * FROM academic_programs
+                WHERE LOWER(title COLLATE utf8mb4_general_ci) = LOWER('$t') LIMIT 1");
+        if (!$q || mysqli_num_rows($q) === 0) {
+            $q = mysqli_query($conn, "SELECT * FROM academic_programs
+                    WHERE '$t' LIKE CONCAT('%', title COLLATE utf8mb4_general_ci, '%')
+                       OR title COLLATE utf8mb4_general_ci LIKE CONCAT('%', '$t', '%')
+                    ORDER BY CHAR_LENGTH(title) DESC LIMIT 1");
         }
-        if ($pq && mysqli_num_rows($pq) > 0) {
-            $pid = (int) mysqli_fetch_assoc($pq)['id'];
-            $mq = mysqli_query($conn, "SELECT module_name FROM program_curriculum WHERE program_id = $pid ORDER BY FIELD(curriculum_tier,'foundational','intermediate','advanced'), sort_order ASC, id ASC");
-            if ($mq) { while ($m = mysqli_fetch_assoc($mq)) { $nm = trim((string) $m['module_name']); if ($nm !== '') { $modules[] = $nm; } } }
-        }
+        return ($q && mysqli_num_rows($q) > 0) ? mysqli_fetch_assoc($q) : null;
+    }
+}
+
+if (!function_exists('academic_program_modules')) {
+    /** Curriculum module names for an academic programme id. */
+    function academic_program_modules($conn, $program_id) {
+        $modules = [];
+        $program_id = (int) $program_id;
+        if ($program_id <= 0) { return $modules; }
+        $mq = mysqli_query($conn, "SELECT module_name FROM program_curriculum
+                WHERE program_id = $program_id
+                ORDER BY FIELD(curriculum_tier,'foundational','intermediate','advanced'), sort_order ASC, id ASC");
+        if ($mq) { while ($m = mysqli_fetch_assoc($mq)) { $nm = trim((string) $m['module_name']); if ($nm !== '') { $modules[] = $nm; } } }
         return $modules;
     }
 }
 
 if (!function_exists('send_academic_approval_email')) {
     function send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id) {
-        // These are already loaded by invoice_international_.php in the callers; the
-        // require_once calls are no-ops there and safety elsewhere.
         require_once __DIR__ . '/../pdf_plugins/generatePdf.php';
         require_once __DIR__ . '/../email_plugins/vendor/autoload.php';
         require_once __DIR__ . '/../email_plugins/email_function.php';
@@ -54,19 +70,29 @@ if (!function_exists('send_academic_approval_email')) {
         $email_address  = $email;
         $recipient_name = ucfirst(strtolower($firstname)) . ' ' . ucfirst(strtolower($lastname));
         $subject        = 'Vantage Africa School Of Leadership Approval';
-        $purpose        = isset($event_data['event_title']) ? $event_data['event_title'] : '';
-        $amount         = number_format((float) (isset($event_data['early_amount']) ? $event_data['early_amount'] : 0), 2, '.', ',');
+        $purpose        = isset($event_data['event_title']) ? trim((string) $event_data['event_title']) : '';
         $adm_no         = 'VASL-' . $ticket_id;
         $invoice_no     = $adm_no;
         $letter_date    = date('jS F Y');
         $invoice_date   = date('jS F Y');
-        $entry_id       = $ticket_id;   // adm_letter logs against this
+        $entry_id       = $ticket_id;
         $record_id      = null;
+
+        // Fee: event's stored amount, overridden by a fee typed on the form.
+        $amount = (float) (isset($event_data['early_amount']) ? $event_data['early_amount'] : 0);
+        if (isset($_POST['amount']) && trim((string) $_POST['amount']) !== '') {
+            $amount = (float) $_POST['amount'];
+        }
+        $amount = number_format($amount, 2, '.', ',');
+
+        // Per-course content from academic_programs (matched by title).
+        $prog    = academic_program_row($conn, $purpose);
+        $modules = ($prog && isset($prog['id'])) ? academic_program_modules($conn, $prog['id']) : [];
 
         // Email body: the Academic template from the CRM if configured, else standard.
         $body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
               . 'Congratulations on your admission to <strong>' . htmlspecialchars($purpose) . '</strong>. '
-              . 'Please find attached your admission letter and proforma invoice. '
+              . 'Please find attached your admission letter and academic invoice. '
               . 'Our team will be in touch with the next steps.<br><br>'
               . 'Warm regards,<br>Vantage Africa School of Leadership';
         $tpl_q = mysqli_query($conn, "SELECT body FROM system_emails1 WHERE event_id = '" . (int) $event_id . "' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
@@ -78,23 +104,30 @@ if (!function_exists('send_academic_approval_email')) {
             }
         }
 
-        // Admission-letter text with the programme's OWN curriculum modules.
-        $modules = academic_program_modules($conn, $purpose);
-        $adm = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>'
-             . '<p>We are pleased to offer you admission to the <strong>' . htmlspecialchars($purpose) . '</strong> '
-             . 'programme at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the '
-             . 'fees indicated below.</p>';
+        // Admission-letter content — the course's OWN about + curriculum (never M&E).
+        $adm  = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>';
+        $adm .= '<p>We are delighted to inform you that you have been successfully admitted to the <strong>'
+              . htmlspecialchars($purpose) . '</strong> Programme at Vantage Africa School of Leadership.</p>';
+        if ($prog) {
+            $about = trim((string) ($prog['solution'] ?? ''));
+            if ($about === '') { $about = trim((string) ($prog['market_problem'] ?? '')); }
+            if ($about !== '') { $adm .= '<p>' . nl2br(htmlspecialchars($about)) . '</p>'; }
+            $whofor = trim((string) ($prog['who_for'] ?? ''));
+            if ($whofor !== '') { $adm .= '<p><strong>Who this programme is for:</strong> ' . nl2br(htmlspecialchars($whofor)) . '</p>'; }
+        }
         if ($modules) {
-            $adm .= '<p><strong>Programme Modules</strong></p><ol>';
+            $adm .= '<p><strong>Curriculum Overview</strong></p><ol>';
             foreach ($modules as $mn) { $adm .= '<li>' . htmlspecialchars($mn) . '</li>'; }
             $adm .= '</ol>';
         }
-        $adm .= '<p>We look forward to welcoming you to the programme.</p>';
+        $adm .= '<p>Your place is confirmed upon settlement of the fees indicated below. '
+              . 'We look forward to welcoming you to the programme.</p>';
 
-        // adm_letter.php builds the 2 PDFs and sends the single approval email using
-        // the variables set above (its relative output dirs resolve against the web
-        // request's CWD, i.e. the app root — same as the virtual-course flow).
-        include __DIR__ . '/../adm_letter.php';
+        // Label the second attachment "ACADEMIC INVOICE" (adm_letter.php reads this
+        // global; unset afterwards so the virtual-course flow keeps "PROFORMA INVOICE").
+        $GLOBALS['WA_INVOICE_TITLE'] = 'ACADEMIC INVOICE';
+        include __DIR__ . '/../adm_letter.php';   // builds the 2 PDFs + sends the 1 approval email
+        unset($GLOBALS['WA_INVOICE_TITLE']);
         return true;
     }
 }
