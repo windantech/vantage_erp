@@ -1389,28 +1389,6 @@ function sendAdmissionEmail($client_email, $client_name, $subject, $generatedFil
 function generateAdmissionWithInvoice($client_email, $client_name, $training_program, $invoice_items = [], $discount_percent = 0, $training_areas = [], $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $corporate_variant = '', $event_amount = null, $invite_position = '', $invite_organization = '', $invite_country = '', $event_id = null) {
     global $code;
 
-    // Academic programmes get ONE "Approval" email (admission letter with the course's
-    // OWN content + an Academic Invoice, two attachments on one email) — never the
-    // two-email M&E event path. This runs for EVERY caller of this function (admin add
-    // forms, WhatsApp enrolment, and the website's process_registration.php), so all
-    // registration paths behave the same.
-    $acad_helper = __DIR__ . '/includes/academic_approval.php';
-    if (is_file($acad_helper)) { require_once $acad_helper; }
-    if (function_exists('is_academic_event') && is_academic_event($conn, $location, $training_program)) {
-        $ev = ['event_title' => $training_program, 'early_amount' => $event_amount, 'location' => $location];
-        $p  = preg_split('/\s+/', trim((string) $client_name), 2);
-        $acad_sent = false;
-        try {
-            $acad_sent = send_academic_approval_email($conn, $event_id, $ev, ($p[0] ?? ''), ($p[1] ?? ''), $client_email, $ticket_id);
-        } catch (\Throwable $e) {
-            error_log('[academic] approval email error, falling back to event path: ' . $e->getMessage());
-        }
-        if ($acad_sent) { return; }
-        // Academic email did NOT send — fall through to the normal event path so a
-        // registration email still goes out (never leave the applicant with nothing).
-        error_log('[academic] approval email not sent for ticket ' . $ticket_id . ' — using event-path fallback');
-    }
-
     // Use explicit corporate variant from process_payment (by event title): 'corporate_sldp', 'corporate_me', 'singapore_me' or ''
     $is_corporate_sldp = ($corporate_variant === 'corporate_sldp');
     $is_corporate_me   = ($corporate_variant === 'corporate_me');

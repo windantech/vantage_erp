@@ -1289,12 +1289,6 @@ error_log(print_r($result, true));
         if ($stmt) {
             
               include 'invoice_international_.php';
-              require_once 'includes/academic_approval.php';
-
-              // Academic programmes -> single "Approval" email; others keep the event path.
-              if (is_academic_event($conn, $event_data['location'] ?? '', $event_data['event_title'] ?? '')) {
-                  send_academic_approval_email($conn, $event_id, $event_data, $firstname, $lastname, $email, $ticket_id);
-              } else {
                         $start_on = $event_data['start_on'];
 
 $date = new DateTime($start_on);
@@ -1334,7 +1328,6 @@ $end_on = $date->format('jS M');
    '', '', '',   // invite position / organization / country
    $event_id     // event_id -> REQUIRED so the admission-email template is found
 );
-              }
             ?>
             <script>
                 window.alert("International Event Registration Added Successfully!");
