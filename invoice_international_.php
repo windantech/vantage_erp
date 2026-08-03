@@ -1576,6 +1576,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     // (Callers such as the website's process_registration.php wrap this call in
     // a silent catch, so without this the failure is invisible AND no email goes.)
     $emails_generated = false;
+    @file_put_contents('/tmp/vasl_email.log', date('c')." ENTER email=$client_email event=".var_export($event_id,true)." corp=".var_export($corporate_variant,true)." ticket=".var_export($ticket_id,true)."\n", FILE_APPEND);
     try {
         if ($corporate_variant !== '') {
             // Corporate variants (SLDP / CMEP / Singapore M&E) keep their existing
@@ -1592,6 +1593,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
             $attachments = [];
             if (is_string($admission_pdf) && is_file($admission_pdf)) { $attachments[] = $admission_pdf; }
             if (is_string($invoice_pdf)   && is_file($invoice_pdf))   { $attachments[] = $invoice_pdf; }
+            @file_put_contents('/tmp/vasl_email.log', date('c')." PDFs admission=".var_export($admission_pdf,true)." invoice=".var_export($invoice_pdf,true)." attach=".count($attachments)."\n", FILE_APPEND);
 
             // Approval body: the CRM template configured for this event
             // (system_emails1, email_opt = 1) if present, else a standard message.
@@ -1620,6 +1622,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
 
             $subject    = 'Vantage Africa School Of Leadership Approval';
             $email_sent = send_mail_function($client_email, $approval_body, $subject, $attachments);
+            @file_put_contents('/tmp/vasl_email.log', date('c')." SENT approval to $client_email attach=".count($attachments)." result=".var_export($email_sent,true)."\n", FILE_APPEND);
             // Mark done before logging so a logging error can never trigger the
             // fallback below (which would double-send the client).
             $emails_generated = true;
@@ -1632,6 +1635,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
 
         $emails_generated = true;
     } catch (\Throwable $e) {
+        @file_put_contents('/tmp/vasl_email.log', date('c')." THREW ".$e->getMessage()." @ ".$e->getFile().":".$e->getLine()."\n", FILE_APPEND);
         error_log('[admission-email] generation failed for ' . $client_email
             . ' (' . $training_program . '): ' . $e->getMessage()
             . ' @ ' . $e->getFile() . ':' . $e->getLine());
@@ -1639,6 +1643,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
 
     // Safety net: never leave a registered client without an email.
     if (!$emails_generated && function_exists('send_mail_function')) {
+        @file_put_contents('/tmp/vasl_email.log', date('c')." FALLBACK simple email to $client_email\n", FILE_APPEND);
         $recipient_name  = ucwords(strtolower(trim((string) $client_name)));
         $fallback_subject = 'Vantage Africa School Of Leadership Approval';
         $fallback_body    = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
