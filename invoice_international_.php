@@ -18,6 +18,16 @@ require_once __DIR__ . '/pdf_plugins/generatePdf.php';
 require_once __DIR__ . '/email_plugins/vendor/autoload.php';
 require_once __DIR__ . '/email_plugins/email_function.php';
 
+// Define generateAdmissionNumber here so we never depend on the caller's page
+// having declared it (it is only defined inside the admin add-form pages). If a
+// caller — e.g. the website's process_registration.php — reaches the admission
+// letter without that definition loaded, the email would otherwise fatal.
+if (!function_exists('generateAdmissionNumber')) {
+    function generateAdmissionNumber() {
+        return 'VASL ' . rand(11111111, 99999999);
+    }
+}
+
 // Define numberToWords here so we never depend on external formatter (avoids fatal if formatter is missing or errors)
 function numberToWords($num) {
     $num = (float) $num;
@@ -1542,30 +1552,7 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
         $final_fee = $total_fee;
     }
 
-    // =============================================
-    // LOG WELCOME/REGISTRATION EMAIL
-    // =============================================
-    if ($conn && $ticket_id) {
-        log_email(
-            $conn,
-            'ticket_congress',
-            $ticket_id,
-            'welcome',
-            $client_email,
-            $client_name,
-            'Registration Confirmed - ' . $training_program,
-            [],
-            'sent',
-            null,
-            null,
-            $record_id
-        );
-    }
-
-    // Generate invoice with training details (corporate uses optional note via invoice_items description)
-    generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant);
-
-    // Generate admission letter (with corporate variant for SLDP/CMEP/Singapore M&E content)
+    // Admission-letter variant (no I/O, cannot fail) — computed before the try.
     $program_variant = null;
     if ($is_corporate_sldp) {
         $program_variant = 'corporate_sldp';
@@ -1574,8 +1561,56 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     } elseif ($is_singapore_me) {
         $program_variant = 'singapore_me';
     }
-    // pass $event_id as the final argument
-    generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id);
+
+    // Generate + send the invoice and admission letter. If any part of the heavy
+    // PDF / QR / DB generation throws, the client must NOT be left without an
+    // email: log the real reason and fall back to a simple approval message.
+    // (Callers such as the website's process_registration.php wrap this call in
+    // a silent catch, so without this the failure is invisible AND no email goes.)
+    $emails_generated = false;
+    try {
+        // Log the welcome/registration email record.
+        if ($conn && $ticket_id) {
+            log_email(
+                $conn,
+                'ticket_congress',
+                $ticket_id,
+                'welcome',
+                $client_email,
+                $client_name,
+                'Registration Confirmed - ' . $training_program,
+                [],
+                'sent',
+                null,
+                null,
+                $record_id
+            );
+        }
+
+        // Invoice (corporate uses optional note via invoice_items description).
+        generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant);
+
+        // Admission letter — pass $event_id as the final argument.
+        generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id);
+
+        $emails_generated = true;
+    } catch (\Throwable $e) {
+        error_log('[admission-email] generation failed for ' . $client_email
+            . ' (' . $training_program . '): ' . $e->getMessage()
+            . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    }
+
+    // Safety net: never leave a registered client without an email.
+    if (!$emails_generated && function_exists('send_mail_function')) {
+        $recipient_name  = ucwords(strtolower(trim((string) $client_name)));
+        $fallback_subject = 'Vantage Africa School Of Leadership Approval';
+        $fallback_body    = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
+            . 'Thank you for registering for <strong>' . htmlspecialchars($training_program) . '</strong> '
+            . 'at Vantage Africa School of Leadership. Your registration has been received and approved. '
+            . 'Our team will shortly send your official admission letter and invoice together with the next steps.<br><br>'
+            . 'Warm regards,<br>Vantage Africa School of Leadership';
+        send_mail_function($client_email, $fallback_body, $fallback_subject, []);
+    }
 }
 
 // =============================================
