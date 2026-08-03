@@ -436,7 +436,7 @@ function generateInvoicePdf($client_email, $client_name, $invoice_no, $invoice_d
 // =============================================
 // MAIN INVOICE GENERATION FUNCTION
 // =============================================
-function generateInvoice($client_email, $client_name, $invoice_items, $discount_percent = 0, $discount_amount = 0, $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $training_program = '', $corporate_variant = '') {
+function generateInvoice($client_email, $client_name, $invoice_items, $discount_percent = 0, $discount_amount = 0, $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $training_program = '', $corporate_variant = '', $defer_send = false) {
     // Ensure numberToWords exists (fallback if file was included in a context where top-level def didn't run)
     if (!function_exists('numberToWords')) {
         function numberToWords($num) {
@@ -485,8 +485,11 @@ function generateInvoice($client_email, $client_name, $invoice_items, $discount_
     $generatedFilePath = generateInvoicePdf($client_email, $client_name, $invoice_no, $invoice_date, $invoice_items, $subtotal, $discount_percent, $discount_value, $total_payable, $amount_in_words, $qrcode, $training_program, $corporate_variant, $start_date, $end_date);
 
     if ($generatedFilePath) {
-        // Pass the new parameters to the email function
-        sendInvoiceEmail($client_email, $client_name, "Proforma Invoice - " . $invoice_no, $generatedFilePath, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $corporate_variant);
+        // Pass the new parameters to the email function. When $defer_send is set,
+        // the caller (generateAdmissionWithInvoice) sends one combined email instead.
+        if (!$defer_send) {
+            sendInvoiceEmail($client_email, $client_name, "Proforma Invoice - " . $invoice_no, $generatedFilePath, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $corporate_variant);
+        }
         return $generatedFilePath;
     } else {
         echo "Failed to generate invoice PDF";
@@ -634,7 +637,7 @@ function sendInvoiceEmail($client_email, $client_name, $subject, $generatedFileP
 // ADMISSION LETTER GENERATION
 // =============================================
 // $event_id (last param) is passed through into generateAdmissionPdf().
-function generateAdmissionLetter($client_email, $client_name, $training_program, $total_fee, $training_areas = [], $conn = null, $ticket_id = null, $record_id = null, $program_variant = null, $location = null, $invite_position = '', $invite_organization = '', $invite_country = '', $invite_start_date = null, $invite_end_date = null, $event_id = null) {
+function generateAdmissionLetter($client_email, $client_name, $training_program, $total_fee, $training_areas = [], $conn = null, $ticket_id = null, $record_id = null, $program_variant = null, $location = null, $invite_position = '', $invite_organization = '', $invite_country = '', $invite_start_date = null, $invite_end_date = null, $event_id = null, $defer_send = false) {
     $admission_no = generateAdmissionNumber();
     $admission_date = date("d/m/Y");
 
@@ -642,7 +645,9 @@ function generateAdmissionLetter($client_email, $client_name, $training_program,
     $qrFile = generateInvoiceQRCode("https://vantageafricaleaders.com/admin/admissions/".$admission_no . "_" . $admission_date.".pdf");
     $qrcode = "qrcodes/" . $qrFile;
 
-    generateAdmissionPdf($client_email, $client_name, $admission_no, $admission_date, $training_program, $total_fee, $training_areas, $qrcode, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $invite_start_date, $invite_end_date, $event_id);
+    // Returns the admission PDF path. When $defer_send is set, the PDF is built
+    // but its own email is NOT sent (the caller sends one combined email).
+    return generateAdmissionPdf($client_email, $client_name, $admission_no, $admission_date, $training_program, $total_fee, $training_areas, $qrcode, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $invite_start_date, $invite_end_date, $event_id, $defer_send);
 }
 
 function generateCorporateMealInvitationPdf($client_name, $training_program, $location = null, $position = '', $organization = '', $country = '', $program_variant = null, $start_date = null, $end_date = null) {
@@ -820,7 +825,7 @@ function generateCorporateMealInvitationPdf($client_name, $training_program, $lo
 }
 
 // $event_id (last param) is passed through into sendAdmissionEmail().
-function generateAdmissionPdf($client_email, $client_name, $admission_no, $admission_date, $training_program, $total_fee, $training_areas = [], $qrcode = '', $conn = null, $ticket_id = null, $record_id = null, $program_variant = null, $location = null, $invite_position = '', $invite_organization = '', $invite_country = '', $invite_start_date = null, $invite_end_date = null, $event_id = null) {
+function generateAdmissionPdf($client_email, $client_name, $admission_no, $admission_date, $training_program, $total_fee, $training_areas = [], $qrcode = '', $conn = null, $ticket_id = null, $record_id = null, $program_variant = null, $location = null, $invite_position = '', $invite_organization = '', $invite_country = '', $invite_start_date = null, $invite_end_date = null, $event_id = null, $defer_send = false) {
     $admission_program_name = trim((string) $training_program);
     if ($program_variant === 'corporate_sldp') {
         $admission_program_name = preg_replace('/\s*-\s*Corporate\b/i', '', $admission_program_name);
@@ -1272,8 +1277,11 @@ function generateAdmissionPdf($client_email, $client_name, $admission_no, $admis
     $generatedFilePath = convertHtmlToPdf($html, $directory, $file);
 
     if ($generatedFilePath) {
-        // pass $event_id as the final argument
-        sendAdmissionEmail($client_email, $client_name, "Admission Letter - " . $admission_no, $generatedFilePath, $conn, $ticket_id, $record_id, $training_program, $location, $program_variant, $invite_position, $invite_organization, $invite_country, $invite_start_date, $invite_end_date, $event_id);
+        // pass $event_id as the final argument. When $defer_send is set, the caller
+        // (generateAdmissionWithInvoice) sends one combined email instead.
+        if (!$defer_send) {
+            sendAdmissionEmail($client_email, $client_name, "Admission Letter - " . $admission_no, $generatedFilePath, $conn, $ticket_id, $record_id, $training_program, $location, $program_variant, $invite_position, $invite_organization, $invite_country, $invite_start_date, $invite_end_date, $event_id);
+        }
         return $generatedFilePath;
     } else {
         echo "Failed to generate admission letter PDF";
@@ -1569,29 +1577,58 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     // a silent catch, so without this the failure is invisible AND no email goes.)
     $emails_generated = false;
     try {
-        // Log the welcome/registration email record.
-        if ($conn && $ticket_id) {
-            log_email(
-                $conn,
-                'ticket_congress',
-                $ticket_id,
-                'welcome',
-                $client_email,
-                $client_name,
-                'Registration Confirmed - ' . $training_program,
-                [],
-                'sent',
-                null,
-                null,
-                $record_id
-            );
+        if ($corporate_variant !== '') {
+            // Corporate variants (SLDP / CMEP / Singapore M&E) keep their existing
+            // two-email flow: admission letter (with meal invitation) + invoice.
+            generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant);
+            generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id);
+        } else {
+            // Standard / academic: build both PDFs WITHOUT sending their own emails,
+            // then send ONE "Approval" email with both attached (admission + invoice)
+            // — mirroring the virtual-course flow.
+            $invoice_pdf   = generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant, true);
+            $admission_pdf = generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id, true);
+
+            $attachments = [];
+            if (is_string($admission_pdf) && is_file($admission_pdf)) { $attachments[] = $admission_pdf; }
+            if (is_string($invoice_pdf)   && is_file($invoice_pdf))   { $attachments[] = $invoice_pdf; }
+
+            // Approval body: the CRM template configured for this event
+            // (system_emails1, email_opt = 1) if present, else a standard message.
+            $recipient_name = ucfirst(strtolower((string) $client_name));
+            $approval_body  = null;
+            if ($conn && $event_id) {
+                $eid = (int) $event_id;
+                $tq  = mysqli_query($conn, "SELECT body FROM system_emails1 WHERE event_id = '$eid' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
+                if ($tq && mysqli_num_rows($tq) > 0) {
+                    $tpl = json_decode(mysqli_fetch_assoc($tq)['body'], true);
+                    if (is_string($tpl) && trim($tpl) !== '') {
+                        $approval_body = str_replace('$name', $recipient_name, $tpl);
+                    }
+                }
+            }
+            if ($approval_body === null) {
+                $prog = trim((string) $training_program);
+                $approval_body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
+                    . 'Congratulations! Your registration'
+                    . ($prog !== '' ? ' for <strong>' . htmlspecialchars($prog) . '</strong>' : '')
+                    . ' has been approved. Please find attached your admission letter and proforma invoice.<br><br>'
+                    . 'We are delighted to welcome you to Vantage Africa School of Leadership. '
+                    . 'If you have any questions, simply reply to this email and our team will be glad to assist.'
+                    . '<br><br>Warm regards,<br>Vantage Africa School of Leadership';
+            }
+
+            $subject    = 'Vantage Africa School Of Leadership Approval';
+            $email_sent = send_mail_function($client_email, $approval_body, $subject, $attachments);
+            // Mark done before logging so a logging error can never trigger the
+            // fallback below (which would double-send the client).
+            $emails_generated = true;
+            try {
+                if ($conn && $ticket_id) {
+                    log_email($conn, 'ticket_congress', $ticket_id, 'admission_letter', $client_email, $client_name, $subject, $attachments, $email_sent ? 'sent' : 'failed', $email_sent ? null : 'Failed to send approval email', null, $record_id);
+                }
+            } catch (\Throwable $ignore) {}
         }
-
-        // Invoice (corporate uses optional note via invoice_items description).
-        generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant);
-
-        // Admission letter — pass $event_id as the final argument.
-        generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id);
 
         $emails_generated = true;
     } catch (\Throwable $e) {
