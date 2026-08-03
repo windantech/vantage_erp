@@ -89,12 +89,20 @@ if (!function_exists('send_academic_approval_email')) {
         $prog    = academic_program_row($conn, $purpose);
         $modules = ($prog && isset($prog['id'])) ? academic_program_modules($conn, $prog['id']) : [];
 
-        // Email body: the Academic template from the CRM if configured, else standard.
-        $body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
-              . 'Congratulations on your admission to <strong>' . htmlspecialchars($purpose) . '</strong>. '
-              . 'Please find attached your admission letter and academic invoice. '
-              . 'Our team will be in touch with the next steps.<br><br>'
-              . 'Warm regards,<br>Vantage Africa School of Leadership';
+        // Email body — flexible per course by default; a CRM template overrides it.
+        // Default: always reflects the SELECTED course (name + the programme's own
+        // "about"), clean and well-spaced, no image. Never M&E.
+        $body  = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>';
+        $body .= '<p>Congratulations! You have been successfully admitted to the <strong>'
+               . htmlspecialchars($purpose) . '</strong> programme at Vantage Africa School of Leadership.</p>';
+        if ($prog) {
+            $intro = trim((string) ($prog['solution'] ?? ''));
+            if ($intro === '') { $intro = trim((string) ($prog['market_problem'] ?? '')); }
+            if ($intro !== '') { $body .= '<p>' . nl2br(htmlspecialchars($intro)) . '</p>'; }
+        }
+        $body .= '<p>Please find your admission letter and academic invoice attached. '
+               . 'Our team will be in touch with the next steps.</p>'
+               . '<p>Warm regards,<br>Vantage Africa School of Leadership</p>';
         $tpl_q = mysqli_query($conn, "SELECT body FROM system_emails1 WHERE event_id = '" . (int) $event_id . "' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
         if ($tpl_q && mysqli_num_rows($tpl_q) > 0) {
             $tpl_row  = mysqli_fetch_assoc($tpl_q);
