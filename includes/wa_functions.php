@@ -844,6 +844,66 @@ function wa_normalize($s) {
     return trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
 }
 
+/** Add the conversation delivery_mode column once (idempotent). Lets the router hold a
+ *  dual-mode topic (one we run BOTH online and in person) until the customer says which
+ *  they want, so it never locks them to the wrong-mode rep. */
+function wa_conv_mode_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_conversations`
+        ADD COLUMN IF NOT EXISTS `delivery_mode` ENUM('unknown','virtual','onsite') NOT NULL DEFAULT 'unknown'");
+}
+
+/** Persist the customer's chosen delivery mode on their conversation. */
+function wa_conv_set_mode($conn, $convId, $mode) {
+    $convId = (int)$convId;
+    if ($convId < 1 || !in_array($mode, ['virtual', 'onsite'], true)) { return; }
+    wa_conv_mode_schema_ensure($conn);
+    mysqli_query($conn, "UPDATE wa_conversations SET delivery_mode = '$mode' WHERE id = $convId");
+}
+
+/** Read 'virtual' or 'onsite' from a message, else '' (unclear / says both / says neither).
+ *  Used to decide which rep a dual-mode enquiry belongs to. */
+function wa_detect_delivery_mode($text) {
+    $t = ' ' . mb_strtolower((string)$text) . ' ';
+    $virtual = (bool)preg_match('/\b(virtual|on[\s-]?line|online|remote|zoom|web[\s-]?based|e[\s-]?learn)/i', $t);
+    $onsite  = (bool)preg_match('/\b(on[\s-]?site|onsite|in[\s-]?person|physical|face[\s-]?to[\s-]?face|classroom|in[\s-]?class|attend in|travel to)/i', $t);
+    if ($virtual && !$onsite) { return 'virtual'; }
+    if ($onsite && !$virtual) { return 'onsite'; }
+    return '';
+}
+
+/** The soonest in-person (non-academic) Event whose title matches a virtual course's
+ *  keywords — i.e. the ONSITE twin of a virtual course, plus its rep. null if the course
+ *  is virtual-only. Lets the router recognise a dual-mode topic and send the onsite half
+ *  to the onsite rep. Returns ['event_id'=>int, 'owner'=>?int]. */
+function wa_course_onsite_event($conn, $courseId) {
+    $courseId = (int)$courseId;
+    $name = wa_course_name($conn, $courseId);
+    if ($name === null || trim((string)$name) === '') { return null; }
+    $likes = [];
+    foreach (wa_program_keywords_arr(['name' => $name]) as $kw) {
+        $kw = trim((string)$kw);
+        if ($kw === '') { continue; }
+        $kw = mysqli_real_escape_string($conn, $kw);
+        $likes[] = "event_title LIKE '%$kw%'";
+    }
+    if (!$likes) { return null; }
+    $match = '(' . implode(' OR ', $likes) . ')';
+    // In-person only: exclude academic/online rows; keep upcoming (tolerant of legacy dates).
+    $res = mysqli_query($conn,
+        "SELECT event_id FROM `Event`
+          WHERE status = 1 AND location NOT LIKE 'ACADEMIC#%' AND $match
+            AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
+                 OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
+          ORDER BY (start_on IS NULL OR start_on = '0000-00-00'), start_on ASC
+          LIMIT 1");
+    if (!$res || mysqli_num_rows($res) === 0) { return null; }
+    $eid = (int)mysqli_fetch_assoc($res)['event_id'];
+    return ['event_id' => $eid, 'owner' => wa_first_owner($conn, 'event', $eid)];
+}
+
 /**
  * Route an inbound message to a course/event owner.
  * @return array {action, reason, ref_type, ref_id, ref_name, assigned_user_id, confirm_prompt?}
@@ -855,6 +915,31 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     wa_ensure_conversation($conn, $contactId);
     $conv = wa_get_conversation($conn, $contactId);
     $returning = $conv && $conv['ref_id'] !== null;
+
+    // --- Delivery mode (virtual vs onsite) --------------------------------------
+    // A topic we run BOTH online and in person must not be pinned to a mode-specific rep
+    // until the customer says which they want. Capture any stated mode; and if they're on
+    // a dual-mode course and now tell us the mode, finalise the RIGHT rep: onsite chats go
+    // to the onsite event's rep (never linger on the virtual coordinator), virtual chats we
+    // were holding get the virtual rep. Never override a chat a human has taken over.
+    wa_conv_mode_schema_ensure($conn);
+    $modeSaid = wa_detect_delivery_mode($text);
+    if ($modeSaid !== '' && $conv) { wa_conv_set_mode($conn, (int)$conv['id'], $modeSaid); }
+    if ($modeSaid !== '' && $conv && $returning && ($conv['ref_type'] ?? '') === 'course'
+        && ($conv['handler'] ?? 'ai') !== 'human') {
+        $cid = (int)$conv['ref_id'];
+        if ($modeSaid === 'onsite') {
+            $on = wa_course_onsite_event($conn, $cid);
+            if ($on) {
+                wa_assign_conversation($conn, $contactId, 'event', (int)$on['event_id'], $on['owner'], 'mode_onsite', 0.9);
+                return wa_route_result($conn, 'assigned', 'mode_onsite', 'event', (int)$on['event_id'], $on['owner']);
+            }
+        } elseif ($conv['assigned_user_id'] === null || $conv['assigned_user_id'] === '') {
+            $uid = wa_first_owner($conn, 'course', $cid);
+            wa_assign_conversation($conn, $contactId, 'course', $cid, $uid, 'mode_virtual', 0.9);
+            return wa_route_result($conn, 'assigned', 'mode_virtual', 'course', $cid, $uid);
+        }
+    }
 
     // Signal 1: ad referral
     if ($adId !== null && $adId !== '') {
@@ -959,6 +1044,23 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     }
 
     if ($courseId !== null && $conf >= 0.60) {
+        // Dual-mode? If this virtual course is ALSO offered in person, don't pin a
+        // mode-specific rep until the customer confirms which they want.
+        $onsite = wa_course_onsite_event($conn, (int)$courseId);
+        $mode   = $modeSaid !== '' ? $modeSaid
+                : (($conv && isset($conv['delivery_mode'])) ? $conv['delivery_mode'] : 'unknown');
+        if ($onsite && $mode === 'onsite') {
+            wa_assign_conversation($conn, $contactId, 'event', (int)$onsite['event_id'], $onsite['owner'], 'mode_onsite', $conf);
+            return wa_route_result($conn, 'assigned', 'mode_onsite', 'event', (int)$onsite['event_id'], $onsite['owner']);
+        }
+        if ($onsite && $mode === 'unknown') {
+            // Bind the topic so the AI can answer + ask virtual-vs-onsite, but leave the rep
+            // UNASSIGNED so nobody wrong-mode is locked in. The mode answer assigns the right
+            // rep next turn (handled up top).
+            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, null, 'await_mode', $conf);
+            return wa_route_result($conn, 'assigned_unowned', 'await_mode', 'course', (int)$courseId, null);
+        }
+        // Virtual-only course, or the customer confirmed virtual -> normal assignment.
         $uid = wa_first_owner($conn, 'course', (int)$courseId);
         if ($uid !== null) {
             wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, $uid, $method, $conf);
@@ -3006,6 +3108,11 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "NEVER quote the online fee or link for an in-person request, or the in-person fee or link for an online "
         . "request. If you don't have the exact fees or link for the mode they chose, do the human hold (get it for "
         . "them and come back) rather than borrowing the other mode's figure.\n\n"
+
+        . "HARD RULE — NO SINGAPORE: we do NOT run any Singapore training, study tour, trip or programme for WhatsApp "
+        . "enquirers. NEVER mention, offer, suggest or describe anything in or about Singapore, and never imply travel "
+        . "there. If someone asks about Singapore, tell them plainly we don't offer that and point them to our actual "
+        . "online courses and in-person events. Only ever discuss programmes that appear in the lists above.\n\n"
 
         . "CONVERSATION FLOW (follow this order — do NOT skip ahead):\n"
         . "1. First greeting or vague interest ('Hi', 'I'm interested in X') → reply briefly and warmly. If X is a "
