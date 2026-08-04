@@ -13,6 +13,24 @@
  *   The body column is auto-detected: JSON-encoded string OR plain HTML both work.
  */
 
+/**
+ * TEMPORARY DIAGNOSTIC — remove once the academic-email failure is diagnosed.
+ *
+ * Writes a step-by-step trace of the admission/invoice email path to
+ * admin/vasl_academic.log. Uses __DIR__ so it lands in a known, readable place
+ * rather than following the request's CWD, and is silent-on-failure so it can
+ * never itself break a send.
+ */
+if (!function_exists('vasl_trace')) {
+    function vasl_trace($msg) {
+        @file_put_contents(
+            __DIR__ . '/vasl_academic.log',
+            date('Y-m-d H:i:s') . '  ' . $msg . PHP_EOL,
+            FILE_APPEND
+        );
+    }
+}
+
 require_once __DIR__ . '/phpqrcode/qrlib.php';
 require_once __DIR__ . '/pdf_plugins/generatePdf.php';
 require_once __DIR__ . '/email_plugins/vendor/autoload.php';
@@ -1536,6 +1554,16 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     // a visible placeholder so the client still receives a document and staff can see
     // exactly what is outstanding.
     $is_academic_event = (stripos((string) $location, 'academic#') !== false);
+
+    vasl_trace('--- generateAdmissionWithInvoice ENTER'
+        . ' | to=' . $client_email
+        . ' | program=' . $training_program
+        . ' | location=' . var_export($location, true)
+        . ' | event_id=' . var_export($event_id, true)
+        . ' | event_amount=' . var_export($event_amount, true)
+        . ' | ticket_id=' . var_export($ticket_id, true)
+        . ' | ACADEMIC=' . ($is_academic_event ? 'YES' : 'no'));
+
     if ($is_academic_event) {
         if (empty($invoice_items) || !is_array($invoice_items)) {
             $academic_fee = (float) $event_amount;
@@ -1654,17 +1682,26 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
         }
 
         // Invoice (corporate uses optional note via invoice_items description).
+        vasl_trace('  step 2: calling generateInvoice (items=' . count($invoice_items) . ', total=' . $final_fee . ')');
         generateInvoice($client_email, $client_name, $invoice_items, $discount_percent, 0, $start_date, $end_date, $location, $conn, $ticket_id, $record_id, $training_program, $corporate_variant);
+        vasl_trace('  step 2: generateInvoice RETURNED — invoice email attempted');
 
         // Admission letter — pass $event_id as the final argument.
+        vasl_trace('  step 3: calling generateAdmissionLetter');
         generateAdmissionLetter($client_email, $client_name, $training_program, $final_fee, $training_areas, $conn, $ticket_id, $record_id, $program_variant, $location, $invite_position, $invite_organization, $invite_country, $start_date, $end_date, $event_id);
+        vasl_trace('  step 3: generateAdmissionLetter RETURNED — letter email attempted');
 
         $emails_generated = true;
     } catch (\Throwable $e) {
+        vasl_trace('  !! THREW: ' . get_class($e) . ': ' . $e->getMessage()
+            . ' @ ' . $e->getFile() . ':' . $e->getLine());
         error_log('[admission-email] generation failed for ' . $client_email
             . ' (' . $training_program . '): ' . $e->getMessage()
             . ' @ ' . $e->getFile() . ':' . $e->getLine());
     }
+
+    vasl_trace('  emails_generated=' . ($emails_generated ? 'true' : 'FALSE')
+        . ' | send_mail_function exists=' . (function_exists('send_mail_function') ? 'yes' : 'NO'));
 
     // Safety net: never leave a registered client without an email.
     if (!$emails_generated && function_exists('send_mail_function')) {
@@ -1675,8 +1712,11 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
             . 'at Vantage Africa School of Leadership. Your registration has been received and approved. '
             . 'Our team will shortly send your official admission letter and invoice together with the next steps.<br><br>'
             . 'Warm regards,<br>Vantage Africa School of Leadership';
-        send_mail_function($client_email, $fallback_body, $fallback_subject, []);
+        $fb = send_mail_function($client_email, $fallback_body, $fallback_subject, []);
+        vasl_trace('  fallback email send_mail_function returned ' . var_export($fb, true));
     }
+
+    vasl_trace('--- generateAdmissionWithInvoice EXIT');
 }
 
 // =============================================

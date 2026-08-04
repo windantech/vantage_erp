@@ -52,8 +52,17 @@ $apiKey = 'xkeysib-91b05ff9042c19e32074b94c01fde5e3ac3dbfbeb516edb14cec9451592ed
     try {
         $result = $apiInstance->sendTransacEmail($sendSmtpEmail);
 
+        // TEMPORARY DIAGNOSTIC — remove with the vasl_trace calls.
+        if (function_exists('vasl_trace')) {
+            vasl_trace('      BREVO OK -> ' . $email_address . ' | subject: ' . $subject
+                . ' | attachments: ' . count($attachments));
+        }
         return true;
     } catch (Exception $e) {
+        if (function_exists('vasl_trace')) {
+            vasl_trace('      BREVO FAILED -> ' . $email_address . ' | subject: ' . $subject
+                . ' | ' . $e->getMessage());
+        }
         // Make Brevo failures visible instead of silently dropping the email
         // (e.g. daily-limit reached, invalid API key, unverified sender).
         error_log('[mail] Brevo send FAILED to ' . (isset($email_address) ? $email_address : '?')
