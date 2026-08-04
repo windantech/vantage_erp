@@ -12,6 +12,11 @@ $where_conditions = [];
 
 if ($status_filter) {
     $where_conditions[] = "s.onboarding_status = '$status_filter'";
+} else {
+    // Default view: show the live pipeline (active + still-onboarding); hide
+    // rejected and inactive. They remain in the DB and appear when explicitly
+    // chosen in the status filter.
+    $where_conditions[] = "s.onboarding_status NOT IN ('rejected','inactive')";
 }
 
 if ($department_filter) {
