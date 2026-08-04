@@ -13,10 +13,12 @@ $where_conditions = [];
 if ($status_filter) {
     $where_conditions[] = "s.onboarding_status = '$status_filter'";
 } else {
-    // Default view: show the live pipeline (active + still-onboarding); hide
-    // rejected and inactive. They remain in the DB and appear when explicitly
-    // chosen in the status filter.
-    $where_conditions[] = "s.onboarding_status NOT IN ('rejected','inactive')";
+    // Default view: show only the live pipeline (active + still-onboarding).
+    // An allowlist (not a NOT IN blocklist) so that rejected, inactive AND
+    // blank/NULL statuses are all hidden — older records with an empty
+    // onboarding_status must not leak into the default list. Every one of
+    // these statuses is still reachable via the status filter.
+    $where_conditions[] = "s.onboarding_status IN ('pending','under_review','approved','active')";
 }
 
 if ($department_filter) {
