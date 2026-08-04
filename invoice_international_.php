@@ -938,6 +938,33 @@ function generateAdmissionPdf($client_email, $client_name, $admission_no, $admis
         $outcome_line = null;
     }
 
+    // Academic programmes (Event.location contains 'academic#') run continuously and
+    // must never inherit the dated-event syllabus selected above — a leadership intake
+    // would otherwise be sent the M&E curriculum. Use the programme's OWN configured
+    // modules; when none have been set up yet, show a placeholder so staff can see the
+    // gap, rather than shipping another programme's content to the client.
+    $is_academic_letter = (stripos((string) $location, 'academic#') !== false);
+    if ($is_academic_letter) {
+        $academic_helper = __DIR__ . '/includes/academic_approval.php';
+        if (is_file($academic_helper)) { require_once $academic_helper; }
+
+        $academic_modules = [];
+        if ($conn && function_exists('academic_program_modules')) {
+            $academic_modules = academic_program_modules($conn, $admission_program_name);
+        }
+
+        if (!empty($academic_modules)) {
+            $training_areas = $academic_modules;
+        } elseif (empty($training_areas)) {
+            $default_training_areas = ['ADM letter to be configured here.'];
+        }
+
+        $intro_content = 'This programme is available on a continuous basis — there is no fixed intake '
+            . 'and no set start date, so you may begin at a time that suits you. Your place is confirmed '
+            . 'upon settlement of the fees indicated below.';
+        $outcome_line = null;
+    }
+
     // Use provided training areas or default ones
     $areas_to_display = !empty($training_areas) ? $training_areas : $default_training_areas;
 
@@ -986,7 +1013,8 @@ function generateAdmissionPdf($client_email, $client_name, $admission_no, $admis
     $url_elearning       = 'https://eval360.tech';
     $url_team_training   = 'https://vantageafricaleaders.com/company-nominations/';
     $title = trim((string) ($training_program ?? ''));
-    $db_location = trim((string) ($location ?? ''));
+    // 'academic#' is an internal flag on Event.location, not part of the venue name.
+    $db_location = trim(str_ireplace('academic#', '', (string) ($location ?? '')));
     if ($title !== '' || $db_location !== '') {
         $pay_dir = __DIR__ . '/../pay';
         if (file_exists($pay_dir . '/event_contact_map.php')) { include_once $pay_dir . '/event_contact_map.php'; }
@@ -1497,6 +1525,44 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
             ];
         }
         $training_areas = []; // passed through to letter; generateAdmissionPdf will use variant lists
+    }
+
+    // Academic programmes are Events flagged with 'academic#' in Event.location.
+    // They run continuously — no intake and no fixed dates — and are often registered
+    // before their fee structure has been configured. They must NOT fall through to
+    // the dated-event default line items below (M&E / Resource Mobilization / Data
+    // Analysis), which would invoice the client for the wrong programme at the wrong
+    // price. Use the event's own fee when it has one, otherwise issue the invoice with
+    // a visible placeholder so the client still receives a document and staff can see
+    // exactly what is outstanding.
+    $is_academic_event = (stripos((string) $location, 'academic#') !== false);
+    if ($is_academic_event) {
+        if (empty($invoice_items) || !is_array($invoice_items)) {
+            $academic_fee = (float) $event_amount;
+            if ($academic_fee > 0) {
+                $invoice_items = [[
+                    'description'  => trim((string) $training_program) !== '' ? $training_program : 'Academic programme',
+                    'unit_measure' => 'No. of Participants',
+                    'quantity'     => 1,
+                    'total_cost'   => $academic_fee,
+                ]];
+            } else {
+                $invoice_items = [[
+                    'description'  => 'Invoice details will be configured here',
+                    'unit_measure' => '-',
+                    'quantity'     => 1,
+                    'total_cost'   => 0.00,
+                ]];
+            }
+        }
+        // Continuously available: no intake dates to advertise, so the invoice and
+        // email suppress their date/venue blocks rather than printing empty ones.
+        // ($location keeps its 'academic#' marker here — generateAdmissionPdf still
+        // needs it to select the academic curriculum. It is stripped there, and the
+        // venue line it feeds is only rendered when dates exist, which they never do
+        // for an academic programme.)
+        $start_date = null;
+        $end_date   = null;
     }
 
     // Check if invoice_items is provided and is an array

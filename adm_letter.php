@@ -25,9 +25,35 @@ $invoice_date = date("jS F Y");
 $letter_date = date("jS F Y");
 $invoice_no = $adm_no;
 
+// A course/programme whose admission-letter or invoice content has not been set up
+// yet must still receive a complete, valid pair of PDFs — with a visible placeholder
+// telling staff what is missing — rather than a blank page or no email at all. This
+// matters most for academic programmes (Event.location contains 'academic#'), which
+// run continuously with no intake or fixed dates and are often registered before
+// their letter text and fee structure have been configured.
+$ADM_PLACEHOLDER     = '<p><em>ADM letter to be configured here.</em></p>';
+$INVOICE_PLACEHOLDER = 'Invoice details will be configured here';
+
+$adm = (isset($adm) && trim(strip_tags((string) $adm)) !== '') ? $adm : $ADM_PLACEHOLDER;
+
+// $purpose doubles as the invoice line-item description and as the programme name in
+// prose, so keep a readable version for the latter — the placeholder must not end up
+// mid-sentence as "registering for Invoice details will be configured here".
+$purpose_name = (isset($purpose) && trim((string) $purpose) !== '') ? trim((string) $purpose) : 'your programme';
+$purpose      = (isset($purpose) && trim((string) $purpose) !== '') ? $purpose : $INVOICE_PLACEHOLDER;
+
+// Keep the fee blank-with-placeholder rather than printing a misleading 0.00.
+$amount_raw = isset($amount) ? trim((string) $amount) : '';
+$has_amount = ($amount_raw !== '' && (float) str_replace(',', '', $amount_raw) > 0);
+$amount     = $has_amount ? $amount_raw : $INVOICE_PLACEHOLDER;
+
 // Generate Admission Letter PDF
-function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm)
+function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount = true)
 {
+    $amount_cell = $has_amount
+        ? $amount
+        : '<span style="font-style: italic; color: #A85431;">' . $amount . '</span>';
+
     $html = '
     <html>
     <head></head>
@@ -95,7 +121,7 @@ function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter
                     <tbody>
                         <tr>
                             <td style="padding: 5px; width: 50%;">Course Fees</td>
-                            <td style="padding: 5px; width: 50%;">'. $amount .'</td>
+                            <td style="padding: 5px; width: 50%;">'. $amount_cell .'</td>
                         </tr>
                     </tbody>
                 </table>
@@ -130,8 +156,31 @@ function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter
 }
 
 // Generate Invoice PDF
-function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id)
+function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount = true)
 {
+    // With no fee configured, a single spanning placeholder row reads correctly;
+    // repeating the placeholder sentence in the Cost/Total columns would not.
+    if ($has_amount) {
+        $items_rows_html = '
+                    <tr>
+                        <td style="padding: 5px;">1</td>
+                        <td style="padding: 5px;">'.$purpose.'</td>
+                        <td style="padding: 5px;">1</td>
+                        <td style="padding: 5px; text-align: center;">1</td>
+                        <td style="padding: 5px; text-align: center;">'.$amount.'</td>
+                        <td style="padding: 5px; text-align: center;">'.$amount.'</td>
+                    </tr>
+                    <tr>
+                        <td colspan="4" style="padding: 5px; text-align: right;"><b>Total Payable</b></td>
+                        <td colspan="2" style="padding: 5px; text-align: center; background: #D96800; color: white;">'.$amount.'</td>
+                    </tr>';
+    } else {
+        $items_rows_html = '
+                    <tr>
+                        <td colspan="6" style="padding: 10px; text-align: center; font-style: italic; color: #A85431;">'.$amount.'</td>
+                    </tr>';
+    }
+
     $html = '
     <html>
     <head></head>
@@ -172,18 +221,7 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
                         <th style="padding: 5px; color: white;">Cost (USD)</th>
                         <th style="padding: 5px; color: white;">Total (USD)</th>
                     </tr>
-                    <tr>
-                        <td style="padding: 5px;">1</td>
-                        <td style="padding: 5px;">'.$purpose.'</td>
-                        <td style="padding: 5px;">1</td>
-                        <td style="padding: 5px; text-align: center;">1</td>
-                        <td style="padding: 5px; text-align: center;">'.$amount.'</td>
-                        <td style="padding: 5px; text-align: center;">'.$amount.'</td>
-                    </tr>
-                    <tr>
-                        <td colspan="4" style="padding: 5px; text-align: right;"><b>Total Payable</b></td>
-                        <td colspan="2" style="padding: 5px; text-align: center; background: #D96800; color: white;">'.$amount.'</td>
-                    </tr>
+                    '.$items_rows_html.'
                 </table>
 
                 <h3 style="text-align: left; margin-bottom: 0;">HOW TO PAY:</h3>
@@ -295,9 +333,36 @@ function sendEmailWithLogging($conn, $entry_id, $record_id, $email_address, $rec
     return $email_sent;
 }
 
-// Generate PDFs
-$adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm);
-$invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id);
+// The email body itself must never be blank — a template row that failed to decode
+// (json_decode returning null) previously produced an empty-bodied approval email.
+if (!isset($body) || !is_string($body) || trim(strip_tags($body)) === '') {
+    $body = 'Dear ' . htmlspecialchars($recipient_name) . ',<br><br>'
+          . 'Thank you for registering for <strong>' . htmlspecialchars($purpose_name) . '</strong> '
+          . 'at Vantage Africa School of Leadership. Please find your admission letter and '
+          . 'proforma invoice attached.<br><br>'
+          . 'Warm regards,<br>Vantage Africa School of Leadership';
+}
+
+// Generate PDFs. Each is generated independently: a failure building one document
+// must not stop the other from being attached, and must never stop the email from
+// going out. Previously an mPDF exception here (e.g. an unwritable output dir) was
+// fatal, so the client received nothing at all.
+$adm_letter_path = null;
+$invoice_path = null;
+
+try {
+    $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount);
+} catch (\Throwable $e) {
+    error_log('[adm_letter] admission letter PDF failed for ' . $email_address
+        . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+}
+
+try {
+    $invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount);
+} catch (\Throwable $e) {
+    error_log('[adm_letter] invoice PDF failed for ' . $email_address
+        . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+}
 
 // Get record_id if not set
 if (!isset($record_id)) {

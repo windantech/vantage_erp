@@ -635,10 +635,14 @@ function wa_enroll_course_materials($conn, $courseId, $entry_id, $data) {
         $program_name = $course['course'];
         $pnEsc = mysqli_real_escape_string($conn, $program_name);
         $sel = mysqli_query($conn, "SELECT * FROM system_emails1 WHERE course_opt = '$pnEsc' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
-        if (!$sel || mysqli_num_rows($sel) === 0) {
-            error_log('[wa-enroll] no active system_emails1 template for course "' . $program_name . '" — admission letter NOT sent');
-        } else {
-            $row_result     = mysqli_fetch_assoc($sel);
+        $row_result = ($sel && mysqli_num_rows($sel) > 0) ? mysqli_fetch_assoc($sel) : null;
+        if (!$row_result) {
+            // Send anyway: adm_letter.php supplies a default body and placeholder
+            // letter/invoice content, so a course awaiting configuration still
+            // reaches the client instead of being dropped.
+            error_log('[wa-enroll] no active system_emails1 template for course "' . $program_name . '" — sending default approval email');
+        }
+        {
             // Variables adm_letter.php reads from scope (same names as course-details.php).
             $adm_no         = "VASL-" . $entry_id;
             $adm            = $course['adm_letter'] ?? '';
@@ -647,8 +651,8 @@ function wa_enroll_course_materials($conn, $courseId, $entry_id, $data) {
             $email_address  = $email;
             $subject        = "Vantage Africa School Of Leadership Approval";
             $recipient_name = ucfirst(strtolower($firstname)) . " " . ucfirst(strtolower($lastname));
-            $body           = json_decode($row_result['body'], true);
-            $body           = is_string($body) ? str_replace('$name', $recipient_name, $body) : $body;
+            $body           = $row_result ? json_decode($row_result['body'], true) : null;
+            $body           = is_string($body) ? str_replace('$name', $recipient_name, $body) : null;
             $invoice_no     = $adm_no;
             $purpose        = $program_name;
             $adm_letter_file = WA_ADMIN_DIR . '/adm_letter.php';

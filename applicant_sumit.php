@@ -521,17 +521,24 @@ $course_id = $course['course_id'];
                 $program_name = $course['course'];
                 $course_id_new = $course['course_id_new'];
                 
-                // Send email if configured
+                // Always send the approval email. A course with no configured
+                // system_emails1 template — or one whose body fails to decode — still
+                // gets its admission letter and invoice; adm_letter.php supplies a
+                // default body and placeholder content for whatever is missing. The
+                // previous gate skipped the send entirely, leaving the client with
+                // nothing and no record of why.
                 $select = mysqli_query($conn,"SELECT * FROM system_emails1 WHERE course_opt='$program_name' AND email_opt = 1");
-                if($select && mysqli_num_rows($select) > 0) {
-                    $row_result = mysqli_fetch_array($select);
-                    
+                $row_result = ($select && mysqli_num_rows($select) > 0) ? mysqli_fetch_array($select) : null;
+                if (!$row_result) {
+                    error_log('[approval-email] no active system_emails1 template for course "' . $program_name . '" — sending default approval email');
+                }
+                {
                     $email_address = $email;
                     $subject = "Vantage Africa School Of Leadership Approval";
-                    
+
                     $recipient_name = ucfirst(strtolower($firstname))." ".ucfirst(strtolower($lastname));
-                    $body = json_decode($row_result['body'], true);
-                    $body = str_replace('$name', $recipient_name, $body);
+                    $body = $row_result ? json_decode($row_result['body'], true) : null;
+                    $body = is_string($body) ? str_replace('$name', $recipient_name, $body) : null;
                      $adm_no = "VASL-".$entry_id;
                     $invoice_no = $adm_no;
                     $purpose = $program_name;
@@ -977,13 +984,6 @@ error_log(print_r($result, true));
             ?>
             <script>
                 window.alert("Virtual Course Added Successfully!");
-                window.location.href="loaded_data";
-            </script>
-            <?php
-        } else {
-            ?>
-            <script>
-                window.alert("Failed to add virtual course!");
                 window.location.href="loaded_data";
             </script>
             <?php
