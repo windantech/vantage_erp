@@ -39,9 +39,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app *{box-sizing:border-box}
     .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
     .bde-app button{cursor:pointer}
-    .bde-app .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
+    .bde-app .bde-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
     .bde-app .brand{display:flex;align-items:center;gap:12px;min-width:260px}
-    .bde-app .mark{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--navy),var(--orange));display:grid;place-items:center;color:#fff;font-weight:900;letter-spacing:-1px}
+    .bde-app .mark{width:42px;height:42px;padding:0;border-radius:12px;background:linear-gradient(135deg,var(--navy),var(--orange));display:grid;place-items:center;color:#fff;font-weight:900;letter-spacing:-1px}
     .bde-app .brand h1{font-size:17px;margin:0;line-height:1.15;color:var(--ink)}
     .bde-app .brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
     .bde-app .controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:end}
@@ -175,7 +175,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       .bde-app .scenario{grid-template-columns:repeat(3,1fr)}
     }
     @media(max-width:900px){
-      .bde-app .topbar,.bde-app .hero,.bde-app .strategy-strip{grid-template-columns:1fr;display:grid}
+      .bde-app .bde-topbar,.bde-app .hero,.bde-app .strategy-strip{grid-template-columns:1fr;display:grid}
       .bde-app .controls{justify-content:start}
       .bde-app .grid-2,.bde-app .grid-3,.bde-app .dev-grid{grid-template-columns:1fr}
       .bde-app .principles{grid-template-columns:1fr}
@@ -194,14 +194,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       .bde-app .funnel-row{grid-template-columns:100px 1fr 48px}
     }
     @media print{
-      .bde-app .topbar{position:static}.bde-app .tabs,.bde-app .controls .print-hide,.bde-app .scenario{display:none!important}
+      .bde-app .bde-topbar{position:static}.bde-app .tabs,.bde-app .controls .print-hide,.bde-app .scenario{display:none!important}
       .bde-app .panel,.bde-app .metric,.bde-app .action-card{box-shadow:none;break-inside:avoid}
     }
     </style>
 
     <div class="container-fluid mt-5 pt-4 pb-4 px-3 px-md-4">
     <div class="bde-app" id="bdeApp">
-      <header class="topbar">
+      <header class="bde-topbar">
         <div class="brand">
           <div class="mark">VA</div>
           <div>
