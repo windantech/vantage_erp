@@ -974,7 +974,10 @@ function generateAdmissionPdf($client_email, $client_name, $admission_no, $admis
         if (!empty($academic_modules)) {
             $training_areas = $academic_modules;
         } elseif (empty($training_areas)) {
-            $default_training_areas = ['ADM letter to be configured here.'];
+            // Customer-safe fallback when the programme's curriculum modules
+            // aren't configured yet — never ship a developer placeholder.
+            // Real fix: set the programme's curriculum in academic_programs.
+            $default_training_areas = ['Programme modules to be confirmed.'];
         }
 
         $intro_content = 'This programme is available on a continuous basis — there is no fixed intake '

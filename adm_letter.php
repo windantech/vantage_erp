@@ -31,7 +31,7 @@ $invoice_no = $adm_no;
 // matters most for academic programmes (Event.location contains 'academic#'), which
 // run continuously with no intake or fixed dates and are often registered before
 // their letter text and fee structure have been configured.
-$ADM_PLACEHOLDER     = '<p><em>ADM letter to be configured here.</em></p>';
+$ADM_PLACEHOLDER     = '<p>Your detailed admission letter will be shared by our team shortly.</p>';
 $INVOICE_PLACEHOLDER = 'Invoice details will be configured here';
 
 $adm = (isset($adm) && trim(strip_tags((string) $adm)) !== '') ? $adm : $ADM_PLACEHOLDER;
