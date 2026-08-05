@@ -209,6 +209,11 @@ switch ($action) {
         $GLOBALS['WA_SENT_BY_STAFF'] = (int)$staff_id;   // label it as this rep's message
         $res = wa_send_template($conn, $conv['wa_id'], $tmpl, $lang, $components);
         unset($GLOBALS['WA_SENT_BY_STAFF']);
+        if (!empty($res['ok'])) {
+            // Stamp when we re-engaged so the inbox can surface who REPLIES after this.
+            wa_conv_reengage_schema_ensure($conn);
+            mysqli_query($conn, "UPDATE wa_conversations SET reengaged_at = NOW() WHERE id = " . (int)$conv_id);
+        }
         wa_flash(!empty($res['ok']) ? 'success' : 'danger',
             !empty($res['ok']) ? 'Re-engagement message sent.' : ('Send failed: ' . ($res['error'] ?? 'unknown')));
         wa_redirect('../wa_thread.php?id=' . $conv_id);

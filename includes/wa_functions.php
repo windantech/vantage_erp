@@ -855,6 +855,16 @@ function wa_conv_mode_schema_ensure($conn) {
         ADD COLUMN IF NOT EXISTS `delivery_mode` ENUM('unknown','virtual','onsite') NOT NULL DEFAULT 'unknown'");
 }
 
+/** Add the conversation reengaged_at column once (idempotent). Stamped when a human sends
+ *  the re-engagement template, so the inbox can flag clients who REPLIED afterwards. */
+function wa_conv_reengage_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_conversations`
+        ADD COLUMN IF NOT EXISTS `reengaged_at` DATETIME NULL DEFAULT NULL");
+}
+
 /** Persist the customer's chosen delivery mode on their conversation. */
 function wa_conv_set_mode($conn, $convId, $mode) {
     $convId = (int)$convId;
@@ -925,20 +935,18 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     wa_conv_mode_schema_ensure($conn);
     $modeSaid = wa_detect_delivery_mode($text);
     if ($modeSaid !== '' && $conv) { wa_conv_set_mode($conn, (int)$conv['id'], $modeSaid); }
-    if ($modeSaid !== '' && $conv && $returning && ($conv['ref_type'] ?? '') === 'course'
-        && ($conv['handler'] ?? 'ai') !== 'human') {
+    // VIRTUAL confirmed for a dual-mode topic we were holding -> now assign the virtual rep.
+    // ONSITE is deliberately NOT auto-assigned: which onsite session (and its rep) depends on
+    // the client's LOCATION, so we keep the chat general and let the AI ask where they are —
+    // a named location then binds the specific event below. This is why we never pre-link a
+    // client to (e.g.) the Malawi session they never actually chose.
+    if ($modeSaid === 'virtual' && $conv && $returning && ($conv['ref_type'] ?? '') === 'course'
+        && ($conv['handler'] ?? 'ai') !== 'human'
+        && ($conv['assigned_user_id'] === null || $conv['assigned_user_id'] === '')) {
         $cid = (int)$conv['ref_id'];
-        if ($modeSaid === 'onsite') {
-            $on = wa_course_onsite_event($conn, $cid);
-            if ($on) {
-                wa_assign_conversation($conn, $contactId, 'event', (int)$on['event_id'], $on['owner'], 'mode_onsite', 0.9);
-                return wa_route_result($conn, 'assigned', 'mode_onsite', 'event', (int)$on['event_id'], $on['owner']);
-            }
-        } elseif ($conv['assigned_user_id'] === null || $conv['assigned_user_id'] === '') {
-            $uid = wa_first_owner($conn, 'course', $cid);
-            wa_assign_conversation($conn, $contactId, 'course', $cid, $uid, 'mode_virtual', 0.9);
-            return wa_route_result($conn, 'assigned', 'mode_virtual', 'course', $cid, $uid);
-        }
+        $uid = wa_first_owner($conn, 'course', $cid);
+        wa_assign_conversation($conn, $contactId, 'course', $cid, $uid, 'mode_virtual', 0.9);
+        return wa_route_result($conn, 'assigned', 'mode_virtual', 'course', $cid, $uid);
     }
 
     // Signal 1: ad referral
@@ -961,8 +969,11 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     // Keyword match (city-based) weak? If the message signals a place / in-person intent,
     // ask the AI, which can match by COUNTRY ('in-person Lesotho' -> the Maseru event).
     // Gated on a location cue so routine chatter doesn't spend an AI call every message.
+    // Gate on a genuine LOCATION cue — NOT a bare "onsite/in-person", which says the customer
+    // wants in-person but NOT which city. Binding a specific city's event off topic alone
+    // pre-assigns a session they never chose (e.g. auto-linking a Lesotho enquiry to Malawi).
     if (($evGuess['event_id'] === null || $evGuess['confidence'] < 0.60)
-        && preg_match('/\b(in[\s-]?person|on[\s-]?site|physical|venue|country|from|based\s+in|attend|onsite)\b/i', $text)) {
+        && preg_match('/\b(venue|country|from|based\s+in|attend|travel|located|location|city)\b/i', $text)) {
         $aiEv = wa_ai_classify_event($conn, $text);
         if ($aiEv['event_id'] !== null && $aiEv['confidence'] >= 0.60) { $evGuess = $aiEv; $evMethod = 'event_ai'; }
     }
@@ -1049,16 +1060,14 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
         $onsite = wa_course_onsite_event($conn, (int)$courseId);
         $mode   = $modeSaid !== '' ? $modeSaid
                 : (($conv && isset($conv['delivery_mode'])) ? $conv['delivery_mode'] : 'unknown');
-        if ($onsite && $mode === 'onsite') {
-            wa_assign_conversation($conn, $contactId, 'event', (int)$onsite['event_id'], $onsite['owner'], 'mode_onsite', $conf);
-            return wa_route_result($conn, 'assigned', 'mode_onsite', 'event', (int)$onsite['event_id'], $onsite['owner']);
-        }
-        if ($onsite && $mode === 'unknown') {
-            // Bind the topic so the AI can answer + ask virtual-vs-onsite, but leave the rep
-            // UNASSIGNED so nobody wrong-mode is locked in. The mode answer assigns the right
-            // rep next turn (handled up top).
-            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, null, 'await_mode', $conf);
-            return wa_route_result($conn, 'assigned_unowned', 'await_mode', 'course', (int)$courseId, null);
+        if ($onsite && ($mode === 'unknown' || $mode === 'onsite')) {
+            // Dual-mode topic. Bind it so the AI can answer, but DON'T lock a mode/location-
+            // specific rep: mode unknown -> the AI asks virtual-vs-onsite; onsite -> it asks
+            // WHICH location. A named location then binds the specific event + its onsite rep
+            // (via the event classifier). We never pre-assign a session the client never chose.
+            $reason = $mode === 'onsite' ? 'await_onsite_location' : 'await_mode';
+            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, null, $reason, $conf);
+            return wa_route_result($conn, 'assigned_unowned', $reason, 'course', (int)$courseId, null);
         }
         // Virtual-only course, or the customer confirmed virtual -> normal assignment.
         $uid = wa_first_owner($conn, 'course', (int)$courseId);
@@ -3108,6 +3117,14 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "NEVER quote the online fee or link for an in-person request, or the in-person fee or link for an online "
         . "request. If you don't have the exact fees or link for the mode they chose, do the human hold (get it for "
         . "them and come back) rather than borrowing the other mode's figure.\n\n"
+
+        . "CONFIRM BEFORE COMMITTING TO A SESSION: never tell a customer they are booked, registered or 'set' for a "
+        . "specific in-person session, and never treat a particular city's session as chosen, until THEY confirm it "
+        . "(or give a location that clearly matches it). For an in-person request, FIRST ask where they are / which "
+        . "city session they want, present the matching option(s), and only proceed once they confirm. If we have no "
+        . "session in their location, say so plainly and offer the nearest actual session or the online option — do "
+        . "NOT imply they're signed up for a city they never picked. If a customer changes their mind to a different "
+        . "course or session, confirm that switch with them before treating the new one as chosen.\n\n"
 
         . "HARD RULE — NO SINGAPORE: we do NOT run any Singapore training, study tour, trip or programme for WhatsApp "
         . "enquirers. NEVER mention, offer, suggest or describe anything in or about Singapore, and never imply travel "
