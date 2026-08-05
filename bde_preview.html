@@ -34,7 +34,7 @@
   .brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
   .brand p .sep{color:var(--gold);margin:0 3px}
 
-  .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   /* identity: role/dept/employee as a sleek read-only block, not empty inputs */
   .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--navy),var(--navy2));
     color:#fff;border-radius:14px;padding:9px 15px 9px 11px;box-shadow:0 10px 22px -12px rgba(12,39,64,.7)}
@@ -44,10 +44,11 @@
   .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
   .identity .who span i{color:var(--gold);font-style:normal}
 
-  .period{display:flex;flex-direction:column;gap:3px}
-  .period label{font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:800;padding-left:2px}
-  .period select{appearance:none;-webkit-appearance:none;background:var(--surface2);border:1px solid var(--line);border-radius:11px;
-    padding:9px 34px 9px 13px;font-weight:650;font-size:13px;color:var(--ink);cursor:pointer;
+  /* all controls share one height + centre line so the row reads as aligned */
+  .identity,.period select,.icon-btn{height:48px}
+  .period{display:flex;align-items:center}
+  .period select{appearance:none;-webkit-appearance:none;background:var(--surface2);border:1px solid var(--line);border-radius:12px;
+    padding:0 34px 0 14px;font-weight:650;font-size:13px;color:var(--ink);cursor:pointer;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23647688' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 12px center}
   .period select:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(236,110,45,.16)}
@@ -58,20 +59,20 @@
   /* ---------- Strategy strip (hierarchy + spacing) ---------- */
   .strip{position:relative;overflow:hidden;margin-top:16px;border-radius:20px;color:#fff;
     background:linear-gradient(120deg,var(--navy2),var(--navy));
-    display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);gap:22px;
-    padding:26px 28px;box-shadow:0 22px 46px -24px rgba(12,39,64,.6)}
+    display:grid;grid-template-columns:minmax(0,1.6fr) minmax(250px,.62fr);gap:16px;
+    padding:22px 24px;box-shadow:0 22px 46px -24px rgba(12,39,64,.6)}
   .strip::before{content:"";position:absolute;inset:0;pointer-events:none;
     background:radial-gradient(130% 150% at 100% 0,rgba(236,110,45,.30),transparent 55%)}
   .strip>*{position:relative;z-index:1}
   .strip .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.18em;
     font-weight:800;color:var(--gold);margin-bottom:12px}
   .strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
-  .strip h2{font-family:var(--display);font-size:23px;line-height:1.28;margin:0 0 14px;font-weight:700;letter-spacing:-.01em;max-width:26ch}
-  .strip p{margin:0;font-size:13px;line-height:1.6;color:#cddae6;max-width:64ch}
-  .focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:15px 16px;backdrop-filter:blur(2px)}
-  .focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:12.5px;margin-bottom:8px}
+  .strip h2{font-family:var(--display);font-size:23px;line-height:1.28;margin:0 0 12px;font-weight:700;letter-spacing:-.01em;max-width:34ch}
+  .strip p{margin:0;font-size:13px;line-height:1.6;color:#cddae6;max-width:72ch}
+  .focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:16px 17px;backdrop-filter:blur(2px)}
+  .focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;margin-bottom:9px}
   .focus b i{color:var(--gold)}
-  .focus span{font-size:12.5px;line-height:1.55;color:#d6e2ec}
+  .focus span{font-size:13.5px;line-height:1.6;color:#d9e4ee}
 
   /* ---------- Tab bar (inactive now read as buttons) ---------- */
   .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
@@ -123,8 +124,7 @@
         </div>
       </div>
       <div class="period">
-        <label for="period">Period</label>
-        <select id="period">
+        <select id="period" aria-label="Period">
           <option>September 2026</option>
           <option>October 2026</option>
           <option>November 2026</option>
@@ -139,7 +139,7 @@
   <section class="strip">
     <div>
       <div class="eyebrow">Personal execution dashboard</div>
-      <h2>Convert every enquiry into a managed next step — and every free session into a payment.</h2>
+      <h2>Convert every enquiry into a managed next step and every free session into a payment opportunity.</h2>
       <p>The Virtual Department wins through fast response, relationship building, strong free-session attendance, human calls for hot leads, accurate automation, payment guidance and disciplined CRM follow-up.</p>
     </div>
     <div class="focus">
