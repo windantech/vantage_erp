@@ -79,6 +79,14 @@ if (!headers_sent()) {
         </a>
     </li>
 
+    <!-- Nav Item - Performance (BDE dashboard) -->
+    <li class="nav-item">
+        <a class="nav-link" href="bde_dashboard.php">
+            <i class="fas fa-fw fa-chart-line"></i>
+            <span>Performance</span>
+        </a>
+    </li>
+
     <!-- WhatsApp -->
     <?php if (in_array(44, $role)) { ?>
     <li class="nav-item whatsapp">

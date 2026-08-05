@@ -199,6 +199,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     }
     </style>
 
+    <div class="container-fluid mt-5 pt-4 pb-4 px-3 px-md-4">
     <div class="bde-app" id="bdeApp">
       <header class="topbar">
         <div class="brand">
@@ -258,6 +259,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <main id="workspace" class="workspace"></main>
 
       <div class="footer-note">Interactive prototype with illustrative data. Production figures must come from versioned targets, CRM transactions and Finance-cleared payments.</div>
+    </div>
     </div>
   </div>
 </section>
