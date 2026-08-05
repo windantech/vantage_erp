@@ -5,11 +5,20 @@ if (!function_exists('send_mail_function')) {
     $year = date("Y");
     $bodyWithYear = str_replace('{year}', $year, $body);
     
-    // Replace with your actual Brevo API key
-    $apiKey = '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';
-	$apiKey = 'xsmtpsib-91b05ff9042c19e32074b94c01fde5e3ac3dbfbeb516edb14cec9451592ed785-iEtwHIVF08USsNZa';
-	
-$apiKey = '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';
+    // Brevo API key. The live key is NEVER stored in the repo — GitHub secret
+    // scanning revokes any key it finds (that caused a past outage). It lives in
+    // an untracked, gitignored file created once on the server:
+    //   email_plugins/email_key.php  ->  <?php $BREVO_API_KEY = 'xkeysib-...';
+    // If the file is missing we leave the key empty so the failure is loud
+    // (unauthenticated) instead of silently sending on a stale/wrong key.
+    $apiKey = '';
+    $keyFile = __DIR__ . '/email_key.php';
+    if (is_file($keyFile)) {
+        include $keyFile;
+        if (!empty($BREVO_API_KEY)) {
+            $apiKey = $BREVO_API_KEY;
+        }
+    }
     
     // Configure API
     $config = SendinBlue\Client\Configuration::getDefaultConfiguration()

@@ -1,0 +1,3 @@
+
+# Live Brevo API key — server-only, never commit (see brevo-email-setup memory)
+email_plugins/email_key.php
