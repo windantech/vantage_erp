@@ -66,7 +66,12 @@
 
 <?php
 if (isset($_SESSION['msg'])) {
-    if ($_SESSION['msg'] == "Success") { ?>
+    // Clear the flash immediately (server-side) so it shows exactly once. The old
+    // client-side AJAX unset only ran after the user dismissed the alert, so
+    // navigating away left $_SESSION['msg'] set and it re-popped on every load.
+    $vaslFlash = $_SESSION['msg'];
+    unset($_SESSION['msg']);
+    if ($vaslFlash == "Success") { ?>
         <script>
             Swal.fire({
                 position: "top-end",
@@ -82,7 +87,7 @@ if (isset($_SESSION['msg'])) {
                 });
             });
         </script>
-    <?php } elseif ($_SESSION['msg'] == "Failed") { ?>
+    <?php } elseif ($vaslFlash == "Failed") { ?>
         <script>
             Swal.fire({
                 position: "top-end",
@@ -98,7 +103,7 @@ if (isset($_SESSION['msg'])) {
                 });
             });
         </script>
-    <?php } elseif ($_SESSION['msg'] == "Error") { ?>
+    <?php } elseif ($vaslFlash == "Error") { ?>
         <script>
             Swal.fire({
                 position: "top-end",
