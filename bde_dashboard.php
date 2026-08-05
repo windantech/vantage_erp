@@ -19,22 +19,26 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     <?php require_once 'top_nav.php'; ?>
 
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
     /* Prototype styles, all scoped under .bde-app so they coexist with the
-       admin Bootstrap chrome without global body, wildcard or badge clashes. */
+       admin Bootstrap chrome without global body, wildcard or badge clashes.
+       Palette: brand-true light (navy structure + orange/gold accent, blue = info). */
     .bde-app{
-      --bg:#f3f6f8; --surface:#ffffff; --surface2:#f8fafb; --ink:#15212b; --muted:#677582;
-      --line:#dde5ea; --navy:#153f5d; --navy2:#0f314a; --orange:#e46f24; --teal:#218c91;
-      --green:#238553; --amber:#b27a05; --red:#bd3e3e; --blue:#3478b8; --purple:#7259ad;
-      --greenbg:#eaf7ef; --amberbg:#fff6dd; --redbg:#fdecec; --bluebg:#eaf3fb; --shadow:0 10px 28px rgba(26,51,68,.08);
+      --bg:#eef2f6; --surface:#ffffff; --surface2:#f4f7fa; --ink:#132433; --muted:#647688;
+      --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
+      --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
+      --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
+      --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
+      --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
       background:var(--bg); color:var(--ink);
-      font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+      font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
       line-height:1.45; max-width:1700px; margin:0 auto; padding:14px; border-radius:14px;
     }
     .bde-app.theme-dark{
-      --bg:#111820; --surface:#18222c; --surface2:#202c37; --ink:#eef4f7; --muted:#9fb0bd;
-      --line:#2f3e49; --navy:#79b9df; --navy2:#9fd2ee; --orange:#f28a4c; --teal:#55bfc0;
-      --green:#62c489; --amber:#e2b456; --red:#ee7777; --blue:#73aee4; --purple:#a996dd;
-      --greenbg:#183125; --amberbg:#322a17; --redbg:#351f22; --bluebg:#192c3d; --shadow:none;
+      --bg:#0f1c26; --surface:#16232e; --surface2:#1d2c38; --ink:#eef4f6; --muted:#9aa8b2;
+      --line:#2b3a45; --navy:#7fb4d6; --navy2:#9ed0ea; --orange:#f2905a; --gold:#e0b25a; --teal:#54bfb6;
+      --green:#5cc487; --amber:#e0b257; --red:#ec7a72; --blue:#71a6d8; --purple:#a595d6;
+      --greenbg:#16301f; --amberbg:#2f2913; --redbg:#331d1f; --bluebg:#182b3b; --shadow:none;
     }
     .bde-app *{box-sizing:border-box}
     .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
@@ -60,9 +64,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .strategy-strip p{margin:0;opacity:.86;font-size:13px;max-width:95ch}
     .bde-app .strategy-focus{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 13px}
     .bde-app .strategy-focus b{display:block;color:#ffd6bf;margin-bottom:2px}
-    .bde-app .tabs{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}
-    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 13px;font-weight:750;color:var(--muted)}
-    .bde-app .tab.active{background:var(--orange);border-color:var(--orange);color:#fff}
+    .bde-app .tabs{display:flex;gap:4px;flex-wrap:wrap;margin:16px 0;background:var(--surface);border:1px solid var(--line);padding:6px;border-radius:16px;box-shadow:var(--shadow)}
+    .bde-app .tab{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--muted);border-radius:11px;padding:10px 14px;font-weight:700;font-size:12.5px}
+    .bde-app .tab i{font-size:15px;line-height:0}
+    .bde-app .tab.active{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
     .bde-app .workspace{display:grid;gap:14px}
     .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
     .bde-app .panel,.bde-app .metric,.bde-app .action-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
@@ -169,6 +174,64 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app code{background:var(--surface2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
     .bde-app .footer-note{font-size:11px;color:var(--muted);text-align:center;padding:18px 8px 5px}
     .bde-app .hidden{display:none!important}
+
+    /* ---- Visual refresh: brand-true, light ---- */
+    .bde-app .brand h1,.bde-app .strategy-strip h2,.bde-app .panel-head h3,
+    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num{font-family:var(--display);letter-spacing:-.015em}
+    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num,.bde-app .score,.bde-app td{font-variant-numeric:tabular-nums}
+    .bde-app .bde-topbar{border-radius:20px}
+    .bde-app .panel{border-radius:18px}
+    .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
+    .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
+    .bde-app .metric::after{width:auto;height:3px;left:0;right:0;top:0;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--orange),var(--gold))}
+    .bde-app .tab{transition:color .15s ease,box-shadow .15s ease,background .15s ease}
+    .bde-app .tab:hover{background:var(--surface2);color:var(--ink)}
+    .bde-app .tab.active{box-shadow:0 8px 18px -8px color-mix(in srgb,var(--orange) 60%,transparent)}
+    .bde-app .tab.active:hover{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
+    .bde-app .primary-btn{box-shadow:0 8px 18px -8px rgba(23,58,84,.5)}
+    .bde-app .avatar{background:linear-gradient(135deg,var(--navy),color-mix(in srgb,var(--navy) 55%,var(--orange)))}
+    .bde-app .strategy-strip{position:relative;overflow:hidden;box-shadow:0 20px 44px -22px rgba(15,39,57,.55)}
+    .bde-app .strategy-strip::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 150% at 100% 0,color-mix(in srgb,var(--orange) 24%,transparent),transparent 55%);pointer-events:none}
+    .bde-app .strategy-strip>*{position:relative;z-index:1}
+    @media (prefers-reduced-motion: reduce){
+      .bde-app .metric,.bde-app .tab{transition:none}
+      .bde-app .metric:hover{transform:none}
+    }
+
+    /* ---- Ported header / identity / strip / tabs (approved preview) ---- */
+    .bde-app .bde-topbar{gap:20px;flex-wrap:wrap;padding:16px 22px;border-radius:20px}
+    .bde-app .brand{gap:13px;min-width:230px}
+    .bde-app .mark{width:46px;height:46px;border-radius:13px;font-family:var(--display);font-weight:800;letter-spacing:.5px;font-size:15px;box-shadow:0 8px 18px -8px rgba(18,58,92,.6)}
+    .bde-app .brand h1{font-size:18px}
+    .bde-app .brand p .sep{color:var(--gold);margin:0 3px}
+    .bde-app .controls{align-items:center;gap:10px}
+    .bde-app .identity,.bde-app .period select,.bde-app .icon-btn{height:48px}
+    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(12,39,64,.7)}
+    .bde-app .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
+    .bde-app .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15;color:#fff}
+    .bde-app .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
+    .bde-app .identity .who span i{color:var(--gold);font-style:normal}
+    .bde-app .period{display:flex;align-items:center}
+    .bde-app .period select{appearance:none;-webkit-appearance:none;border-radius:12px;padding:0 34px 0 14px;font-weight:650;font-size:13px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23647688' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:right 12px center}
+    .bde-app .icon-btn{display:inline-flex;align-items:center;gap:7px;border-radius:11px;padding:0 13px;font-weight:650;font-size:13px}
+    .bde-app .icon-btn:hover{border-color:var(--orange);color:var(--orange)}
+    .bde-app .strategy-strip{margin-top:16px;border-radius:20px;background:linear-gradient(120deg,var(--navy2),var(--navy));grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;padding:22px 26px;align-items:stretch}
+    .bde-app .strategy-strip .eyebrow{display:inline-flex;align-items:center;gap:8px;opacity:1;color:var(--gold);font-size:10.5px;letter-spacing:.18em;margin-bottom:12px}
+    .bde-app .strategy-strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
+    .bde-app .strategy-strip h2{font-size:23px;line-height:1.28;margin:0 0 12px}
+    .bde-app .strategy-strip p{opacity:1;color:#cddae6;font-size:13px;line-height:1.6;max-width:none}
+    .bde-app .strategy-focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:16px 17px}
+    .bde-app .strategy-focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;margin-bottom:9px}
+    .bde-app .strategy-focus b i{color:var(--gold)}
+    .bde-app .strategy-focus span{font-size:13.5px;line-height:1.6;color:#d9e4ee}
+    .bde-app .tabs{gap:8px;margin:18px 0;background:transparent;border:0;padding:0;box-shadow:none}
+    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:13px;padding:11px 15px;box-shadow:0 1px 2px rgba(16,40,64,.04);transition:.16s}
+    .bde-app .tab:hover{color:var(--ink);border-color:#c9d5e0;background:var(--surface);box-shadow:0 6px 14px -8px rgba(16,40,64,.28);transform:translateY(-1px)}
+    .bde-app .tab.active{border-color:transparent;background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff;box-shadow:0 10px 20px -8px rgba(236,110,45,.55)}
+    .bde-app .tab.active:hover{transform:translateY(-1px)}
+
     @media(max-width:1250px){
       .bde-app .metric-grid{grid-template-columns:repeat(3,1fr)}
       .bde-app .driver-grid{grid-template-columns:repeat(3,1fr)}
@@ -206,32 +269,26 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <div class="mark">VA</div>
           <div>
             <h1>BDE Command Centre</h1>
-            <p>Strategy &rarr; daily execution &rarr; verified revenue &rarr; commission &rarr; growth</p>
+            <p>Strategy <span class="sep">&rsaquo;</span> execution <span class="sep">&rsaquo;</span> revenue <span class="sep">&rsaquo;</span> commission <span class="sep">&rsaquo;</span> growth</p>
           </div>
         </div>
         <div class="controls">
-          <div class="control">
-            <label>Role view</label>
-            <div class="readonly-field">BDE / Coordinator</div>
+          <div class="identity" title="Read-only &mdash; set by your record">
+            <div class="ava">DM</div>
+            <div class="who">
+              <b>Dorcas Mukami Murithi</b>
+              <span>BDE / Coordinator <i>&middot;</i> Virtual</span>
+            </div>
           </div>
-          <div class="control">
-            <label>Department</label>
-            <div class="readonly-field">Virtual</div>
-          </div>
-          <div class="control">
-            <label>Employee</label>
-            <div class="readonly-field">Dorcas Mukami Murithi</div>
-          </div>
-          <div class="control">
-            <label for="monthSelect">Period</label>
-            <select id="monthSelect">
+          <div class="period">
+            <select id="monthSelect" aria-label="Period">
               <option>September 2026</option>
               <option>October 2026</option>
               <option>November 2026</option>
             </select>
           </div>
-          <button class="icon-btn print-hide" id="themeBtn" type="button">Dark mode</button>
-          <button class="icon-btn print-hide" id="printBtn" type="button">Print</button>
+          <button class="icon-btn print-hide" id="themeBtn" type="button"><i class="bi bi-moon-stars"></i> <span id="themeLbl">Dark mode</span></button>
+          <button class="icon-btn print-hide" id="printBtn" type="button"><i class="bi bi-printer"></i> Print</button>
         </div>
       </header>
 
@@ -242,18 +299,18 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <p id="strategyText"></p>
         </div>
         <div class="strategy-focus">
-          <b>Today's strategic focus</b>
+          <b><i class="bi bi-flag-fill"></i> Today's strategic focus</b>
           <span id="todayFocus"></span>
         </div>
       </section>
 
       <nav class="tabs" aria-label="Dashboard sections">
-        <button class="tab active" data-view="overview">Command Centre</button>
-        <button class="tab" data-view="pipeline">Pipeline &amp; Conversion</button>
-        <button class="tab" data-view="commission">Commission Journey</button>
-        <button class="tab" data-view="report">Embedded Reporting</button>
-        <button class="tab" data-view="strategy">Strategy &amp; Scorecard</button>
-        <button class="tab" data-view="developer">Developer Map</button>
+        <button class="tab active" data-view="overview"><i class="bi bi-speedometer2"></i><span>Command Centre</span></button>
+        <button class="tab" data-view="pipeline"><i class="bi bi-funnel-fill"></i><span>Pipeline &amp; Conversion</span></button>
+        <button class="tab" data-view="commission"><i class="bi bi-cash-coin"></i><span>Commission Journey</span></button>
+        <button class="tab" data-view="report"><i class="bi bi-clipboard-data"></i><span>Embedded Reporting</span></button>
+        <button class="tab" data-view="strategy"><i class="bi bi-bullseye"></i><span>Strategy &amp; Scorecard</span></button>
+        <button class="tab" data-view="developer"><i class="bi bi-diagram-3-fill"></i><span>Developer Map</span></button>
       </nav>
 
       <main id="workspace" class="workspace"></main>
@@ -1209,7 +1266,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
   document.getElementById("themeBtn").addEventListener("click",()=>{
     state.theme=state.theme==="light"?"dark":"light";
     bdeApp.classList.toggle("theme-dark",state.theme==="dark");
-    document.getElementById("themeBtn").textContent=state.theme==="light"?"Dark mode":"Light mode";
+    document.getElementById("themeLbl").textContent=state.theme==="light"?"Dark mode":"Light mode";
   });
   document.getElementById("printBtn").addEventListener("click",()=>window.print());
 

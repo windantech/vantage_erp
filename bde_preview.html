@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BDE Dashboard — Header/Nav preview</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef2f6; --surface:#ffffff; --surface2:#f4f7fa; --ink:#132433; --muted:#647688;
+    --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
+    --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5;
+    --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
+    --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
+    --display:"Sora",ui-sans-serif,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.45}
+  .wrap{max-width:1500px;margin:0 auto;padding:26px 28px 40px}
+  .note{font-size:12px;color:var(--muted);margin:0 0 16px;letter-spacing:.02em}
+  .note b{color:var(--orange)}
+
+  /* ---------- Top command bar ---------- */
+  .bde-topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px 22px;box-shadow:var(--shadow)}
+  .brand{display:flex;align-items:center;gap:13px;min-width:230px}
+  .mark{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--navy),var(--orange));
+    display:grid;place-items:center;color:#fff;font-weight:800;font-family:var(--display);letter-spacing:.5px;font-size:15px;
+    box-shadow:0 8px 18px -8px rgba(18,58,92,.6)}
+  .brand h1{font-family:var(--display);font-size:18px;margin:0;line-height:1.1;letter-spacing:-.01em}
+  .brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
+  .brand p .sep{color:var(--gold);margin:0 3px}
+
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* identity: role/dept/employee as a sleek read-only block, not empty inputs */
+  .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--navy),var(--navy2));
+    color:#fff;border-radius:14px;padding:9px 15px 9px 11px;box-shadow:0 10px 22px -12px rgba(12,39,64,.7)}
+  .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;
+    font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
+  .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15}
+  .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
+  .identity .who span i{color:var(--gold);font-style:normal}
+
+  /* all controls share one height + centre line so the row reads as aligned */
+  .identity,.period select,.icon-btn{height:48px}
+  .period{display:flex;align-items:center}
+  .period select{appearance:none;-webkit-appearance:none;background:var(--surface2);border:1px solid var(--line);border-radius:12px;
+    padding:0 34px 0 14px;font-weight:650;font-size:13px;color:var(--ink);cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23647688' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center}
+  .period select:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(236,110,45,.16)}
+  .icon-btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:11px;padding:9px 13px;
+    background:var(--surface2);font-weight:650;font-size:13px;color:var(--ink);cursor:pointer;transition:.15s}
+  .icon-btn:hover{border-color:var(--orange);color:var(--orange)}
+
+  /* ---------- Strategy strip (hierarchy + spacing) ---------- */
+  .strip{position:relative;overflow:hidden;margin-top:16px;border-radius:20px;color:#fff;
+    background:linear-gradient(120deg,var(--navy2),var(--navy));
+    display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;
+    padding:22px 26px;box-shadow:0 22px 46px -24px rgba(12,39,64,.6)}
+  .strip::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(130% 150% at 100% 0,rgba(236,110,45,.30),transparent 55%)}
+  .strip>*{position:relative;z-index:1}
+  .strip .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.18em;
+    font-weight:800;color:var(--gold);margin-bottom:12px}
+  .strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
+  .strip h2{font-family:var(--display);font-size:23px;line-height:1.28;margin:0 0 12px;font-weight:700;letter-spacing:-.01em}
+  .strip p{margin:0;font-size:13px;line-height:1.6;color:#cddae6}
+  .focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:16px 17px;backdrop-filter:blur(2px)}
+  .focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;margin-bottom:9px}
+  .focus b i{color:var(--gold)}
+  .focus span{font-size:13.5px;line-height:1.6;color:#d9e4ee}
+
+  /* ---------- Tab bar (inactive now read as buttons) ---------- */
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
+  .tab{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--surface);
+    color:var(--muted);border-radius:13px;padding:11px 15px;font-weight:700;font-size:12.5px;cursor:pointer;
+    box-shadow:0 1px 2px rgba(16,40,64,.04);transition:.16s}
+  .tab i{font-size:15px;line-height:0}
+  .tab:hover{color:var(--ink);border-color:#c9d5e0;box-shadow:0 6px 14px -8px rgba(16,40,64,.28);transform:translateY(-1px)}
+  .tab.active{background:linear-gradient(135deg,var(--orange),var(--gold));border-color:transparent;color:#fff;
+    box-shadow:0 10px 20px -8px rgba(236,110,45,.55)}
+  .tab.active:hover{transform:translateY(-1px)}
+
+  /* ---------- KPI cards (context) ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-top:4px}
+  .kpi{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:15px 15px 14px;box-shadow:var(--shadow)}
+  .kpi::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--orange),var(--gold))}
+  .kpi .k-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+  .kpi .k-ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:var(--surface2);color:var(--navy)}
+  .kpi .label{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
+  .kpi .value{font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:2px 0 3px}
+  .kpi .note{font-size:11px;color:var(--muted)}
+  .kpi .up{color:var(--green);font-weight:700}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:99px}
+  .pill.green{color:var(--green);background:var(--greenbg)}
+
+  @media(max-width:1150px){.kpis{grid-template-columns:repeat(3,1fr)}.strip{grid-template-columns:1fr}}
+  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}.controls{width:100%}.bde-topbar{align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note"><b>PREVIEW</b> — header, identity block, strategy strip &amp; tab bar. Not the live page. Tell me what to change, then I port it into <b>bde_dashboard.php</b> and push.</p>
+
+  <!-- Top command bar -->
+  <header class="bde-topbar">
+    <div class="brand">
+      <div class="mark">VA</div>
+      <div>
+        <h1>BDE Command Centre</h1>
+        <p>Strategy <span class="sep">&rsaquo;</span> execution <span class="sep">&rsaquo;</span> revenue <span class="sep">&rsaquo;</span> commission <span class="sep">&rsaquo;</span> growth</p>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="identity" title="Read-only — set by your record">
+        <div class="ava">DM</div>
+        <div class="who">
+          <b>Dorcas Mukami Murithi</b>
+          <span>BDE / Coordinator <i>&middot;</i> Virtual</span>
+        </div>
+      </div>
+      <div class="period">
+        <select id="period" aria-label="Period">
+          <option>September 2026</option>
+          <option>October 2026</option>
+          <option>November 2026</option>
+        </select>
+      </div>
+      <button class="icon-btn" type="button"><i class="bi bi-moon-stars"></i> Dark</button>
+      <button class="icon-btn" type="button"><i class="bi bi-printer"></i> Print</button>
+    </div>
+  </header>
+
+  <!-- Strategy strip -->
+  <section class="strip">
+    <div>
+      <div class="eyebrow">Personal execution dashboard</div>
+      <h2>Convert every enquiry into a managed next step and every free session into a payment opportunity.</h2>
+      <p>The Virtual Department wins through fast response, relationship building, strong free-session attendance, human calls for hot leads, accurate automation, payment guidance and disciplined CRM follow-up.</p>
+    </div>
+    <div class="focus">
+      <b><i class="bi bi-flag-fill"></i> Today's strategic focus</b>
+      <span>Call every hot lead and payment promise first; then protect free-session attendance and same-day CRM updates.</span>
+    </div>
+  </section>
+
+  <!-- Tabs -->
+  <nav class="tabs" aria-label="Dashboard sections">
+    <button class="tab active" type="button"><i class="bi bi-speedometer2"></i><span>Command Centre</span></button>
+    <button class="tab" type="button"><i class="bi bi-funnel-fill"></i><span>Pipeline &amp; Conversion</span></button>
+    <button class="tab" type="button"><i class="bi bi-cash-coin"></i><span>Commission Journey</span></button>
+    <button class="tab" type="button"><i class="bi bi-clipboard-data"></i><span>Embedded Reporting</span></button>
+    <button class="tab" type="button"><i class="bi bi-bullseye"></i><span>Strategy &amp; Scorecard</span></button>
+    <button class="tab" type="button"><i class="bi bi-diagram-3-fill"></i><span>Developer Map</span></button>
+  </nav>
+
+  <!-- KPI cards (context) -->
+  <div class="kpis">
+    <div class="kpi"><div class="k-top"><span class="label">Monthly target</span><span class="k-ico"><i class="bi bi-bullseye"></i></span></div><div class="value">KES 1.30M</div><div class="note">Approved personal target</div></div>
+    <div class="kpi"><div class="k-top"><span class="label">Cleared revenue</span><span class="k-ico"><i class="bi bi-cash-stack"></i></span></div><div class="value">KES 810K</div><div class="note"><span class="up">62.3%</span> of target</div></div>
+    <div class="kpi"><div class="k-top"><span class="label">Volume achieved</span><span class="k-ico"><i class="bi bi-people-fill"></i></span></div><div class="value">34</div><div class="note">of 50 target</div></div>
+    <div class="kpi"><div class="k-top"><span class="label">Qualified pipeline</span><span class="k-ico"><i class="bi bi-diagram-2-fill"></i></span></div><div class="value">KES 2.05M</div><div class="note">1.6&times; target coverage</div></div>
+    <div class="kpi"><div class="k-top"><span class="label">Commission est.</span><span class="k-ico"><i class="bi bi-gift-fill"></i></span></div><div class="value">KES 0</div><div class="note">Current eligible estimate</div></div>
+    <div class="kpi"><div class="k-top"><span class="label">Daily pace needed</span><span class="k-ico"><i class="bi bi-lightning-charge-fill"></i></span></div><div class="value">KES 54K</div><div class="note">9 working days left</div></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x===b);});
+    });
+  });
+</script>
+</body>
+</html>
