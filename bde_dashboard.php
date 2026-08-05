@@ -24,11 +24,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
        admin Bootstrap chrome without global body, wildcard or badge clashes.
        Palette: brand-true light (navy structure + orange/gold accent, blue = info). */
     .bde-app{
-      --bg:#f4f6f3; --surface:#ffffff; --surface2:#f3f5f1; --ink:#17242e; --muted:#69747d;
-      --line:#e6e9e4; --navy:#173a54; --navy2:#0f2739; --orange:#e46f24; --gold:#c2871d; --teal:#1f8f88;
-      --green:#1f7d4d; --amber:#a9760a; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
-      --greenbg:#e9f6ee; --amberbg:#fdf3d9; --redbg:#fce9e7; --bluebg:#eaf1f8;
-      --shadow:0 1px 2px rgba(18,42,60,.05), 0 16px 34px -16px rgba(18,42,60,.18);
+      --bg:#eef2f6; --surface:#ffffff; --surface2:#f4f7fa; --ink:#132433; --muted:#647688;
+      --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
+      --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
+      --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
+      --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
       --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
       background:var(--bg); color:var(--ink);
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
@@ -64,9 +64,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .strategy-strip p{margin:0;opacity:.86;font-size:13px;max-width:95ch}
     .bde-app .strategy-focus{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 13px}
     .bde-app .strategy-focus b{display:block;color:#ffd6bf;margin-bottom:2px}
-    .bde-app .tabs{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}
-    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 13px;font-weight:750;color:var(--muted)}
-    .bde-app .tab.active{background:var(--orange);border-color:var(--orange);color:#fff}
+    .bde-app .tabs{display:flex;gap:4px;flex-wrap:wrap;margin:16px 0;background:var(--surface);border:1px solid var(--line);padding:6px;border-radius:16px;box-shadow:var(--shadow)}
+    .bde-app .tab{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--muted);border-radius:11px;padding:10px 14px;font-weight:700;font-size:12.5px}
+    .bde-app .tab i{font-size:15px;line-height:0}
+    .bde-app .tab.active{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
     .bde-app .workspace{display:grid;gap:14px}
     .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
     .bde-app .panel,.bde-app .metric,.bde-app .action-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
@@ -182,10 +183,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .panel{border-radius:18px}
     .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
     .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
-    .bde-app .metric::after{background:radial-gradient(circle at 72% 28%,color-mix(in srgb,var(--orange) 15%,transparent),transparent 70%)}
-    .bde-app .tab{transition:color .15s ease,border-color .15s ease,box-shadow .15s ease,background .15s ease}
-    .bde-app .tab:hover{border-color:var(--orange);color:var(--ink)}
+    .bde-app .metric::after{width:auto;height:3px;left:0;right:0;top:0;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--orange),var(--gold))}
+    .bde-app .tab{transition:color .15s ease,box-shadow .15s ease,background .15s ease}
+    .bde-app .tab:hover{background:var(--surface2);color:var(--ink)}
     .bde-app .tab.active{box-shadow:0 8px 18px -8px color-mix(in srgb,var(--orange) 60%,transparent)}
+    .bde-app .tab.active:hover{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
     .bde-app .primary-btn{box-shadow:0 8px 18px -8px rgba(23,58,84,.5)}
     .bde-app .avatar{background:linear-gradient(135deg,var(--navy),color-mix(in srgb,var(--navy) 55%,var(--orange)))}
     .bde-app .strategy-strip{position:relative;overflow:hidden;box-shadow:0 20px 44px -22px rgba(15,39,57,.55)}
@@ -275,12 +277,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       </section>
 
       <nav class="tabs" aria-label="Dashboard sections">
-        <button class="tab active" data-view="overview">Command Centre</button>
-        <button class="tab" data-view="pipeline">Pipeline &amp; Conversion</button>
-        <button class="tab" data-view="commission">Commission Journey</button>
-        <button class="tab" data-view="report">Embedded Reporting</button>
-        <button class="tab" data-view="strategy">Strategy &amp; Scorecard</button>
-        <button class="tab" data-view="developer">Developer Map</button>
+        <button class="tab active" data-view="overview"><i class="bi bi-speedometer2"></i><span>Command Centre</span></button>
+        <button class="tab" data-view="pipeline"><i class="bi bi-funnel-fill"></i><span>Pipeline &amp; Conversion</span></button>
+        <button class="tab" data-view="commission"><i class="bi bi-cash-coin"></i><span>Commission Journey</span></button>
+        <button class="tab" data-view="report"><i class="bi bi-clipboard-data"></i><span>Embedded Reporting</span></button>
+        <button class="tab" data-view="strategy"><i class="bi bi-bullseye"></i><span>Strategy &amp; Scorecard</span></button>
+        <button class="tab" data-view="developer"><i class="bi bi-diagram-3-fill"></i><span>Developer Map</span></button>
       </nav>
 
       <main id="workspace" class="workspace"></main>
