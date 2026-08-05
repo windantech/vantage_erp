@@ -79,13 +79,17 @@ if (!headers_sent()) {
         </a>
     </li>
 
-    <!-- Nav Item - Performance (BDE dashboard) -->
-    <li class="nav-item">
+    <!-- Nav Item - Performance (BDE dashboard).
+         Only rendered while ON the BDE dashboard route, so it stays hidden from
+         the shared sidebar on every other page. -->
+    <?php if (basename($_SERVER['SCRIPT_NAME']) === 'bde_dashboard.php') { ?>
+    <li class="nav-item active">
         <a class="nav-link" href="bde_dashboard.php">
             <i class="fas fa-fw fa-chart-line"></i>
             <span>Performance</span>
         </a>
     </li>
+    <?php } ?>
 
     <!-- WhatsApp -->
     <?php if (in_array(44, $role)) { ?>
