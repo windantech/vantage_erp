@@ -198,6 +198,40 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       .bde-app .metric:hover{transform:none}
     }
 
+    /* ---- Ported header / identity / strip / tabs (approved preview) ---- */
+    .bde-app .bde-topbar{gap:20px;flex-wrap:wrap;padding:16px 22px;border-radius:20px}
+    .bde-app .brand{gap:13px;min-width:230px}
+    .bde-app .mark{width:46px;height:46px;border-radius:13px;font-family:var(--display);font-weight:800;letter-spacing:.5px;font-size:15px;box-shadow:0 8px 18px -8px rgba(18,58,92,.6)}
+    .bde-app .brand h1{font-size:18px}
+    .bde-app .brand p .sep{color:var(--gold);margin:0 3px}
+    .bde-app .controls{align-items:center;gap:10px}
+    .bde-app .identity,.bde-app .period select,.bde-app .icon-btn{height:48px}
+    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(12,39,64,.7)}
+    .bde-app .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
+    .bde-app .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15;color:#fff}
+    .bde-app .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
+    .bde-app .identity .who span i{color:var(--gold);font-style:normal}
+    .bde-app .period{display:flex;align-items:center}
+    .bde-app .period select{appearance:none;-webkit-appearance:none;border-radius:12px;padding:0 34px 0 14px;font-weight:650;font-size:13px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23647688' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:right 12px center}
+    .bde-app .icon-btn{display:inline-flex;align-items:center;gap:7px;border-radius:11px;padding:0 13px;font-weight:650;font-size:13px}
+    .bde-app .icon-btn:hover{border-color:var(--orange);color:var(--orange)}
+    .bde-app .strategy-strip{margin-top:16px;border-radius:20px;background:linear-gradient(120deg,var(--navy2),var(--navy));grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;padding:22px 26px;align-items:stretch}
+    .bde-app .strategy-strip .eyebrow{display:inline-flex;align-items:center;gap:8px;opacity:1;color:var(--gold);font-size:10.5px;letter-spacing:.18em;margin-bottom:12px}
+    .bde-app .strategy-strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
+    .bde-app .strategy-strip h2{font-size:23px;line-height:1.28;margin:0 0 12px}
+    .bde-app .strategy-strip p{opacity:1;color:#cddae6;font-size:13px;line-height:1.6;max-width:none}
+    .bde-app .strategy-focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:16px 17px}
+    .bde-app .strategy-focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;margin-bottom:9px}
+    .bde-app .strategy-focus b i{color:var(--gold)}
+    .bde-app .strategy-focus span{font-size:13.5px;line-height:1.6;color:#d9e4ee}
+    .bde-app .tabs{gap:8px;margin:18px 0;background:transparent;border:0;padding:0;box-shadow:none}
+    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:13px;padding:11px 15px;box-shadow:0 1px 2px rgba(16,40,64,.04);transition:.16s}
+    .bde-app .tab:hover{color:var(--ink);border-color:#c9d5e0;background:var(--surface);box-shadow:0 6px 14px -8px rgba(16,40,64,.28);transform:translateY(-1px)}
+    .bde-app .tab.active{border-color:transparent;background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff;box-shadow:0 10px 20px -8px rgba(236,110,45,.55)}
+    .bde-app .tab.active:hover{transform:translateY(-1px)}
+
     @media(max-width:1250px){
       .bde-app .metric-grid{grid-template-columns:repeat(3,1fr)}
       .bde-app .driver-grid{grid-template-columns:repeat(3,1fr)}
@@ -235,32 +269,26 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <div class="mark">VA</div>
           <div>
             <h1>BDE Command Centre</h1>
-            <p>Strategy &rarr; daily execution &rarr; verified revenue &rarr; commission &rarr; growth</p>
+            <p>Strategy <span class="sep">&rsaquo;</span> execution <span class="sep">&rsaquo;</span> revenue <span class="sep">&rsaquo;</span> commission <span class="sep">&rsaquo;</span> growth</p>
           </div>
         </div>
         <div class="controls">
-          <div class="control">
-            <label>Role view</label>
-            <div class="readonly-field">BDE / Coordinator</div>
+          <div class="identity" title="Read-only &mdash; set by your record">
+            <div class="ava">DM</div>
+            <div class="who">
+              <b>Dorcas Mukami Murithi</b>
+              <span>BDE / Coordinator <i>&middot;</i> Virtual</span>
+            </div>
           </div>
-          <div class="control">
-            <label>Department</label>
-            <div class="readonly-field">Virtual</div>
-          </div>
-          <div class="control">
-            <label>Employee</label>
-            <div class="readonly-field">Dorcas Mukami Murithi</div>
-          </div>
-          <div class="control">
-            <label for="monthSelect">Period</label>
-            <select id="monthSelect">
+          <div class="period">
+            <select id="monthSelect" aria-label="Period">
               <option>September 2026</option>
               <option>October 2026</option>
               <option>November 2026</option>
             </select>
           </div>
-          <button class="icon-btn print-hide" id="themeBtn" type="button">Dark mode</button>
-          <button class="icon-btn print-hide" id="printBtn" type="button">Print</button>
+          <button class="icon-btn print-hide" id="themeBtn" type="button"><i class="bi bi-moon-stars"></i> <span id="themeLbl">Dark mode</span></button>
+          <button class="icon-btn print-hide" id="printBtn" type="button"><i class="bi bi-printer"></i> Print</button>
         </div>
       </header>
 
@@ -271,7 +299,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <p id="strategyText"></p>
         </div>
         <div class="strategy-focus">
-          <b>Today's strategic focus</b>
+          <b><i class="bi bi-flag-fill"></i> Today's strategic focus</b>
           <span id="todayFocus"></span>
         </div>
       </section>
@@ -1238,7 +1266,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
   document.getElementById("themeBtn").addEventListener("click",()=>{
     state.theme=state.theme==="light"?"dark":"light";
     bdeApp.classList.toggle("theme-dark",state.theme==="dark");
-    document.getElementById("themeBtn").textContent=state.theme==="light"?"Dark mode":"Light mode";
+    document.getElementById("themeLbl").textContent=state.theme==="light"?"Dark mode":"Light mode";
   });
   document.getElementById("printBtn").addEventListener("click",()=>window.print());
 
