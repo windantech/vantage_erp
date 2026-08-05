@@ -54,14 +54,10 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
     .strategy-focus{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 13px}
     .strategy-focus b{display:block;color:#ffd6bf;margin-bottom:2px}
 
-    /* Left-nav shell: sidebar (was the top tab row) + workspace */
-    .shell{display:grid;grid-template-columns:236px minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
-    .sidebar{position:sticky;top:86px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:12px}
-    .sidebar .nav-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800;padding:2px 8px 8px}
-    .sidenav{display:grid;gap:6px}
-    .sidebar .tab{width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:10px;padding:11px 12px;font-weight:750;color:var(--muted)}
-    .sidebar .tab:hover{background:var(--surface2);color:var(--ink)}
-    .sidebar .tab.active{background:var(--orange);border-color:var(--orange);color:#fff}
+    /* Horizontal section tabs (prototype layout) */
+    .tabs{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}
+    .tab{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 13px;font-weight:750;color:var(--muted)}
+    .tab.active{background:var(--orange);border-color:var(--orange);color:#fff}
 
     .workspace{display:grid;gap:14px}
     .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
@@ -177,9 +173,6 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
     @media(max-width:900px){
       .topbar,.hero,.strategy-strip{grid-template-columns:1fr;display:grid}
       .controls{justify-content:start}
-      .shell{grid-template-columns:1fr}
-      .sidebar{position:static}
-      .sidenav{grid-auto-flow:column;grid-auto-columns:max-content;overflow-x:auto}
       .grid-2,.grid-3,.dev-grid{grid-template-columns:1fr}
       .principles{grid-template-columns:1fr}
       .driver-grid{grid-template-columns:repeat(2,1fr)}
@@ -197,8 +190,7 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
       .funnel-row{grid-template-columns:100px 1fr 48px}
     }
     @media print{
-      body{background:#fff}.topbar{position:static}.sidebar,.controls .print-hide,.scenario{display:none!important}
-      .shell{grid-template-columns:1fr}
+      body{background:#fff}.topbar{position:static}.tabs,.controls .print-hide,.scenario{display:none!important}
       .panel,.metric,.action-card{box-shadow:none;break-inside:avoid}
     }
   </style>
@@ -252,21 +244,16 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
     </div>
   </section>
 
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="nav-label">Sections</div>
-      <nav class="sidenav" aria-label="Dashboard sections">
-        <button class="tab active" data-view="overview">Command Centre</button>
-        <button class="tab" data-view="pipeline">Pipeline &amp; Conversion</button>
-        <button class="tab" data-view="commission">Commission Journey</button>
-        <button class="tab" data-view="report">Embedded Reporting</button>
-        <button class="tab" data-view="strategy">Strategy &amp; Scorecard</button>
-        <button class="tab" data-view="developer">Developer Map</button>
-      </nav>
-    </aside>
+  <nav class="tabs" aria-label="Dashboard sections">
+    <button class="tab active" data-view="overview">Command Centre</button>
+    <button class="tab" data-view="pipeline">Pipeline &amp; Conversion</button>
+    <button class="tab" data-view="commission">Commission Journey</button>
+    <button class="tab" data-view="report">Embedded Reporting</button>
+    <button class="tab" data-view="strategy">Strategy &amp; Scorecard</button>
+    <button class="tab" data-view="developer">Developer Map</button>
+  </nav>
 
-    <main id="workspace" class="workspace"></main>
-  </div>
+  <main id="workspace" class="workspace"></main>
 
   <div class="footer-note">Interactive prototype with illustrative data. Production figures must come from versioned targets, CRM transactions and Finance-cleared payments.</div>
 </div>
@@ -1161,7 +1148,18 @@ if (session_status() === PHP_SESSION_NONE) { session_start(); }
     const w=document.getElementById("workspace");
     w.innerHTML=state.view==="overview"?overview():state.view==="pipeline"?pipeline():state.view==="commission"?commission():state.view==="report"?report():state.view==="strategy"?strategy():developer();
     bindDynamic();
+    reportHeight();
   }
+
+  // When embedded in the CRM chrome (an iframe), tell the parent our height so
+  // it can size the frame and avoid a second inner scrollbar.
+  function reportHeight(){
+    if(window.parent && window.parent!==window){
+      window.parent.postMessage({vaslHeight:document.documentElement.scrollHeight},"*");
+    }
+  }
+  window.addEventListener("load",reportHeight);
+  window.addEventListener("resize",reportHeight);
 
   function bindDynamic(){
     document.querySelectorAll(".scenario-input").forEach(inp=>inp.addEventListener("change",()=>{
