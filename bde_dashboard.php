@@ -19,8 +19,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     <?php require_once 'top_nav.php'; ?>
 
     <style>
-    /* ===== Prototype styles, all scoped under .bde-app so they coexist with
-       the admin Bootstrap chrome (no global body/*/.badge collisions). ===== */
+    /* Prototype styles, all scoped under .bde-app so they coexist with the
+       admin Bootstrap chrome without global body, wildcard or badge clashes. */
     .bde-app{
       --bg:#f3f6f8; --surface:#ffffff; --surface2:#f8fafb; --ink:#15212b; --muted:#677582;
       --line:#dde5ea; --navy:#153f5d; --navy2:#0f314a; --orange:#e46f24; --teal:#218c91;
