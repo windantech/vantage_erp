@@ -19,22 +19,26 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     <?php require_once 'top_nav.php'; ?>
 
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
     /* Prototype styles, all scoped under .bde-app so they coexist with the
-       admin Bootstrap chrome without global body, wildcard or badge clashes. */
+       admin Bootstrap chrome without global body, wildcard or badge clashes.
+       Palette: brand-true light (navy structure + orange/gold accent, blue = info). */
     .bde-app{
-      --bg:#f3f6f8; --surface:#ffffff; --surface2:#f8fafb; --ink:#15212b; --muted:#677582;
-      --line:#dde5ea; --navy:#153f5d; --navy2:#0f314a; --orange:#e46f24; --teal:#218c91;
-      --green:#238553; --amber:#b27a05; --red:#bd3e3e; --blue:#3478b8; --purple:#7259ad;
-      --greenbg:#eaf7ef; --amberbg:#fff6dd; --redbg:#fdecec; --bluebg:#eaf3fb; --shadow:0 10px 28px rgba(26,51,68,.08);
+      --bg:#f4f6f3; --surface:#ffffff; --surface2:#f3f5f1; --ink:#17242e; --muted:#69747d;
+      --line:#e6e9e4; --navy:#173a54; --navy2:#0f2739; --orange:#e46f24; --gold:#c2871d; --teal:#1f8f88;
+      --green:#1f7d4d; --amber:#a9760a; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
+      --greenbg:#e9f6ee; --amberbg:#fdf3d9; --redbg:#fce9e7; --bluebg:#eaf1f8;
+      --shadow:0 1px 2px rgba(18,42,60,.05), 0 16px 34px -16px rgba(18,42,60,.18);
+      --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
       background:var(--bg); color:var(--ink);
-      font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+      font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
       line-height:1.45; max-width:1700px; margin:0 auto; padding:14px; border-radius:14px;
     }
     .bde-app.theme-dark{
-      --bg:#111820; --surface:#18222c; --surface2:#202c37; --ink:#eef4f7; --muted:#9fb0bd;
-      --line:#2f3e49; --navy:#79b9df; --navy2:#9fd2ee; --orange:#f28a4c; --teal:#55bfc0;
-      --green:#62c489; --amber:#e2b456; --red:#ee7777; --blue:#73aee4; --purple:#a996dd;
-      --greenbg:#183125; --amberbg:#322a17; --redbg:#351f22; --bluebg:#192c3d; --shadow:none;
+      --bg:#0f1c26; --surface:#16232e; --surface2:#1d2c38; --ink:#eef4f6; --muted:#9aa8b2;
+      --line:#2b3a45; --navy:#7fb4d6; --navy2:#9ed0ea; --orange:#f2905a; --gold:#e0b25a; --teal:#54bfb6;
+      --green:#5cc487; --amber:#e0b257; --red:#ec7a72; --blue:#71a6d8; --purple:#a595d6;
+      --greenbg:#16301f; --amberbg:#2f2913; --redbg:#331d1f; --bluebg:#182b3b; --shadow:none;
     }
     .bde-app *{box-sizing:border-box}
     .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
@@ -169,6 +173,29 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app code{background:var(--surface2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
     .bde-app .footer-note{font-size:11px;color:var(--muted);text-align:center;padding:18px 8px 5px}
     .bde-app .hidden{display:none!important}
+
+    /* ---- Visual refresh: brand-true, light ---- */
+    .bde-app .brand h1,.bde-app .strategy-strip h2,.bde-app .panel-head h3,
+    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num{font-family:var(--display);letter-spacing:-.015em}
+    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num,.bde-app .score,.bde-app td{font-variant-numeric:tabular-nums}
+    .bde-app .bde-topbar{border-radius:20px}
+    .bde-app .panel{border-radius:18px}
+    .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
+    .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
+    .bde-app .metric::after{background:radial-gradient(circle at 72% 28%,color-mix(in srgb,var(--orange) 15%,transparent),transparent 70%)}
+    .bde-app .tab{transition:color .15s ease,border-color .15s ease,box-shadow .15s ease,background .15s ease}
+    .bde-app .tab:hover{border-color:var(--orange);color:var(--ink)}
+    .bde-app .tab.active{box-shadow:0 8px 18px -8px color-mix(in srgb,var(--orange) 60%,transparent)}
+    .bde-app .primary-btn{box-shadow:0 8px 18px -8px rgba(23,58,84,.5)}
+    .bde-app .avatar{background:linear-gradient(135deg,var(--navy),color-mix(in srgb,var(--navy) 55%,var(--orange)))}
+    .bde-app .strategy-strip{position:relative;overflow:hidden;box-shadow:0 20px 44px -22px rgba(15,39,57,.55)}
+    .bde-app .strategy-strip::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 150% at 100% 0,color-mix(in srgb,var(--orange) 24%,transparent),transparent 55%);pointer-events:none}
+    .bde-app .strategy-strip>*{position:relative;z-index:1}
+    @media (prefers-reduced-motion: reduce){
+      .bde-app .metric,.bde-app .tab{transition:none}
+      .bde-app .metric:hover{transform:none}
+    }
+
     @media(max-width:1250px){
       .bde-app .metric-grid{grid-template-columns:repeat(3,1fr)}
       .bde-app .driver-grid{grid-template-columns:repeat(3,1fr)}
