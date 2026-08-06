@@ -1172,7 +1172,6 @@ function wa_template_var_count($body) {
  */
 function wa_broadcast_audience($conn, $filter, $refId = 0) {
     $refId = (int)$refId;
-    $join = '';
     // Never broadcast to anyone who has opted out — regardless of the filter.
     $where = "c.wa_id <> '' AND c.opted_out = 0";
     // 'course'/'event' filter contacts to those whose conversation is linked to
@@ -1180,12 +1179,122 @@ function wa_broadcast_audience($conn, $filter, $refId = 0) {
     if ($filter === 'optedin') {
         $where .= ' AND c.opted_in = 1';
     } elseif (($filter === 'course' || $filter === 'event') && $refId > 0) {
-        $join = " JOIN wa_conversations cv ON cv.contact_id = c.id AND cv.ref_type = '$filter' AND cv.ref_id = $refId";
+        $f = mysqli_real_escape_string($conn, $filter);
+        $where .= " AND cv.ref_type = '$f' AND cv.ref_id = $refId";
     }
-    $res = mysqli_query($conn, "SELECT DISTINCT c.wa_id, c.profile_name FROM wa_contacts c $join WHERE $where ORDER BY c.id");
+    // Pull each contact's linked course/event, its registration link and assigned rep, so
+    // template tokens ({name},{course},{link},{rep}) can be filled per-contact from the DB.
+    // contact_id is unique in wa_conversations, so the LEFT JOIN yields one row per contact.
+    $res = mysqli_query($conn, "
+        SELECT c.wa_id, c.profile_name, cv.ref_type, cv.ref_id,
+               CASE cv.ref_type
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+               END AS course_name,
+               COALESCE(NULLIF(s.full_name,''), ru.fullname) AS rep_name
+          FROM wa_contacts c
+     LEFT JOIN wa_conversations cv ON cv.contact_id = c.id
+     LEFT JOIN registered_users ru ON ru.id = cv.assigned_user_id
+     LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
+         WHERE $where
+      ORDER BY c.id");
     $rows = [];
-    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = ['wa_id' => $r['wa_id'], 'name' => $r['profile_name'] ?: '']; } }
+    if ($res) {
+        while ($r = mysqli_fetch_assoc($res)) {
+            $link = (($r['ref_type'] ?? '') === 'event' && (int)$r['ref_id'] > 0)
+                ? wa_event_register_url((int)$r['ref_id']) : '';
+            $rows[] = [
+                'wa_id'  => $r['wa_id'],
+                'name'   => $r['profile_name'] ?: '',
+                'course' => $r['course_name'] ?: '',
+                'link'   => $link,
+                'rep'    => $r['rep_name'] ?: '',
+            ];
+        }
+    }
     return $rows;
+}
+
+/**
+ * Fill a broadcast variable value's {tokens} from a contact's DB data. Unknown/blank
+ * tokens fall back to a safe non-empty default so WhatsApp never rejects the send with
+ * "(#131008) Required parameter is missing". Tokens: {name} {first_name} {course} {link} {rep}.
+ */
+function wa_broadcast_fill($value, $item) {
+    $name  = trim((string)($item['name'] ?? ''));
+    $first = $name !== '' ? preg_split('/\s+/', $name)[0] : '';
+    $map = [
+        '{name}'       => $name !== '' ? $name : 'there',
+        '{first_name}' => $first !== '' ? $first : 'there',
+        '{course}'     => trim((string)($item['course'] ?? '')) !== '' ? trim((string)$item['course']) : 'our programmes',
+        '{link}'       => trim((string)($item['link'] ?? '')) !== '' ? trim((string)$item['link']) : 'https://vantageafricaleaders.com',
+        '{rep}'        => trim((string)($item['rep'] ?? '')) !== '' ? trim((string)$item['rep']) : 'our team',
+    ];
+    $out = trim(strtr((string)$value, $map));
+    // A template parameter can NEVER be empty (131008). If it resolved to nothing, use the
+    // person's name as a harmless non-empty fallback.
+    if ($out === '') { $out = $map['{name}']; }
+    return $out;
+}
+
+/** Keyword heuristic: guess a data token for each {{n}} from the words just before it.
+ *  Works with no AI key; wa_broadcast_suggest_vars refines it with the model when available. */
+function wa_broadcast_guess_vars($body, $nums) {
+    $map = [];
+    foreach ($nums as $n) {
+        $pos = strpos($body, '{{' . $n . '}}');
+        $before = $pos !== false ? strtolower(substr($body, max(0, $pos - 30), 30)) : '';
+        $tok = '{name}';
+        if (strpos($before, 'http') !== false || strpos($before, 'link') !== false
+            || strpos($before, 'register') !== false || strpos($before, 'apply') !== false
+            || strpos($before, 'enrol') !== false) { $tok = '{link}'; }
+        elseif (strpos($before, 'course') !== false || strpos($before, 'programme') !== false
+            || strpos($before, 'program') !== false || strpos($before, 'training') !== false) { $tok = '{course}'; }
+        $map[(string)$n] = $tok;
+    }
+    return $map;
+}
+
+/**
+ * Identify what each template placeholder {{n}} should be filled with, as a data token
+ * ({name}/{first_name}/{course}/{link}/{rep}). Uses a keyword heuristic, then refines with
+ * the AI provider when configured. Returns ['ok'=>true, 'map'=>{"1":"{name}",...}].
+ */
+function wa_broadcast_suggest_vars($conn, $name, $lang) {
+    $name = trim((string)$name);
+    if ($name === '') { return ['ok' => false, 'error' => 'no_template']; }
+    $q = "SELECT body FROM wa_templates WHERE name = '" . mysqli_real_escape_string($conn, $name) . "'";
+    if (trim((string)$lang) !== '') { $q .= " AND language = '" . mysqli_real_escape_string($conn, $lang) . "'"; }
+    $q .= " ORDER BY id DESC LIMIT 1";
+    $r = mysqli_query($conn, $q);
+    $body = ($r && ($row = mysqli_fetch_assoc($r))) ? (string)$row['body'] : '';
+    if ($body === '') { return ['ok' => false, 'error' => 'no_body']; }
+    preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $mm);
+    $nums = $mm[1] ? array_values(array_unique(array_map('intval', $mm[1]))) : [];
+    if (!$nums) { return ['ok' => true, 'map' => (object)[]]; }
+
+    $map = wa_broadcast_guess_vars($body, $nums);   // heuristic baseline
+
+    $provider = wa_active_provider($conn);
+    if (wa_provider_ready($provider)) {
+        $system = 'You map WhatsApp template placeholders to data tokens. Allowed tokens ONLY: '
+                . '{name}, {first_name}, {course}, {link}, {rep}. Use {link} for a URL / registration link, '
+                . '{course} for a programme or course name, {name} or {first_name} for the recipient, {rep} for our '
+                . 'staff contact. Reply with ONLY JSON mapping each placeholder number to one token, '
+                . 'e.g. {"1":"{name}","2":"{course}"}.';
+        $user = "Template body:\n\"" . $body . "\"\n\nPlaceholder numbers: " . implode(', ', $nums);
+        $ans = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]], ['json' => true, 'max_tokens' => 150]);
+        if (!empty($ans['ok'])) {
+            $data = wa_json_extract($ans['text'] ?? '');
+            if (is_array($data)) {
+                foreach ($nums as $n) {
+                    $val = isset($data[(string)$n]) ? trim((string)$data[(string)$n]) : '';
+                    if (preg_match('/^\{(name|first_name|course|link|rep)\}$/', $val)) { $map[(string)$n] = $val; }
+                }
+            }
+        }
+    }
+    return ['ok' => true, 'map' => $map];
 }
 
 /** Record the start of a broadcast run. Returns the new broadcast id. */
@@ -1327,11 +1436,8 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
     $GLOBALS['WA_BROADCAST_ID'] = $bid;   // tag every message (sent or failed) to this run
     foreach ($list as $item) {
         $waId = $item['wa_id'] ?? '';
-        $nm   = $item['name'] ?? '';
         if ($waId === '') { continue; }
-        $params = array_map(function ($v) use ($nm) {
-            return str_replace('{name}', $nm !== '' ? $nm : 'there', (string)$v);
-        }, $vars);
+        $params = array_map(function ($v) use ($item) { return wa_broadcast_fill($v, $item); }, $vars);
         $components = $params
             ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
             : [];

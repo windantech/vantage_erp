@@ -116,6 +116,15 @@ if ($action === 'broadcast_audience') {
     }
 }
 
+// ---- Broadcast: AI-identify what each template variable should be (supervisor only) ----
+if ($action === 'broadcast_suggest_vars') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    $tpl  = (string)($_POST['template'] ?? $_GET['template'] ?? '');
+    $lang = (string)($_POST['lang'] ?? $_GET['lang'] ?? '');
+    try { wa_json_out(wa_broadcast_suggest_vars($conn, $tpl, $lang)); }
+    catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
 // ---- Broadcast: open a run record, return its id (supervisor only) ----
 if ($action === 'broadcast_create') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
@@ -164,12 +173,10 @@ if ($action === 'broadcast_send') {
     if ($bid > 0) { $GLOBALS['WA_BROADCAST_ID'] = $bid; }   // tag every message (sent or failed)
     foreach ($ids as $item) {
         $waId = is_array($item) ? ($item['wa_id'] ?? '') : $item;
-        $nm   = is_array($item) ? ($item['name'] ?? '') : '';
         if ($waId === '') { continue; }
-        // Substitute {name} in any variable value with the contact's name.
-        $params = array_map(function ($v) use ($nm) {
-            return str_replace('{name}', $nm !== '' ? $nm : 'there', (string)$v);
-        }, $vars);
+        // Fill {name}/{first_name}/{course}/{link}/{rep} from this contact's DB data.
+        $ctx = is_array($item) ? $item : ['wa_id' => $waId, 'name' => ''];
+        $params = array_map(function ($v) use ($ctx) { return wa_broadcast_fill($v, $ctx); }, $vars);
         $components = $params
             ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
             : [];

@@ -167,20 +167,65 @@ $tplJs = array_map(function ($t) {
         }
         return null;
     }
+    var TOKENS = [
+        { t: '{name}', label: 'name' }, { t: '{first_name}', label: 'first name' },
+        { t: '{course}', label: 'course' }, { t: '{link}', label: 'reg link' }, { t: '{rep}', label: 'rep' }
+    ];
     function renderVars() {
         var t = currentTpl();
         varsBox.innerHTML = '';
         if (!t || !t.vars) return;
+        // Show the template body so it's clear what each {{n}} sits next to.
+        if (t.body) {
+            var preview = document.createElement('div');
+            preview.className = 'small border rounded bg-light p-2 mb-2';
+            preview.innerHTML = '<span class="text-muted">Template: </span>'
+                + esc(t.body).replace(/\{\{(\d+)\}\}/g, '<span class="badge bg-primary align-baseline">{{$1}}</span>');
+            varsBox.appendChild(preview);
+        }
         var help = document.createElement('div');
-        help.className = 'small text-muted mb-1';
-        help.innerHTML = 'Fill each variable. Tip: type <code>{name}</code> to insert each contact’s name.';
+        help.className = 'small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap';
+        help.appendChild(document.createTextNode('Fill each variable — click a chip to pull it from the contact record, or type your own text.'));
+        var aiBtn = document.createElement('button');
+        aiBtn.type = 'button'; aiBtn.className = 'btn btn-sm btn-outline-primary';
+        aiBtn.innerHTML = '<i class="bi bi-magic me-1"></i>Suggest with AI';
+        aiBtn.addEventListener('click', suggestVars);
+        help.appendChild(aiBtn);
         varsBox.appendChild(help);
         for (var i = 1; i <= t.vars; i++) {
             var wrap = document.createElement('div'); wrap.className = 'mb-2';
-            wrap.innerHTML = '<label class="form-label small text-muted">Variable {{' + i + '}}</label>'
-                + '<input type="text" class="form-control bVar" data-i="' + i + '" placeholder="value for {{' + i + '}}">';
+            var lbl = document.createElement('label'); lbl.className = 'form-label small text-muted';
+            lbl.textContent = 'Variable {{' + i + '}}';
+            var input = document.createElement('input');
+            input.type = 'text'; input.className = 'form-control bVar'; input.setAttribute('data-i', i);
+            input.placeholder = 'value for {{' + i + '}} — e.g. {name}';
+            var chips = document.createElement('div'); chips.className = 'mt-1 d-flex gap-1 flex-wrap';
+            TOKENS.forEach(function (tok) {
+                var b = document.createElement('button');
+                b.type = 'button'; b.className = 'btn btn-sm btn-outline-secondary py-0 px-2'; b.textContent = tok.label;
+                b.addEventListener('click', (function (inp, token) {
+                    return function () { inp.value = (inp.value ? inp.value.trim() + ' ' : '') + token; inp.focus(); };
+                })(input, tok.t));
+                chips.appendChild(b);
+            });
+            wrap.appendChild(lbl); wrap.appendChild(input); wrap.appendChild(chips);
             varsBox.appendChild(wrap);
         }
+    }
+    function suggestVars() {
+        var t = currentTpl(); if (!t) return;
+        statusEl.textContent = 'Asking AI what each variable should be…';
+        fetch('includes/wa_api.php?action=broadcast_suggest_vars&template=' + encodeURIComponent(t.name)
+              + '&lang=' + encodeURIComponent(t.language) + '&_=' + (new Date().getTime()))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d || !d.ok || !d.map) { statusEl.textContent = 'AI could not suggest values.'; return; }
+                statusEl.textContent = 'Filled suggested values — review before sending.';
+                document.querySelectorAll('.bVar').forEach(function (inp) {
+                    var k = inp.getAttribute('data-i');
+                    if (d.map[k]) inp.value = d.map[k];
+                });
+            }).catch(function () { statusEl.textContent = 'AI suggestion failed.'; });
     }
     tplSel.addEventListener('change', renderVars);
     document.querySelectorAll('input[name=aud]').forEach(function (r) {
@@ -254,6 +299,9 @@ $tplJs = array_map(function ($t) {
         if (aud.filter === 'event' && !aud.course_id) { statusEl.textContent = 'Pick an event.'; return; }
         var scheduled = document.getElementById('whenLater').checked;
         if (scheduled && !whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
+        // WhatsApp rejects blank template parameters (#131008) — require every variable.
+        var blank = Array.prototype.some.call(document.querySelectorAll('.bVar'), function (i) { return i.value.trim() === ''; });
+        if (blank) { statusEl.textContent = 'Fill every variable first — click a chip like “name”/“course”, use “Suggest with AI”, or type a value. WhatsApp rejects blank ones.'; return; }
 
         statusEl.textContent = 'Resolving recipients…';
         // Use GET (not POST) — the same request that works when opened directly. Some hosts'
