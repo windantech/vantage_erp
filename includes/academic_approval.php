@@ -78,18 +78,13 @@ if (!function_exists('send_academic_approval_email')) {
             }
         }
 
-        // Admission-letter text with the programme's OWN curriculum modules.
-        $modules = academic_program_modules($conn, $purpose);
-        $adm = '<p>Dear ' . htmlspecialchars($recipient_name) . ',</p>'
-             . '<p>We are pleased to offer you admission to the <strong>' . htmlspecialchars($purpose) . '</strong> '
-             . 'programme at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the '
-             . 'fees indicated below.</p>';
-        if ($modules) {
-            $adm .= '<p><strong>Programme Modules</strong></p><ol>';
-            foreach ($modules as $mn) { $adm .= '<li>' . htmlspecialchars($mn) . '</li>'; }
-            $adm .= '</ol>';
-        }
-        $adm .= '<p>We look forward to welcoming you to the programme.</p>';
+        // Admission-letter body only — adm_letter.php prints the "Dear <name>,"
+        // greeting itself, and now renders the programme's curriculum as a styled
+        // "Areas to be trained" outline, so no greeting or inline module list here
+        // (otherwise both would appear twice).
+        $adm = '<p>We are pleased to offer you admission to <strong>' . htmlspecialchars($purpose) . '</strong> '
+             . 'at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the fees indicated below.</p>'
+             . '<p>We look forward to welcoming you and wish you a successful journey with us.</p>';
 
         // adm_letter.php builds the 2 PDFs and sends the single approval email using
         // the variables set above (its relative output dirs resolve against the web

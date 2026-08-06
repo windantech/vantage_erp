@@ -54,8 +54,34 @@ $amount_raw = isset($amount) ? trim((string) $amount) : '';
 $has_amount = ($amount_raw !== '' && (float) str_replace(',', '', $amount_raw) > 0);
 $amount     = $has_amount ? $amount_raw : $INVOICE_PLACEHOLDER;
 
+// Academic programmes carry a curriculum. When modules are configured for this
+// programme, render them as a styled two-column "Areas to be trained" outline —
+// the same treatment the virtual-course letter uses — between the body and the
+// fee table. When there are none, $areas_html stays empty and nothing is added.
+if (!function_exists('academic_program_modules') && is_file(__DIR__ . '/includes/academic_approval.php')) {
+    require_once __DIR__ . '/includes/academic_approval.php';
+}
+$areas_html = '';
+$academic_modules = (isset($conn) && $conn && function_exists('academic_program_modules'))
+    ? academic_program_modules($conn, $purpose_name) : [];
+if (!empty($academic_modules)) {
+    $mod_count = count($academic_modules);
+    $mod_half  = (int) ceil($mod_count / 2);
+    $mod_rows  = '';
+    for ($mi = 0; $mi < $mod_half; $mi++) {
+        $left  = '<b>' . ($mi + 1) . '.</b> ' . htmlspecialchars($academic_modules[$mi]);
+        $ri    = $mi + $mod_half;
+        $right = isset($academic_modules[$ri]) ? '<b>' . ($ri + 1) . '.</b> ' . htmlspecialchars($academic_modules[$ri]) : '';
+        $mod_rows .= '<tr><td style="padding:5px;width:50%;vertical-align:top;">' . $left . '</td>'
+                   . '<td style="padding:5px;width:50%;vertical-align:top;">' . $right . '</td></tr>';
+    }
+    $areas_html = '<table style="margin-top:8px;width:100%;border-collapse:collapse;" border="1" cellspacing="0" cellpadding="0">'
+        . '<tr style="background:#D96800;"><th colspan="2" style="padding:5px;color:white;text-align:left;text-transform:uppercase;">The Areas To Be Trained Include</th></tr>'
+        . '<tbody>' . $mod_rows . '</tbody></table>';
+}
+
 // Generate Admission Letter PDF
-function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount = true)
+function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount = true, $areas_html = '')
 {
     $amount_cell = $has_amount
         ? $amount
@@ -116,6 +142,7 @@ function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter
                 
                 <p style="text-align: left; margin: 0 1px;">Dear ' . $recipient_name . ',</p><br>
                 '.$adm.'
+                '.$areas_html.'
 
                 <table style="margin-top: 4px; width: 100%; border-collapse: collapse;" border="1" cellspacing="0" cellpadding="0">
                     <tr style="background: #D96800;">
@@ -358,7 +385,7 @@ $adm_letter_path = null;
 $invoice_path = null;
 
 try {
-    $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount);
+    $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount, $areas_html);
 } catch (\Throwable $e) {
     error_log('[adm_letter] admission letter PDF failed for ' . $email_address
         . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
