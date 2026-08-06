@@ -1,5 +1,9 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { @session_start(); }
+// Live delivery report — never serve a cached (stale) copy.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-LiteSpeed-Cache-Control: no-cache');
 require_once 'header.php';                     // auth.php -> $conn, $role, $staff_id
 require "function.php";
 require_once 'includes/wa_config.php';

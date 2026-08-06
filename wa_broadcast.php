@@ -1,5 +1,11 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { @session_start(); }
+// Never cache this page: its send/preview logic is inline JS, so a cached copy (browser
+// OR LiteSpeed server cache) runs stale code — the exact cause of the persistent
+// "network error" after the fix was already deployed.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-LiteSpeed-Cache-Control: no-cache');
 require_once 'header.php';                     // auth.php -> $conn, $role, $staff_id
 require "function.php";
 require_once 'includes/wa_config.php';
