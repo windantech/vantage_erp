@@ -1237,6 +1237,32 @@ function wa_broadcast_fill($value, $item) {
     return $out;
 }
 
+/** Build the template `components` array: an optional media header (flier) + the body
+ *  params. headerType is 'image' | 'video' | 'document'; the media is a 360dialog media id. */
+function wa_broadcast_components($params, $headerMediaId = '', $headerType = '') {
+    $components = [];
+    if ($headerMediaId !== '' && in_array($headerType, ['image', 'video', 'document'], true)) {
+        $components[] = ['type' => 'header', 'parameters' => [[
+            'type' => $headerType, $headerType => ['id' => $headerMediaId],
+        ]]];
+    }
+    if ($params) {
+        $components[] = ['type' => 'body', 'parameters' =>
+            array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)];
+    }
+    return $components;
+}
+
+/** Idempotently add the flier (header media) columns to wa_scheduled_broadcasts. */
+function wa_broadcast_header_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_scheduled_broadcasts`
+        ADD COLUMN IF NOT EXISTS `header_media_id` VARCHAR(255) NULL DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS `header_type` VARCHAR(16) NULL DEFAULT NULL");
+}
+
 /** Keyword heuristic: guess a data token for each {{n}} from the words just before it.
  *  Works with no AI key; wa_broadcast_suggest_vars refines it with the model when available. */
 function wa_broadcast_guess_vars($body, $nums) {
@@ -1426,7 +1452,7 @@ function wa_broadcast_recipients($conn, $id, $statusFilter = '') {
  * opens a wa_broadcasts run, sends to each recipient with {name} substitution,
  * tags each message, and returns the run id + counts.
  */
-function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $courseId, $createdBy) {
+function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $courseId, $createdBy, $headerMediaId = '', $headerType = '') {
     $lang = $lang ?: 'en';
     $vars = is_array($vars) ? $vars : [];
     $list = wa_broadcast_audience($conn, $audience, $courseId);
@@ -1438,9 +1464,7 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
         $waId = $item['wa_id'] ?? '';
         if ($waId === '') { continue; }
         $params = array_map(function ($v) use ($item) { return wa_broadcast_fill($v, $item); }, $vars);
-        $components = $params
-            ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
-            : [];
+        $components = wa_broadcast_components($params, (string)$headerMediaId, (string)$headerType);
         $r = wa_send_template($conn, $waId, $template, $lang, $components);
         if (!empty($r['ok'])) { $sent++; }
         else { $failed++; $lastErr = (string)($r['error'] ?? 'unknown'); }
@@ -1452,7 +1476,8 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
 }
 
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
-function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy) {
+function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy, $headerMediaId = '', $headerType = '') {
+    wa_broadcast_header_schema_ensure($conn);
     $t   = "'" . mysqli_real_escape_string($conn, $template) . "'";
     $l   = "'" . mysqli_real_escape_string($conn, $lang ?: 'en') . "'";
     $a   = "'" . mysqli_real_escape_string($conn, $audience ?: 'all') . "'";
@@ -1460,9 +1485,11 @@ function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $cours
     $v   = "'" . mysqli_real_escape_string($conn, json_encode(array_values((array)$vars), JSON_UNESCAPED_UNICODE)) . "'";
     $sa  = "'" . mysqli_real_escape_string($conn, $scheduledAt) . "'";
     $by  = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
+    $hm  = trim((string)$headerMediaId) !== '' ? "'" . mysqli_real_escape_string($conn, $headerMediaId) . "'" : 'NULL';
+    $ht  = in_array($headerType, ['image', 'video', 'document'], true) ? "'" . $headerType . "'" : 'NULL';
     mysqli_query($conn,
-        "INSERT INTO wa_scheduled_broadcasts (template, language, audience, course_id, vars, scheduled_at, created_by)
-         VALUES ($t, $l, $a, $cid, $v, $sa, $by)");
+        "INSERT INTO wa_scheduled_broadcasts (template, language, audience, course_id, vars, scheduled_at, created_by, header_media_id, header_type)
+         VALUES ($t, $l, $a, $cid, $v, $sa, $by, $hm, $ht)");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -1514,7 +1541,8 @@ function wa_run_due_scheduled($conn, $limit = 5) {
         try {
             $vars = json_decode((string)$row['vars'], true) ?: [];
             $r = wa_broadcast_execute($conn, $row['template'], $row['language'], $vars,
-                                      $row['audience'], $row['course_id'], $row['created_by']);
+                                      $row['audience'], $row['course_id'], $row['created_by'],
+                                      (string)($row['header_media_id'] ?? ''), (string)($row['header_type'] ?? ''));
             $bid = (int)$r['broadcast_id']; $sent = (int)$r['sent']; $failed = (int)$r['failed']; $total = (int)$r['total'];
             mysqli_query($conn,
                 "UPDATE wa_scheduled_broadcasts

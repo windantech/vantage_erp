@@ -125,6 +125,25 @@ if ($action === 'broadcast_suggest_vars') {
     catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
 }
 
+// ---- Broadcast: upload a flier / header image, return its media id (supervisor only) ----
+if ($action === 'broadcast_upload_media') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    @set_time_limit(200);
+    if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) {
+        wa_json_out(['ok' => false, 'error' => 'no_file']);
+    }
+    $f = $_FILES['file'];
+    $mime = $f['type'] ?: (function_exists('mime_content_type') ? mime_content_type($f['tmp_name']) : 'application/octet-stream');
+    // WhatsApp template header type must match the file kind.
+    $ht = strpos($mime, 'image/') === 0 ? 'image'
+        : (strpos($mime, 'video/') === 0 ? 'video'
+        : ($mime === 'application/pdf' ? 'document' : ''));
+    if ($ht === '') { wa_json_out(['ok' => false, 'error' => 'Unsupported file type (' . $mime . '). Use an image, PDF or video.']); }
+    $up = wa_upload_media($f['tmp_name'], $mime);
+    if (empty($up['ok'])) { wa_json_out(['ok' => false, 'error' => $up['error'] ?? 'upload_failed']); }
+    wa_json_out(['ok' => true, 'media_id' => $up['id'], 'header_type' => $ht, 'name' => $f['name']]);
+}
+
 // ---- Broadcast: open a run record, return its id (supervisor only) ----
 if ($action === 'broadcast_create') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
@@ -154,7 +173,9 @@ if ($action === 'broadcast_schedule') {
     if ($ts === false)        { wa_json_out(['ok' => false, 'error' => 'bad_time']); }
     if ($ts < time() + 30)    { wa_json_out(['ok' => false, 'error' => 'past_time']); }
     $when = date('Y-m-d H:i:s', $ts);
-    $id = wa_broadcast_schedule($conn, $tpl, $lang, $vars, $aud, $cid, $when, (int)$staff_id);
+    $hMedia = (string)($_POST['header_media_id'] ?? '');
+    $hType  = (string)($_POST['header_type'] ?? '');
+    $id = wa_broadcast_schedule($conn, $tpl, $lang, $vars, $aud, $cid, $when, (int)$staff_id, $hMedia, $hType);
     wa_json_out(['ok' => true, 'id' => $id, 'when' => $when]);
 }
 
@@ -167,6 +188,8 @@ if ($action === 'broadcast_send') {
     $bid  = (int)($_POST['broadcast_id'] ?? 0);
     $vars = json_decode((string)($_POST['vars'] ?? '[]'), true) ?: [];
     $ids  = json_decode((string)($_POST['wa_ids'] ?? '[]'), true) ?: [];
+    $hMedia = (string)($_POST['header_media_id'] ?? '');   // optional flier / header image
+    $hType  = (string)($_POST['header_type'] ?? '');
     if ($tpl === '') { wa_json_out(['ok' => false, 'error' => 'no_template']); }
 
     $sent = 0; $failed = 0; $lastErr = '';
@@ -177,9 +200,7 @@ if ($action === 'broadcast_send') {
         // Fill {name}/{first_name}/{course}/{link}/{rep} from this contact's DB data.
         $ctx = is_array($item) ? $item : ['wa_id' => $waId, 'name' => ''];
         $params = array_map(function ($v) use ($ctx) { return wa_broadcast_fill($v, $ctx); }, $vars);
-        $components = $params
-            ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
-            : [];
+        $components = wa_broadcast_components($params, $hMedia, $hType);
         $r = wa_send_template($conn, $waId, $tpl, $lang, $components);
         if (!empty($r['ok'])) { $sent++; }
         else { $failed++; $lastErr = (string)($r['error'] ?? 'unknown'); }

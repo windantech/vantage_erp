@@ -97,6 +97,13 @@ $tplJs = array_map(function ($t) {
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label small text-muted">Flier / header image <span class="fw-normal">(optional)</span></label>
+                        <input type="file" id="bFlier" class="form-control" accept="image/*,application/pdf,video/*">
+                        <div class="small text-muted mt-1">Only works with a template that has an <strong>image/PDF/video header</strong> approved in Meta. The flier rides in that header.</div>
+                        <div id="bFlierStatus" class="small mt-1"></div>
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label small text-muted">When</label>
                         <div class="d-flex flex-wrap gap-3 align-items-center">
                             <div class="form-check"><input class="form-check-input" type="radio" name="when" value="now" id="whenNow" checked><label class="form-check-label" for="whenNow">Send now</label></div>
@@ -258,6 +265,30 @@ $tplJs = array_map(function ($t) {
         return fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); });
     }
 
+    // ---- Flier / header image: upload once, reuse for every recipient ----
+    var headerMedia = null;   // { id, type, name }
+    var flierEl = document.getElementById('bFlier');
+    var flierStatus = document.getElementById('bFlierStatus');
+    if (flierEl) {
+        flierEl.addEventListener('change', function () {
+            headerMedia = null;
+            var f = flierEl.files && flierEl.files[0];
+            if (!f) { flierStatus.textContent = ''; return; }
+            flierStatus.textContent = 'Uploading flier…';
+            var fd = new FormData(); fd.append('action', 'broadcast_upload_media'); fd.append('file', f);
+            fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.ok) {
+                        headerMedia = { id: d.media_id, type: d.header_type, name: d.name };
+                        flierStatus.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Flier ready: '
+                            + esc(d.name) + ' (' + esc(d.header_type) + ' header)</span>';
+                    } else {
+                        flierStatus.innerHTML = '<span class="text-danger">Could not upload: ' + esc((d && d.error) || 'error') + '</span>';
+                    }
+                }).catch(function () { flierStatus.innerHTML = '<span class="text-danger">Upload failed.</span>'; });
+        });
+    }
+
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
     var audLabels = { all: 'All contacts', optedin: 'Opted-in only', course: 'By course', event: 'By event (onsite)' };
     var previewEl = document.getElementById('bPreview');
@@ -335,6 +366,7 @@ $tplJs = array_map(function ($t) {
                 ? ('Showing the first ' + CAP + ' of ' + list.length + ' — all ' + list.length + ' will receive it.') : '';
             document.getElementById('bpSummary').innerHTML = 'Template <strong>' + esc(t.name) + '</strong> ('
                 + esc(t.language) + ') · Audience: <strong>' + esc(audLabels[aud.filter] || aud.filter) + '</strong>'
+                + (headerMedia ? ' · Flier: <strong>' + esc(headerMedia.name) + '</strong>' : '')
                 + (scheduled ? ' · Scheduled for <strong>' + esc(whenInput.value.replace('T', ' ')) + '</strong>' : '');
             var confirmBtn = document.getElementById('bpConfirm');
             confirmBtn.innerHTML = scheduled
@@ -358,7 +390,8 @@ $tplJs = array_map(function ($t) {
             statusEl.textContent = 'Scheduling…';
             post('broadcast_schedule', {
                 template: p.t.name, lang: p.t.language, audience: p.aud.filter, course_id: p.aud.course_id,
-                vars: JSON.stringify(getVars()), when: p.when
+                vars: JSON.stringify(getVars()), when: p.when,
+                header_media_id: (headerMedia ? headerMedia.id : ''), header_type: (headerMedia ? headerMedia.type : '')
             }).then(function (d) {
                 statusEl.innerHTML = (d && d.ok)
                     ? 'Scheduled for ' + d.when + '. <a href="wa_broadcasts.php">View scheduled →</a>'
@@ -390,7 +423,8 @@ $tplJs = array_map(function ($t) {
             var chunk = list.slice(i, i + CHUNK);
             post('broadcast_send', {
                 template: t.name, lang: t.language, broadcast_id: bid || 0,
-                vars: JSON.stringify(vars), wa_ids: JSON.stringify(chunk)
+                vars: JSON.stringify(vars), wa_ids: JSON.stringify(chunk),
+                header_media_id: (headerMedia ? headerMedia.id : ''), header_type: (headerMedia ? headerMedia.type : '')
             }).then(function (d) {
                 if (d && d.ok) { sent += d.sent; failed += d.failed; if (d.error) lastErr = d.error; }
                 else { failed += chunk.length; }
