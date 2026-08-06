@@ -1181,6 +1181,8 @@ function wa_broadcast_audience($conn, $filter, $refId = 0) {
     } elseif (($filter === 'course' || $filter === 'event') && $refId > 0) {
         $f = mysqli_real_escape_string($conn, $filter);
         $where .= " AND cv.ref_type = '$f' AND cv.ref_id = $refId";
+    } elseif ($filter === 'batch' && $refId > 0) {
+        $where .= " AND c.import_batch_id = $refId";   // exactly the contacts from that import
     }
     // Pull each contact's linked course/event, its registration link and assigned rep, so
     // template tokens ({name},{course},{link},{rep}) can be filled per-contact from the DB.
@@ -1885,7 +1887,7 @@ function wa_csv_first_column($path, $maxRows = 500000) {
 }
 
 /** Import a plain list of phone numbers into wa_contacts (no names/AI). Upserts by wa_id. */
-function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
+function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false, $batchId = 0) {
     $imported = 0; $updated = 0; $bad = 0; $samples = [];
     foreach ($phones as $raw) {
         $phone = wa_import_normalize_phone($raw, $defaultCc);
@@ -1899,7 +1901,7 @@ function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
         $existing = wa_find_contact_by_waid($conn, $phone);
         $cid = wa_upsert_contact($conn, $phone, null);
         if ($cid > 0) {
-            if ($optIn) { mysqli_query($conn, "UPDATE wa_contacts SET opted_in = 1 WHERE id = " . (int)$cid); }
+            wa_contact_stamp_import($conn, $cid, $optIn, $batchId);
             if ($existing) { $updated++; } else { $imported++; }
         } else { $bad++; }
     }
@@ -1908,7 +1910,7 @@ function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
 }
 
 /** Import parsed rows into wa_contacts using a field->column map. Upserts by wa_id. */
-function wa_import_contacts($conn, $rows, $map, $defaultCc = '254', $optIn = false) {
+function wa_import_contacts($conn, $rows, $map, $defaultCc = '254', $optIn = false, $batchId = 0) {
     wa_contact_email_ensure($conn);
     $phoneCol = $map['phone'] ?? '';
     if ($phoneCol === '') { return ['ok' => false, 'error' => 'No phone column selected.']; }
@@ -1922,11 +1924,69 @@ function wa_import_contacts($conn, $rows, $map, $defaultCc = '254', $optIn = fal
         $cid = wa_upsert_contact($conn, $phone, $name !== '' ? $name : null);
         if ($cid > 0) {
             if ($email !== '') { wa_contact_set_email($conn, $cid, $email); }
-            if ($optIn) { mysqli_query($conn, "UPDATE wa_contacts SET opted_in = 1 WHERE id = " . (int)$cid); }
+            wa_contact_stamp_import($conn, $cid, $optIn, $batchId);
             if ($existing) { $updated++; } else { $imported++; }
         } else { $bad++; }
     }
     return ['ok' => true, 'imported' => $imported, 'updated' => $updated, 'bad' => $bad, 'total' => count($rows)];
+}
+
+/* ---- Import batches: tag each import so a broadcast can target that exact list ---- */
+
+/** Idempotent schema: a batches table + import_batch_id on wa_contacts. */
+function wa_import_batch_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_import_batches` (
+        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `label` VARCHAR(190) NOT NULL,
+        `source` VARCHAR(32) DEFAULT NULL,
+        `total` INT UNSIGNED NOT NULL DEFAULT 0,
+        `created_by` INT UNSIGNED DEFAULT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    @mysqli_query($conn, "ALTER TABLE `wa_contacts` ADD COLUMN IF NOT EXISTS `import_batch_id` INT UNSIGNED NULL DEFAULT NULL");
+    @mysqli_query($conn, "ALTER TABLE `wa_contacts` ADD INDEX IF NOT EXISTS `idx_wa_contacts_batch` (`import_batch_id`)");
+}
+
+/** Start an import batch; returns its id. */
+function wa_import_batch_create($conn, $label, $source, $createdBy) {
+    wa_import_batch_schema_ensure($conn);
+    $l  = "'" . mysqli_real_escape_string($conn, ($label !== '' ? $label : 'Import')) . "'";
+    $s  = "'" . mysqli_real_escape_string($conn, (string)$source) . "'";
+    $by = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
+    mysqli_query($conn, "INSERT INTO wa_import_batches (label, source, created_by) VALUES ($l, $s, $by)");
+    return (int)mysqli_insert_id($conn);
+}
+
+/** Record the final imported count on a batch. */
+function wa_import_batch_finalize($conn, $batchId, $total) {
+    if ((int)$batchId < 1) { return; }
+    mysqli_query($conn, "UPDATE wa_import_batches SET total = " . (int)$total . " WHERE id = " . (int)$batchId);
+}
+
+/** Batches for the broadcast dropdown, newest first, with their live contact count. */
+function wa_import_batches_list($conn, $limit = 100) {
+    wa_import_batch_schema_ensure($conn);
+    $limit = (int)$limit;
+    $res = mysqli_query($conn,
+        "SELECT b.id, b.label, b.created_at,
+                (SELECT COUNT(*) FROM wa_contacts c WHERE c.import_batch_id = b.id AND c.opted_out = 0) AS n
+           FROM wa_import_batches b
+       ORDER BY b.id DESC LIMIT $limit");
+    $rows = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+    return $rows;
+}
+
+/** Stamp opt-in and/or the import batch on a just-imported contact (new OR existing). */
+function wa_contact_stamp_import($conn, $cid, $optIn, $batchId) {
+    $sets = [];
+    if ($optIn) { $sets[] = "opted_in = 1"; }
+    if ((int)$batchId > 0) { $sets[] = "import_batch_id = " . (int)$batchId; }
+    if ($sets) { mysqli_query($conn, "UPDATE wa_contacts SET " . implode(', ', $sets) . " WHERE id = " . (int)$cid); }
 }
 
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */

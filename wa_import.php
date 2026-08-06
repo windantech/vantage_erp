@@ -47,6 +47,11 @@ if (!in_array(777, $role)) {
                         <div id="iStatus" class="small text-muted mt-1"></div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Batch name <span class="fw-normal">(optional — lets you broadcast to just this list later)</span></label>
+                        <input type="text" id="iBatch" class="form-control" placeholder="e.g. Nairobi expo leads – Aug 2026">
+                    </div>
+
                     <!-- Quick import: first column is the phone number, no AI -->
                     <div class="border rounded p-3 mb-3 bg-light">
                         <div class="fw-semibold mb-2"><i class="bi bi-lightning-charge me-1"></i>Quick import — the <u>first column</u> is the phone number</div>
@@ -167,6 +172,7 @@ if (!in_array(777, $role)) {
         fd.append('action', 'import_direct'); fd.append('file', f);
         fd.append('country_code', document.getElementById('dCc').value || '254');
         fd.append('opt_in', document.getElementById('dOptIn').checked ? '1' : '0');
+        fd.append('batch_label', document.getElementById('iBatch').value || '');
         fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); })
             .then(function (d) {
                 document.getElementById('iDirect').disabled = false;
@@ -227,6 +233,7 @@ if (!in_array(777, $role)) {
         fd.append('map', JSON.stringify(map));
         fd.append('country_code', document.getElementById('iCc').value || '254');
         fd.append('opt_in', document.getElementById('iOptIn').checked ? '1' : '0');
+        fd.append('batch_label', document.getElementById('iBatch').value || '');
         fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); })
             .then(function (d) {
                 document.getElementById('iImport').disabled = false;

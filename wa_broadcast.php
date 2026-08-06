@@ -82,6 +82,7 @@ $tplJs = array_map(function ($t) {
                             <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="optedin" id="audOpt"><label class="form-check-label" for="audOpt">Opted-in only</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="course" id="audCourse"><label class="form-check-label" for="audCourse">By course</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="event" id="audEvent"><label class="form-check-label" for="audEvent">By event (onsite)</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="batch" id="audBatch"><label class="form-check-label" for="audBatch">By import batch</label></div>
                         </div>
                         <select id="bCourse" class="form-select mt-2 d-none" style="max-width:360px">
                             <option value="">— Select course —</option>
@@ -93,6 +94,12 @@ $tplJs = array_map(function ($t) {
                             <option value="">— Select event —</option>
                             <?php foreach ($events as $ev): ?>
                                 <option value="<?php echo (int)$ev['id']; ?>"><?php echo wa_e($ev['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <select id="bBatch" class="form-select mt-2 d-none" style="max-width:420px">
+                            <option value="">— Select imported batch —</option>
+                            <?php foreach (wa_import_batches_list($conn) as $b): ?>
+                                <option value="<?php echo (int)$b['id']; ?>"><?php echo wa_e($b['label'] . ' (' . (int)$b['n'] . ' contacts)'); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -164,6 +171,7 @@ $tplJs = array_map(function ($t) {
     var varsBox = document.getElementById('bVars');
     var courseSel = document.getElementById('bCourse');
     var eventSel = document.getElementById('bEvent');
+    var batchSel = document.getElementById('bBatch');
     var sendBtn = document.getElementById('bSend');
     var statusEl = document.getElementById('bStatus');
 
@@ -240,6 +248,7 @@ $tplJs = array_map(function ($t) {
         r.addEventListener('change', function () {
             courseSel.classList.toggle('d-none', !document.getElementById('audCourse').checked);
             eventSel.classList.toggle('d-none', !document.getElementById('audEvent').checked);
+            batchSel.classList.toggle('d-none', !document.getElementById('audBatch').checked);
         });
     });
     var whenInput = document.getElementById('bWhen');
@@ -256,8 +265,10 @@ $tplJs = array_map(function ($t) {
     function getVars() { return Array.prototype.map.call(document.querySelectorAll('.bVar'), function (i) { return i.value; }); }
     function audience() {
         var f = document.querySelector('input[name=aud]:checked').value;
-        // course_id carries the ref id for both course and event filters.
-        var refId = f === 'event' ? (eventSel.value || 0) : (courseSel.value || 0);
+        // course_id carries the ref id for course, event AND batch filters.
+        var refId = f === 'event' ? (eventSel.value || 0)
+                  : f === 'batch' ? (batchSel.value || 0)
+                  : (courseSel.value || 0);
         return { filter: f, course_id: refId };
     }
     function post(action, data) {
@@ -291,7 +302,7 @@ $tplJs = array_map(function ($t) {
     }
 
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
-    var audLabels = { all: 'All contacts', optedin: 'Opted-in only', course: 'By course', event: 'By event (onsite)' };
+    var audLabels = { all: 'All contacts', optedin: 'Opted-in only', course: 'By course', event: 'By event (onsite)', batch: 'Import batch' };
     var previewEl = document.getElementById('bPreview');
     var previewModal = null, backdropEl = null;
     var pending = null;   // {t, aud, list, scheduled, when}
@@ -329,6 +340,7 @@ $tplJs = array_map(function ($t) {
         var aud = audience();
         if (aud.filter === 'course' && !aud.course_id) { statusEl.textContent = 'Pick a course.'; return; }
         if (aud.filter === 'event' && !aud.course_id) { statusEl.textContent = 'Pick an event.'; return; }
+        if (aud.filter === 'batch' && !aud.course_id) { statusEl.textContent = 'Pick an import batch.'; return; }
         var scheduled = document.getElementById('whenLater').checked;
         if (scheduled && !whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
         // WhatsApp rejects blank template parameters (#131008) — require every variable.

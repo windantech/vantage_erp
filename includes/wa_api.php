@@ -127,7 +127,13 @@ if ($action === 'import_direct') {
     try {
         $phones = wa_csv_first_column($_FILES['file']['tmp_name']);
         if (!$phones) { wa_json_out(['ok' => false, 'error' => 'No numbers found. Make sure the FIRST column holds the phone numbers and the file is a .csv.']); }
-        wa_json_out(wa_import_phones($conn, $phones, $cc, $optIn));
+        $label = trim((string)($_POST['batch_label'] ?? ''));
+        if ($label === '') { $label = 'Import ' . date('Y-m-d H:i'); }
+        $batchId = wa_import_batch_create($conn, $label, 'csv_direct', (int)$staff_id);
+        $res = wa_import_phones($conn, $phones, $cc, $optIn, $batchId);
+        wa_import_batch_finalize($conn, $batchId, (int)$res['imported'] + (int)$res['updated']);
+        $res['batch_id'] = $batchId; $res['batch_label'] = $label;
+        wa_json_out($res);
     } catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
 }
 
@@ -158,7 +164,13 @@ if ($action === 'import_commit') {
     try {
         $parsed = wa_csv_parse_file($_FILES['file']['tmp_name']);
         if (!$parsed['headers']) { wa_json_out(['ok' => false, 'error' => 'Could not read that file.']); }
-        wa_json_out(wa_import_contacts($conn, $parsed['rows'], $map, $cc, $optIn));
+        $label = trim((string)($_POST['batch_label'] ?? ''));
+        if ($label === '') { $label = 'Import ' . date('Y-m-d H:i'); }
+        $batchId = wa_import_batch_create($conn, $label, 'csv_mapped', (int)$staff_id);
+        $res = wa_import_contacts($conn, $parsed['rows'], $map, $cc, $optIn, $batchId);
+        wa_import_batch_finalize($conn, $batchId, (int)$res['imported'] + (int)$res['updated']);
+        $res['batch_id'] = $batchId; $res['batch_label'] = $label;
+        wa_json_out($res);
     } catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
 }
 
