@@ -10,6 +10,7 @@
  */
 require_once __DIR__ . '/includes/wa_db.php';        // $wa_conn
 require_once __DIR__ . '/includes/wa_functions.php';
+wa_use_nairobi_time($wa_conn);
 
 header('Content-Type: application/json; charset=utf-8');
 

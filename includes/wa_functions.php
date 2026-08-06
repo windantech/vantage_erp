@@ -73,6 +73,17 @@ function wa_find_contact_by_waid($conn, $waId) {
 }
 
 /**
+ * Use Africa/Nairobi (EAT, UTC+3) for BOTH PHP date() and the MySQL connection. This aligns
+ * inbound timestamps (stored via PHP date() from the WhatsApp epoch) with outbound ones
+ * (MySQL NOW()) so they no longer differ by hours, and makes every displayed time local.
+ * Call at the top of every WhatsApp entry point (webhook, cron, inbox, thread, api).
+ */
+function wa_use_nairobi_time($conn = null) {
+    @date_default_timezone_set('Africa/Nairobi');
+    if ($conn) { @mysqli_query($conn, "SET time_zone = '+03:00'"); }
+}
+
+/**
  * Handle STOP / START keywords in an inbound message (WhatsApp opt-out compliance).
  * On a match it updates the contact, sends a confirmation, and returns the action
  * taken ('optout' | 'optin') so the caller can skip the normal AI auto-reply.

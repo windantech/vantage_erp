@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/includes/wa_db.php';        // $wa_conn
 require_once __DIR__ . '/includes/wa_functions.php';
+wa_use_nairobi_time($wa_conn);
 
 // ---- Meta GET verification handshake ----
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {

@@ -4,6 +4,7 @@ require_once 'header.php';                     // auth.php -> $conn, $role, $sta
 require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
+wa_use_nairobi_time($conn);
 
 // Access: ERP role 44. Supervisors (777) see all; others see only their own.
 if (!in_array(WA_ROLE, $role)) {
@@ -37,9 +38,14 @@ $sql = "
            (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
            (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
               FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-           (SELECT COUNT(*) FROM wa_messages m
-              WHERE m.contact_id = c.id AND m.direction = 'inbound'
-                AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at)) AS unread
+           -- Unread means "needs a HUMAN". While the AI is handling a chat it's not unread;
+           -- it only counts once the chat is escalated or a human owns it (i.e. a person
+           -- must look). So an AI conversing normally never clutters the unread badge.
+           (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
+              (SELECT COUNT(*) FROM wa_messages m
+                 WHERE m.contact_id = c.id AND m.direction = 'inbound'
+                   AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at))
+            ELSE 0 END) AS unread
       FROM wa_conversations cv
       JOIN wa_contacts c        ON c.id  = cv.contact_id
  LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id

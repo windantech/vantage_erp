@@ -4,6 +4,7 @@ require_once 'header.php';                     // auth.php -> $conn, $role, $sta
 require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
+wa_use_nairobi_time($conn);
 
 if (!in_array(WA_ROLE, $role)) {
     echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Access denied.</div></div>';

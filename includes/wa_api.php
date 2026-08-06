@@ -10,6 +10,7 @@ if (session_status() === PHP_SESSION_NONE) { @session_start(); }
 require_once __DIR__ . '/../auth.php';        // $conn, $role, $staff_id
 require_once __DIR__ . '/wa_config.php';
 require_once __DIR__ . '/wa_functions.php';
+wa_use_nairobi_time($conn);
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -338,9 +339,13 @@ if ($action === 'inbox') {
                (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
                (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
                   FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-               (SELECT COUNT(*) FROM wa_messages m
-                  WHERE m.contact_id = c.id AND m.direction = 'inbound'
-                    AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at)) AS unread
+               -- Unread = "needs a human". AI-handled chats aren't unread until escalated
+               -- or a human owns them (mirrors wa_inbox.php).
+               (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
+                  (SELECT COUNT(*) FROM wa_messages m
+                     WHERE m.contact_id = c.id AND m.direction = 'inbound'
+                       AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at))
+                ELSE 0 END) AS unread
           FROM wa_conversations cv
           JOIN wa_contacts c        ON c.id  = cv.contact_id
      LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
