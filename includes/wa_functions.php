@@ -3518,6 +3518,37 @@ function wa_ai_referral_nudge($n = 0) {
 }
 
 /**
+ * A customer sent something with NO readable text — a voice note, an image/video without a
+ * caption, a location pin, a contact card, a document. The AI can't read those, so the old
+ * code (which needs a text $body) skipped them entirely: no reply, no escalation, total
+ * silence. This is exactly the "dodged message" symptom. Here we NEVER stay silent: make
+ * sure the chat exists, acknowledge warmly, escalate to a human and leave a staff note.
+ * Reactions (👍) are skipped — they need no reply. Returns a small status array.
+ */
+function wa_handle_media_message($conn, $contactId, $waId, $type) {
+    $contactId = (int)$contactId;
+    if ($type === 'reaction') { return ['ok' => true, 'skipped' => 'reaction']; }
+    wa_ensure_conversation($conn, $contactId);
+    $conv = wa_get_conversation($conn, $contactId);
+    $labels = [
+        'audio'    => 'voice note', 'image'    => 'image',   'video'  => 'video',
+        'document' => 'document',   'sticker'  => 'sticker', 'location' => 'location',
+        'contacts' => 'contact',    'order'    => 'order',
+    ];
+    $label = $labels[$type] ?? 'message';
+    $reply = "Thanks! I've received your {$label} — let me get a colleague to take a proper "
+           . "look and come right back to you shortly.";
+    if ($conv) {
+        $convId = (int)$conv['id'];
+        mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1, last_message_at = NOW() WHERE id = $convId");
+        wa_ai_post_note($conn, $contactId, "Customer sent {$label} content the AI can't read — please take a look and reply.");
+    }
+    error_log('[wa-ai] media-handoff (' . $type . ') for contact ' . $contactId);
+    $send = wa_send_text($conn, $waId, $reply);
+    return ['ok' => !empty($send['ok']), 'escalated' => true, 'type' => $type];
+}
+
+/**
  * Graceful hand-off when the AI can't produce a reply (provider error/timeout,
  * empty or unparseable output). Instead of going SILENT — which reads as the bot
  * ignoring the customer — we send a short human-hand-off line and escalate the

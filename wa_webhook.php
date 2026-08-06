@@ -117,6 +117,15 @@ function wa_webhook_store($conn, $message, $names) {
         if ($body && wa_enroll_intercept($conn, $contactId, $waId, (string)$body)) {
             return;   // enrollment consumed this message
         }
+        // A message with NO readable text — voice note, image/video without a caption,
+        // location pin, contact card, document. The AI can't read it, so the text-only
+        // path below would skip it and go silent. Never dodge a customer: acknowledge and
+        // escalate to a human. Same auto-reply gate as the AI path.
+        if (wa_setting_get($conn, 'ai_autoreply', '0') === '1' && trim((string)$body) === '' && $type !== 'text') {
+            $mRes = wa_handle_media_message($conn, $contactId, $waId, $type);
+            error_log('[wa-ai] media ' . json_encode($mRes));
+            return;
+        }
         // Auto-route when enabled (assigns the conversation to the right staff owner),
         // then let the AI answer from the course knowledge base (escalates when unsure).
         if (wa_setting_get($conn, 'ai_autoreply', '0') === '1' && $body) {
