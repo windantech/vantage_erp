@@ -39,6 +39,7 @@ function wa_chip($label, $key, $active, $count, $q) {
                     <p class="text-muted mb-0">Everyone who has messaged the number, with their broadcast opt-in status.</p>
                 </div>
                 <div class="d-flex gap-2">
+                    <a href="wa_import.php" class="btn btn-outline-primary"><i class="bi bi-upload me-1"></i>Import</a>
                     <a href="wa_broadcast.php" class="btn btn-outline-primary"><i class="bi bi-megaphone me-1"></i>Broadcast</a>
                     <a href="wa_inbox.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Inbox</a>
                 </div>

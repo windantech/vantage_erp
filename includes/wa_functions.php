@@ -1667,6 +1667,105 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
     return ['ok' => true, 'sent' => $sent, 'failed' => $failed, 'done' => $doneRuns];
 }
 
+/* ------------------------------------------------------------------------------------
+ * Bulk contact import (CSV) with AI column detection.
+ * ---------------------------------------------------------------------------------- */
+
+/** Read a CSV into ['headers'=>[...], 'rows'=>[['Header'=>val,...], ...]]. Strips a BOM and
+ *  skips blank lines. (Export/"Save As" an Excel sheet to CSV first.) */
+function wa_csv_parse_file($path, $maxRows = 200000) {
+    $headers = []; $rows = [];
+    $fh = @fopen($path, 'r');
+    if (!$fh) { return ['headers' => [], 'rows' => []]; }
+    $first = true;
+    while (($data = fgetcsv($fh, 0, ',')) !== false) {
+        if ($first) {
+            if (isset($data[0])) { $data[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string)$data[0]); }
+            $headers = array_map(function ($h) { return trim((string)$h); }, $data);
+            $first = false; continue;
+        }
+        $nonEmpty = false;
+        foreach ($data as $c) { if (trim((string)$c) !== '') { $nonEmpty = true; break; } }
+        if (!$nonEmpty) { continue; }
+        $row = [];
+        foreach ($headers as $i => $h) { if ($h !== '') { $row[$h] = isset($data[$i]) ? (string)$data[$i] : ''; } }
+        $rows[] = $row;
+        if (count($rows) >= $maxRows) { break; }
+    }
+    fclose($fh);
+    return ['headers' => $headers, 'rows' => $rows];
+}
+
+/** Keyword heuristic mapping of our fields -> a source header. */
+function wa_import_guess_columns($headers) {
+    $map = ['phone' => '', 'name' => '', 'email' => '', 'country' => ''];
+    foreach ($headers as $h) {
+        $l = strtolower(trim($h));
+        if ($map['phone'] === '' && preg_match('/phone|mobile|tel|whats|msisdn|cell|number|contact/', $l)) { $map['phone'] = $h; }
+        if ($map['email'] === '' && strpos($l, 'mail') !== false) { $map['email'] = $h; }
+        if ($map['country'] === '' && (strpos($l, 'country') !== false || strpos($l, 'nation') !== false)) { $map['country'] = $h; }
+        if ($map['name'] === '' && preg_match('/\bname\b|full ?name|fullname|first ?name|client|customer/', $l)) { $map['name'] = $h; }
+    }
+    return $map;
+}
+
+/** Map spreadsheet columns to our contact fields — heuristic, refined by AI when available. */
+function wa_import_map_columns($conn, $headers, $sampleRows) {
+    $map = wa_import_guess_columns($headers);
+    $provider = wa_active_provider($conn);
+    if (wa_provider_ready($provider)) {
+        $system = 'You map spreadsheet columns to contact fields. Fields: phone (WhatsApp / mobile number, REQUIRED), '
+                . 'name, email, country. Given the column headers and a few sample rows, reply with ONLY JSON mapping each '
+                . 'field to the EXACT column header that best fits, or null if none. '
+                . 'Example: {"phone":"Mobile No","name":"Full Name","email":"Email","country":null}.';
+        $user = "Headers: " . json_encode(array_values($headers)) . "\nSample rows: " . json_encode(array_slice($sampleRows, 0, 5));
+        $ans = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]], ['json' => true, 'max_tokens' => 200]);
+        if (!empty($ans['ok'])) {
+            $data = wa_json_extract($ans['text'] ?? '');
+            if (is_array($data)) {
+                foreach (['phone', 'name', 'email', 'country'] as $f) {
+                    if (isset($data[$f]) && $data[$f] !== null && in_array($data[$f], $headers, true)) { $map[$f] = $data[$f]; }
+                }
+            }
+        }
+    }
+    return $map;
+}
+
+/** Normalise a raw number to a WhatsApp wa_id (digits, international, no +). Local numbers
+ *  (leading 0 or short) get the default country code; already-international ones are kept. */
+function wa_import_normalize_phone($raw, $defaultCc = '254') {
+    $d = preg_replace('/\D+/', '', (string)$raw);
+    if ($d === '') { return ''; }
+    if (strpos($d, '00') === 0) { $d = substr($d, 2); }            // 00 international prefix
+    $cc = preg_replace('/\D+/', '', (string)$defaultCc); if ($cc === '') { $cc = '254'; }
+    if ($d[0] === '0') { $d = $cc . substr($d, 1); }               // 0712… -> 254712…
+    elseif (strlen($d) <= 10 && strpos($d, $cc) !== 0) { $d = $cc . $d; }   // 712… -> 254712…
+    return $d;
+}
+
+/** Import parsed rows into wa_contacts using a field->column map. Upserts by wa_id. */
+function wa_import_contacts($conn, $rows, $map, $defaultCc = '254', $optIn = false) {
+    wa_contact_email_ensure($conn);
+    $phoneCol = $map['phone'] ?? '';
+    if ($phoneCol === '') { return ['ok' => false, 'error' => 'No phone column selected.']; }
+    $imported = 0; $updated = 0; $bad = 0;
+    foreach ($rows as $r) {
+        $phone = wa_import_normalize_phone($r[$phoneCol] ?? '', $defaultCc);
+        if (strlen($phone) < 9 || strlen($phone) > 15) { $bad++; continue; }
+        $name  = ($map['name'] ?? '')  !== '' ? trim((string)($r[$map['name']] ?? '')) : '';
+        $email = ($map['email'] ?? '') !== '' ? trim((string)($r[$map['email']] ?? '')) : '';
+        $existing = wa_find_contact_by_waid($conn, $phone);
+        $cid = wa_upsert_contact($conn, $phone, $name !== '' ? $name : null);
+        if ($cid > 0) {
+            if ($email !== '') { wa_contact_set_email($conn, $cid, $email); }
+            if ($optIn) { mysqli_query($conn, "UPDATE wa_contacts SET opted_in = 1 WHERE id = " . (int)$cid); }
+            if ($existing) { $updated++; } else { $imported++; }
+        } else { $bad++; }
+    }
+    return ['ok' => true, 'imported' => $imported, 'updated' => $updated, 'bad' => $bad, 'total' => count($rows)];
+}
+
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
 function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy, $headerMediaId = '', $headerType = '') {
     wa_broadcast_header_schema_ensure($conn);

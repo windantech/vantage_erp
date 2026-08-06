@@ -41,6 +41,7 @@ $tplJs = array_map(function ($t) {
                 </div>
                 <div class="d-flex gap-2">
                     <a href="wa_contacts.php" class="btn btn-outline-primary"><i class="bi bi-people me-1"></i>Contacts</a>
+                    <a href="wa_import.php" class="btn btn-outline-primary"><i class="bi bi-upload me-1"></i>Import</a>
                     <a href="wa_broadcasts.php" class="btn btn-outline-primary"><i class="bi bi-bar-chart me-1"></i>History</a>
                     <a href="wa_templates.php" class="btn btn-outline-primary"><i class="bi bi-file-earmark-text me-1"></i>Templates</a>
                     <a href="wa_inbox.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Inbox</a>

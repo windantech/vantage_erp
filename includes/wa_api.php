@@ -116,6 +116,35 @@ if ($action === 'broadcast_audience') {
     }
 }
 
+// ---- Import: parse an uploaded CSV + AI-detect the columns (supervisor only) ----
+if ($action === 'import_analyze') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    @set_time_limit(200);
+    if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) { wa_json_out(['ok' => false, 'error' => 'no_file']); }
+    try {
+        $parsed = wa_csv_parse_file($_FILES['file']['tmp_name']);
+        if (!$parsed['headers']) { wa_json_out(['ok' => false, 'error' => 'Could not read that file. Open it in Excel and “Save As → CSV (Comma delimited)”, then upload the .csv.']); }
+        $map = wa_import_map_columns($conn, $parsed['headers'], array_slice($parsed['rows'], 0, 8));
+        wa_json_out(['ok' => true, 'headers' => $parsed['headers'], 'sample' => array_slice($parsed['rows'], 0, 8),
+                     'rowcount' => count($parsed['rows']), 'map' => $map]);
+    } catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
+// ---- Import: commit the CSV into wa_contacts with the confirmed column map (supervisor only) ----
+if ($action === 'import_commit') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    @set_time_limit(600);
+    if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) { wa_json_out(['ok' => false, 'error' => 'no_file']); }
+    $map   = json_decode((string)($_POST['map'] ?? '{}'), true) ?: [];
+    $cc    = (string)($_POST['country_code'] ?? '254');
+    $optIn = ((string)($_POST['opt_in'] ?? '')) === '1';
+    try {
+        $parsed = wa_csv_parse_file($_FILES['file']['tmp_name']);
+        if (!$parsed['headers']) { wa_json_out(['ok' => false, 'error' => 'Could not read that file.']); }
+        wa_json_out(wa_import_contacts($conn, $parsed['rows'], $map, $cc, $optIn));
+    } catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
 // ---- Broadcast: AI-identify what each template variable should be (supervisor only) ----
 if ($action === 'broadcast_suggest_vars') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
