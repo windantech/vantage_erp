@@ -1744,6 +1744,39 @@ function wa_import_normalize_phone($raw, $defaultCc = '254') {
     return $d;
 }
 
+/** Read just the FIRST column of a CSV (values only) — for a direct "first column is the
+ *  phone number" import with no AI/mapping. Skips blanks; a header like "Phone" normalises
+ *  to a non-number and is skipped automatically. */
+function wa_csv_first_column($path, $maxRows = 500000) {
+    $out = [];
+    $fh = @fopen($path, 'r');
+    if (!$fh) { return $out; }
+    while (($data = fgetcsv($fh, 0, ',')) !== false) {
+        $v = isset($data[0]) ? trim((string)$data[0]) : '';
+        $v = preg_replace('/^\xEF\xBB\xBF/', '', $v);   // strip BOM on the very first cell
+        if ($v !== '') { $out[] = $v; }
+        if (count($out) >= $maxRows) { break; }
+    }
+    fclose($fh);
+    return $out;
+}
+
+/** Import a plain list of phone numbers into wa_contacts (no names/AI). Upserts by wa_id. */
+function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
+    $imported = 0; $updated = 0; $bad = 0;
+    foreach ($phones as $raw) {
+        $phone = wa_import_normalize_phone($raw, $defaultCc);
+        if (strlen($phone) < 9 || strlen($phone) > 15) { $bad++; continue; }
+        $existing = wa_find_contact_by_waid($conn, $phone);
+        $cid = wa_upsert_contact($conn, $phone, null);
+        if ($cid > 0) {
+            if ($optIn) { mysqli_query($conn, "UPDATE wa_contacts SET opted_in = 1 WHERE id = " . (int)$cid); }
+            if ($existing) { $updated++; } else { $imported++; }
+        } else { $bad++; }
+    }
+    return ['ok' => true, 'imported' => $imported, 'updated' => $updated, 'bad' => $bad, 'total' => count($phones)];
+}
+
 /** Import parsed rows into wa_contacts using a field->column map. Upserts by wa_id. */
 function wa_import_contacts($conn, $rows, $map, $defaultCc = '254', $optIn = false) {
     wa_contact_email_ensure($conn);

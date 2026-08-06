@@ -43,12 +43,33 @@ if (!in_array(777, $role)) {
                 <div class="card-body">
                     <div class="mb-3">
                         <label class="form-label small text-muted">Contact file (.csv)</label>
-                        <div class="d-flex gap-2">
-                            <input type="file" id="iFile" class="form-control" accept=".csv,text/csv">
-                            <button id="iAnalyze" class="btn btn-primary text-nowrap"><i class="bi bi-magic me-1"></i>Analyze</button>
-                        </div>
+                        <input type="file" id="iFile" class="form-control" accept=".csv,text/csv">
                         <div id="iStatus" class="small text-muted mt-1"></div>
                     </div>
+
+                    <!-- Quick import: first column is the phone number, no AI -->
+                    <div class="border rounded p-3 mb-3 bg-light">
+                        <div class="fw-semibold mb-2"><i class="bi bi-lightning-charge me-1"></i>Quick import — the <u>first column</u> is the phone number</div>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small text-muted">Default country code</label>
+                                <input type="text" id="dCc" class="form-control form-control-sm" value="254">
+                            </div>
+                            <div class="col-md-5">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="dOptIn" checked>
+                                    <label class="form-check-label small" for="dOptIn">Mark as opted-in (they agreed to receive messages)</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-md-end">
+                                <button id="iDirect" class="btn btn-success"><i class="bi bi-cloud-arrow-up me-1"></i>Import directly</button>
+                            </div>
+                        </div>
+                        <div id="dStatus" class="small mt-2"></div>
+                    </div>
+
+                    <div class="text-center small text-muted mb-2">— or, if you also want names/email —</div>
+                    <button id="iAnalyze" class="btn btn-outline-primary"><i class="bi bi-magic me-1"></i>Map columns with AI</button>
 
                     <div id="iMapWrap" class="d-none">
                         <hr>
@@ -134,6 +155,27 @@ if (!in_array(777, $role)) {
         });
         document.getElementById('iPreview').innerHTML = html || '<tr><td colspan="3" class="text-muted">No rows.</td></tr>';
     }
+
+    // Direct import — first column is the phone number, no AI/mapping.
+    document.getElementById('iDirect').addEventListener('click', function () {
+        var f = fileEl.files && fileEl.files[0];
+        var st = document.getElementById('dStatus');
+        if (!f) { st.innerHTML = '<span class="text-danger">Choose a CSV file first.</span>'; return; }
+        st.textContent = 'Importing… (large files take a minute)';
+        document.getElementById('iDirect').disabled = true;
+        var fd = new FormData();
+        fd.append('action', 'import_direct'); fd.append('file', f);
+        fd.append('country_code', document.getElementById('dCc').value || '254');
+        fd.append('opt_in', document.getElementById('dOptIn').checked ? '1' : '0');
+        fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); })
+            .then(function (d) {
+                document.getElementById('iDirect').disabled = false;
+                if (!d || !d.ok) { st.innerHTML = '<span class="text-danger">Import failed: ' + esc((d && d.error) || 'error') + '</span>'; return; }
+                st.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Done — ' + d.imported
+                    + ' new, ' + d.updated + ' updated, ' + d.bad + ' skipped, of ' + d.total
+                    + '. <a href="wa_broadcast.php">Broadcast to them →</a></span>';
+            }).catch(function () { document.getElementById('iDirect').disabled = false; st.innerHTML = '<span class="text-danger">Import failed (network).</span>'; });
+    });
 
     document.getElementById('iAnalyze').addEventListener('click', function () {
         var f = fileEl.files && fileEl.files[0];

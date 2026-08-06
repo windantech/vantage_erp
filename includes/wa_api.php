@@ -116,10 +116,26 @@ if ($action === 'broadcast_audience') {
     }
 }
 
+// ---- Import: direct — first CSV column is the phone number, no AI (supervisor only) ----
+if ($action === 'import_direct') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    @set_time_limit(600);
+    @mysqli_set_charset($conn, 'utf8mb4');   // match the utf8mb4 wa_contacts columns (avoids COALESCE collation error)
+    if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) { wa_json_out(['ok' => false, 'error' => 'no_file']); }
+    $cc    = (string)($_POST['country_code'] ?? '254');
+    $optIn = ((string)($_POST['opt_in'] ?? '')) === '1';
+    try {
+        $phones = wa_csv_first_column($_FILES['file']['tmp_name']);
+        if (!$phones) { wa_json_out(['ok' => false, 'error' => 'No numbers found. Make sure the FIRST column holds the phone numbers and the file is a .csv.']); }
+        wa_json_out(wa_import_phones($conn, $phones, $cc, $optIn));
+    } catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
 // ---- Import: parse an uploaded CSV + AI-detect the columns (supervisor only) ----
 if ($action === 'import_analyze') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
     @set_time_limit(200);
+    @mysqli_set_charset($conn, 'utf8mb4');
     if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) { wa_json_out(['ok' => false, 'error' => 'no_file']); }
     try {
         $parsed = wa_csv_parse_file($_FILES['file']['tmp_name']);
@@ -134,6 +150,7 @@ if ($action === 'import_analyze') {
 if ($action === 'import_commit') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
     @set_time_limit(600);
+    @mysqli_set_charset($conn, 'utf8mb4');   // match utf8mb4 wa_contacts columns (avoids COALESCE collation error)
     if (empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) { wa_json_out(['ok' => false, 'error' => 'no_file']); }
     $map   = json_decode((string)($_POST['map'] ?? '{}'), true) ?: [];
     $cc    = (string)($_POST['country_code'] ?? '254');
