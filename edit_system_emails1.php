@@ -52,6 +52,13 @@ if ($cr) { while ($r = $cr->fetch_assoc()) $courses[] = $r; }
 $events = [];
 $er = $conn->query("SELECT event_id, event_title FROM Event WHERE status = 1 ORDER BY event_title ASC");
 if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
+
+// Academic programmes = the Events whose location is an academic marker
+// (academic#type#program_id). Their titles are the programme names; storing the
+// event_id keeps the existing send-time (event_id) matching working unchanged.
+$academic_events = [];
+$aer = $conn->query("SELECT event_id, event_title FROM Event WHERE location LIKE 'academic#%' AND status = 1 ORDER BY event_title ASC");
+if ($aer) { while ($r = $aer->fetch_assoc()) $academic_events[] = $r; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -96,6 +103,7 @@ if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
                         <select id="upd_email_type" class="form-control rounded-0" required>
                             <option value="virtual" <?php echo $saved_email_type=='virtual'?'selected':''; ?>>Virtual Courses</option>
                             <option value="international" <?php echo $saved_email_type=='international'?'selected':''; ?>>International Events</option>
+                            <option value="academic" <?php echo $saved_email_type=='academic'?'selected':''; ?>>Academic Programmes</option>
                         </select>
                     </div>
                 </div>
@@ -107,7 +115,7 @@ if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
                     </div>
                 </div>
 
-                <div class="col-md-6 p-1 <?php echo $saved_email_type=='international'?'d-none':''; ?>" id="upd_course_container">
+                <div class="col-md-6 p-1 <?php echo $saved_email_type!='virtual'?'d-none':''; ?>" id="upd_course_container">
                     <div class="input-group mb-3">
                         <span class="input-group-text rounded-0 bg_main">Select Course</span>
                         <select id="upd_course_opt" class="form-control rounded-0">
@@ -121,7 +129,7 @@ if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
                     </div>
                 </div>
 
-                <div class="col-md-6 p-1 <?php echo $saved_email_type=='virtual'?'d-none':''; ?>" id="upd_event_container">
+                <div class="col-md-6 p-1 <?php echo $saved_email_type!='international'?'d-none':''; ?>" id="upd_event_container">
                     <div class="input-group mb-3">
                         <span class="input-group-text rounded-0 bg_main">Select Event</span>
                         <select id="upd_event_opt" readonly class="form-control rounded-0">
@@ -129,6 +137,20 @@ if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
                             <?php foreach ($events as $e): ?>
                             <option value="<?php echo htmlspecialchars($e['event_title']); ?>" data-id="<?php echo $e['event_id']; ?>" <?php echo ($saved_event_name==$e['event_title'] || $saved_event_id==$e['event_id'])?'selected':''; ?>>
                                 <?php echo htmlspecialchars($e['event_title']); ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-md-6 p-1 <?php echo $saved_email_type!='academic'?'d-none':''; ?>" id="upd_academic_container">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text rounded-0 bg_main">Select Course</span>
+                        <select id="upd_academic_opt" class="form-control rounded-0">
+                            <option value="" hidden>---Select Academic Programme---</option>
+                            <?php foreach ($academic_events as $ae): ?>
+                            <option value="<?php echo htmlspecialchars($ae['event_title']); ?>" data-id="<?php echo $ae['event_id']; ?>" <?php echo ($saved_event_id==$ae['event_id'])?'selected':''; ?>>
+                                <?php echo htmlspecialchars($ae['event_title']); ?>
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -237,13 +259,10 @@ $(function () {
 
     // Type toggle shows the right dropdown
     $("#upd_email_type").on("change", function () {
-        if ($(this).val() === "virtual") {
-            $("#upd_course_container").removeClass("d-none");
-            $("#upd_event_container").addClass("d-none");
-        } else {
-            $("#upd_course_container").addClass("d-none");
-            $("#upd_event_container").removeClass("d-none");
-        }
+        var t = $(this).val();
+        $("#upd_course_container").toggleClass("d-none",   t !== "virtual");
+        $("#upd_event_container").toggleClass("d-none",    t !== "international");
+        $("#upd_academic_container").toggleClass("d-none", t !== "academic");
     });
 
     // Simple required-field check
@@ -258,8 +277,9 @@ $(function () {
     $("#upd_step1_btn").on("click", function () {
         var type = $("#upd_email_type").val();
         var ok = need($("#upd_email_subject")) & need($("#upd_email_opt"));
-        if (type === "virtual")      ok = ok & need($("#upd_course_opt"));
-        else                          ok = ok & need($("#upd_event_opt"));
+        if (type === "virtual")        ok = ok & need($("#upd_course_opt"));
+        else if (type === "academic")  ok = ok & need($("#upd_academic_opt"));
+        else                            ok = ok & need($("#upd_event_opt"));
         if (!ok) return;
 
         $("#upd_step1").addClass("d-none");
@@ -329,6 +349,10 @@ $(function () {
         if (data.upd_email_type === "virtual") {
             data.upd_course_opt = $("#upd_course_opt").val();
             data.upd_event_id   = $("#upd_course_opt option:selected").data("id") || "";
+        } else if (data.upd_email_type === "academic") {
+            data.upd_course_opt = $("#upd_academic_opt").val();          // programme name
+            data.upd_event_name = $("#upd_academic_opt").val();
+            data.upd_event_id   = $("#upd_academic_opt option:selected").data("id") || "";
         } else {
             data.upd_event_opt  = $("#upd_event_opt").val();
             data.upd_event_name = $("#upd_event_opt").val();
