@@ -210,8 +210,31 @@ $tplJs = array_map(function ($t) {
     function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
     var audLabels = { all: 'All contacts', optedin: 'Opted-in only', course: 'By course', event: 'By event (onsite)' };
     var previewEl = document.getElementById('bPreview');
-    var previewModal = null; try { previewModal = new bootstrap.Modal(previewEl); } catch (e) {}
+    var previewModal = null, backdropEl = null;
     var pending = null;   // {t, aud, list, scheduled, when}
+
+    // Lazily create the Bootstrap modal — this inline script runs BEFORE footer.php loads
+    // bootstrap.js, so we must not touch `bootstrap` until the user actually clicks. Falls
+    // back to a manual show if the bundle somehow isn't present, so the preview never dies
+    // silently the way it did before.
+    function openPreview() {
+        if (!previewModal && window.bootstrap && bootstrap.Modal) {
+            previewModal = bootstrap.Modal.getOrCreateInstance(previewEl);
+        }
+        if (previewModal) { previewModal.show(); return; }
+        previewEl.classList.add('show'); previewEl.style.display = 'block';
+        previewEl.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
+        if (!backdropEl) { backdropEl = document.createElement('div'); backdropEl.className = 'modal-backdrop fade show'; }
+        document.body.appendChild(backdropEl);
+    }
+    function closePreview() {
+        if (previewModal) { previewModal.hide(); return; }
+        previewEl.classList.remove('show'); previewEl.style.display = 'none';
+        previewEl.setAttribute('aria-hidden', 'true'); document.body.classList.remove('modal-open');
+        if (backdropEl && backdropEl.parentNode) backdropEl.parentNode.removeChild(backdropEl);
+    }
+    // Make Cancel / × work in both modes (bootstrap's data-bs-dismiss + our fallback).
+    previewEl.querySelectorAll('[data-bs-dismiss=modal]').forEach(function (b) { b.addEventListener('click', closePreview); });
 
     // Step 1 — resolve the audience and PREVIEW exactly who will receive it before sending.
     sendBtn.addEventListener('click', function () {
@@ -248,15 +271,15 @@ $tplJs = array_map(function ($t) {
                 ? '<i class="bi bi-clock me-1"></i>Schedule for ' + list.length + ' contact(s)'
                 : '<i class="bi bi-send me-1"></i>Send now to ' + list.length + ' contact(s)';
             pending = { t: t, aud: aud, list: list, scheduled: scheduled, when: whenInput.value };
-            if (previewModal) previewModal.show();
-        });
+            openPreview();
+        }).catch(function () { statusEl.textContent = 'Could not load recipients (network error).'; });
     });
 
     // Step 2 — the user has SEEN the recipients and confirmed. Now send (or schedule).
     document.getElementById('bpConfirm').addEventListener('click', function () {
         if (!pending) return;
         var p = pending; pending = null;
-        if (previewModal) previewModal.hide();
+        closePreview();
 
         if (p.scheduled) {
             statusEl.textContent = 'Scheduling…';
