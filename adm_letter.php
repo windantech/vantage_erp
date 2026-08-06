@@ -220,6 +220,10 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
     // Column-header currency suffix. Empty => the amount already carries its
     // currency (e.g. "KES 14,000.00" for unit-based academic courses).
     $cur_suffix = ($currency !== '') ? ' (' . htmlspecialchars($currency) . ')' : '';
+
+    // DPO pay page: lands on the correct amount/units via the ticket id (the pay
+    // page fetches those from the DB — don't append amount or units here).
+    $pay_link = 'https://vantageafricaleaders.com/pay/complete_payment.php?ticket_id=' . urlencode($entry_id);
     // With no fee configured, a single spanning placeholder row reads correctly;
     // repeating the placeholder sentence in the Cost/Total columns would not.
     if ($has_amount) {
@@ -298,7 +302,7 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
                 </ol>
                 
                 <p style="text-align: left; margin-bottom: 1px;"><b>Online Payments</b></p>
-                <p style="text-align: left; margin: 1px 25px; font-size: 14px;">To pay online, Click <a href="https://vantageafricaleaders.com/proceed_pay.php?id='.$entry_id.'" target="_blank">here</a></p>
+                <p style="text-align: left; margin: 1px 25px; font-size: 14px;">To pay online, Click <a href="'.$pay_link.'" target="_blank">here</a></p>
 
                 <p style="text-align: left; margin-bottom: 1px;">Yours sincerely,</p>
                 <p style="text-align: left; margin: 0 1px;">Benson Kiarie, CEO & Founder,<br>Vantage Africa School of Leadership.</p>
