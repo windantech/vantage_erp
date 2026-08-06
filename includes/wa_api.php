@@ -108,7 +108,12 @@ if ($action === 'broadcast_audience') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
     $filter   = $_POST['filter'] ?? $_GET['filter'] ?? 'all';
     $courseId = (int)($_POST['course_id'] ?? $_GET['course_id'] ?? 0);
-    wa_json_out(['ok' => true, 'contacts' => wa_broadcast_audience($conn, $filter, $courseId)]);
+    // Catch any DB error so the client gets JSON (not a fatal that corrupts the response).
+    try {
+        wa_json_out(['ok' => true, 'contacts' => wa_broadcast_audience($conn, $filter, $courseId)]);
+    } catch (Throwable $e) {
+        wa_json_out(['ok' => false, 'error' => 'query: ' . $e->getMessage()]);
+    }
 }
 
 // ---- Broadcast: open a run record, return its id (supervisor only) ----

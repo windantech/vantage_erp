@@ -247,8 +247,20 @@ $tplJs = array_map(function ($t) {
         if (scheduled && !whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
 
         statusEl.textContent = 'Resolving recipients…';
-        post('broadcast_audience', aud).then(function (d) {
-            if (!d || !d.ok) { statusEl.textContent = 'Failed to load audience.'; return; }
+        var afd = new FormData();
+        afd.append('action', 'broadcast_audience');
+        afd.append('filter', aud.filter); afd.append('course_id', aud.course_id);
+        fetch('includes/wa_api.php', { method: 'POST', body: afd }).then(function (r) {
+            return r.text().then(function (txt) { return { status: r.status, txt: txt }; });
+        }).then(function (res) {
+            var d;
+            try { d = JSON.parse(res.txt); } catch (e) {
+                // Show what the server actually returned (a PHP fatal/redirect corrupts the JSON).
+                statusEl.textContent = 'Server error (' + res.status + '): '
+                    + (res.txt || '(empty)').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+                return;
+            }
+            if (!d || !d.ok) { statusEl.textContent = 'Could not load recipients: ' + ((d && d.error) || 'unknown'); return; }
             var list = d.contacts || [];
             statusEl.textContent = '';
             if (!list.length) { statusEl.textContent = 'No contacts match that audience.'; return; }
