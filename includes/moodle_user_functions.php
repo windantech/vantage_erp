@@ -10,14 +10,19 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
      * Send email to existing Moodle user with login URL and password reset link.
      * Requires send_mail_function to be available. Returns true if sent.
      */
-    function send_moodle_existing_user_reset_email($email, $recipient_name, $username = '') {
+    function send_moodle_existing_user_reset_email($email, $recipient_name, $username = '', $is_academic = false) {
         if (!function_exists('send_mail_function')) {
             return false;
         }
         $year = date('Y');
-        $subject = 'Your E-learning Portal Access - Vantage Africa School of Leadership';
-        $login_url = 'https://vantageafricaleaders.com/moodle/login/index.php';
-        $reset_url = 'https://vantageafricaleaders.com/moodle/login/forgot_password.php';
+        // Academic courses use the LMS at system.vantageafricaleaders.com with
+        // "learning management system" wording; everything else keeps the
+        // e-learning portal at vantageafricaleaders.com/moodle.
+        $portal_title = $is_academic ? 'Your Learning Management System Access' : 'Your E-learning Portal Access';
+        $portal_name  = $is_academic ? 'learning management system' : 'e-learning portal';
+        $login_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/index.php' : 'https://vantageafricaleaders.com/moodle/login/index.php';
+        $reset_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/forgot_password.php' : 'https://vantageafricaleaders.com/moodle/login/forgot_password.php';
+        $subject = $portal_title . ' - Vantage Africa School of Leadership';
         $support_phone = '+254796393864';
         $support_whatsapp = 'https://wa.me/254796393864';
         $body = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px;">
@@ -27,9 +32,9 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
             </div>
             <hr style="border: solid 1px #d1d3e2; margin: 8px 0">
             <div style="padding: 0 1.5rem 1rem;">
-                <h5 style="color: #2B5470;"><b>Your E-learning Portal Access</b></h5>
+                <h5 style="color: #2B5470;"><b>' . htmlspecialchars($portal_title) . '</b></h5>
                 <p><strong>Dear ' . htmlspecialchars($recipient_name) . ',</strong></p>
-                <p>You already have an account on our e-learning portal. To log in or reset your password, use the links below:</p>
+                <p>You already have an account on our ' . htmlspecialchars($portal_name) . '. To log in or reset your password, use the links below:</p>
                 <div style="background-color: #f0f8ff; padding: 15px; border: 1px solid #A85431; margin: 15px 0; border-radius: 5px;">
                     <p style="margin: 5px 0;"><strong>🌐 Log in:</strong> <a href="' . htmlspecialchars($login_url) . '" style="color: #2B5470; font-weight: bold;">' . htmlspecialchars($login_url) . '</a></p>
                     <p style="margin: 5px 0;"><strong>🔑 Forgot password?</strong> <a href="' . htmlspecialchars($reset_url) . '" style="color: #2B5470; font-weight: bold;">Reset your password here</a></p>
@@ -54,7 +59,7 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
 }
 
 if (!function_exists('create_moodle_user_and_send_email')) {
-    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true) {
+    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true, $is_academic = false) {
         $firstname = trim((string) $firstname);
         $lastname = trim((string) $lastname);
         $email = trim((string) $email);
@@ -85,7 +90,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             $email_sent = false;
             if ($send_email && function_exists('send_moodle_existing_user_reset_email')) {
                 $recipient_name = trim($firstname . ' ' . $lastname);
-                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $username);
+                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $username, $is_academic);
             }
             return ['success' => false, 'username' => $username, 'password' => $plain_password, 'error' => 'already_created', 'email_sent' => $email_sent];
         }
@@ -129,7 +134,11 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         $email_sent = false;
         if ($send_email && function_exists('send_mail_function')) {
             $recipient_name = trim($firstname . ' ' . $lastname);
-            $subject = 'Your E-learning Portal Access - Vantage Africa School of Leadership';
+            $portal_title = $is_academic ? 'Your Learning Management System Access' : 'Your E-learning Portal Access';
+            $created_line = $is_academic ? 'Your learning management system account has been created. Here are your login credentials:' : 'Your learning portal account has been created. Here are your login credentials:';
+            $login_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/index.php' : 'https://vantageafricaleaders.com/moodle/login/index.php';
+            $login_label  = $is_academic ? 'system.vantageafricaleaders.com/login' : 'vantageafricaleaders.com/moodle/login';
+            $subject = $portal_title . ' - Vantage Africa School of Leadership';
             $support_phone = '+254796393864';
             $support_whatsapp = 'https://wa.me/254796393864';
             $body = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px;">
@@ -139,11 +148,11 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             </div>
             <hr style="border: solid 1px #d1d3e2; margin: 8px 0">
             <div style="padding: 0 1.5rem 1rem;">
-                <h5 style="color: #2B5470;"><b>Your E-learning Portal Access</b></h5>
+                <h5 style="color: #2B5470;"><b>' . htmlspecialchars($portal_title) . '</b></h5>
                 <p><strong>Dear ' . htmlspecialchars($recipient_name) . ',</strong></p>
-                <p>Your learning portal account has been created. Here are your login credentials:</p>
+                <p>' . htmlspecialchars($created_line) . '</p>
                 <div style="background-color: #f0f8ff; padding: 15px; border: 1px solid #A85431; margin: 15px 0; border-radius: 5px;">
-                    <p style="margin: 5px 0;"><strong>🌐 Portal URL:</strong> <a href="https://vantageafricaleaders.com/moodle/login/index.php" style="color: #2B5470; font-weight: bold;">vantageafricaleaders.com/moodle/login</a></p>
+                    <p style="margin: 5px 0;"><strong>🌐 Portal URL:</strong> <a href="' . htmlspecialchars($login_url) . '" style="color: #2B5470; font-weight: bold;">' . htmlspecialchars($login_label) . '</a></p>
                     <p style="margin: 5px 0;"><strong>👤 Username:</strong> ' . htmlspecialchars($username) . '</p>
                     <p style="margin: 5px 0;"><strong>🔑 Password:</strong> ' . htmlspecialchars($plain_password) . '</p>
                 </div>
