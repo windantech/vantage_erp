@@ -113,6 +113,33 @@ $tplJs = array_map(function ($t) {
                 </div>
             </div>
         </div>
+
+        <!-- Recipient preview: see exactly who will receive this before it goes out -->
+        <div class="modal fade" id="bPreview" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-scrollable modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-people me-2"></i>Recipients
+                            <span id="bpCount" class="badge bg-primary ms-2">0</span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted mb-2" id="bpSummary"></p>
+                        <div class="table-responsive" style="max-height:52vh">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="bg-light"><tr><th style="width:3rem">#</th><th>Name</th><th>Phone</th></tr></thead>
+                                <tbody id="bpRows"></tbody>
+                            </table>
+                        </div>
+                        <div id="bpMore" class="small text-muted mt-2"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="bpConfirm" class="btn btn-primary"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </section>
 
@@ -180,43 +207,74 @@ $tplJs = array_map(function ($t) {
         return fetch('includes/wa_api.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); });
     }
 
+    function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+    var audLabels = { all: 'All contacts', optedin: 'Opted-in only', course: 'By course', event: 'By event (onsite)' };
+    var previewEl = document.getElementById('bPreview');
+    var previewModal = null; try { previewModal = new bootstrap.Modal(previewEl); } catch (e) {}
+    var pending = null;   // {t, aud, list, scheduled, when}
+
+    // Step 1 — resolve the audience and PREVIEW exactly who will receive it before sending.
     sendBtn.addEventListener('click', function () {
         var t = currentTpl();
         if (!t) { statusEl.textContent = 'Pick a template.'; return; }
         var aud = audience();
         if (aud.filter === 'course' && !aud.course_id) { statusEl.textContent = 'Pick a course.'; return; }
         if (aud.filter === 'event' && !aud.course_id) { statusEl.textContent = 'Pick an event.'; return; }
+        var scheduled = document.getElementById('whenLater').checked;
+        if (scheduled && !whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
 
-        // Scheduled path: store it and let the server cron fire it later.
-        if (document.getElementById('whenLater').checked) {
-            if (!whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
-            if (!confirm('Schedule template "' + t.name + '" for ' + whenInput.value.replace('T', ' ') + '?')) return;
-            statusEl.textContent = 'Scheduling…';
-            post('broadcast_schedule', {
-                template: t.name, lang: t.language, audience: aud.filter, course_id: aud.course_id,
-                vars: JSON.stringify(getVars()), when: whenInput.value
-            }).then(function (d) {
-                if (d && d.ok) {
-                    statusEl.innerHTML = 'Scheduled for ' + d.when + '. <a href="wa_broadcasts.php">View scheduled →</a>';
-                } else {
-                    statusEl.textContent = 'Could not schedule: ' + ((d && d.error) || 'error');
-                }
-            });
-            return;
-        }
-
-        statusEl.textContent = 'Resolving audience…';
+        statusEl.textContent = 'Resolving recipients…';
         post('broadcast_audience', aud).then(function (d) {
             if (!d || !d.ok) { statusEl.textContent = 'Failed to load audience.'; return; }
             var list = d.contacts || [];
+            statusEl.textContent = '';
             if (!list.length) { statusEl.textContent = 'No contacts match that audience.'; return; }
-            if (!confirm('Send template "' + t.name + '" to ' + list.length + ' contact(s)?')) { statusEl.textContent = ''; return; }
-            statusEl.textContent = 'Starting…';
-            post('broadcast_create', {
-                template: t.name, lang: t.language, audience: aud.filter, course_id: aud.course_id, total: list.length
-            }).then(function (c) {
-                runBroadcast(t, getVars(), list, (c && c.ok) ? c.broadcast_id : 0);
+
+            // Fill the preview table (cap the DOM for very large audiences).
+            var CAP = 500, rows = '';
+            list.slice(0, CAP).forEach(function (c, idx) {
+                rows += '<tr><td class="text-muted">' + (idx + 1) + '</td><td>' + esc(c.name || '—')
+                      + '</td><td>' + esc(c.wa_id) + '</td></tr>';
             });
+            document.getElementById('bpRows').innerHTML = rows;
+            document.getElementById('bpCount').textContent = list.length;
+            document.getElementById('bpMore').textContent = list.length > CAP
+                ? ('Showing the first ' + CAP + ' of ' + list.length + ' — all ' + list.length + ' will receive it.') : '';
+            document.getElementById('bpSummary').innerHTML = 'Template <strong>' + esc(t.name) + '</strong> ('
+                + esc(t.language) + ') · Audience: <strong>' + esc(audLabels[aud.filter] || aud.filter) + '</strong>'
+                + (scheduled ? ' · Scheduled for <strong>' + esc(whenInput.value.replace('T', ' ')) + '</strong>' : '');
+            var confirmBtn = document.getElementById('bpConfirm');
+            confirmBtn.innerHTML = scheduled
+                ? '<i class="bi bi-clock me-1"></i>Schedule for ' + list.length + ' contact(s)'
+                : '<i class="bi bi-send me-1"></i>Send now to ' + list.length + ' contact(s)';
+            pending = { t: t, aud: aud, list: list, scheduled: scheduled, when: whenInput.value };
+            if (previewModal) previewModal.show();
+        });
+    });
+
+    // Step 2 — the user has SEEN the recipients and confirmed. Now send (or schedule).
+    document.getElementById('bpConfirm').addEventListener('click', function () {
+        if (!pending) return;
+        var p = pending; pending = null;
+        if (previewModal) previewModal.hide();
+
+        if (p.scheduled) {
+            statusEl.textContent = 'Scheduling…';
+            post('broadcast_schedule', {
+                template: p.t.name, lang: p.t.language, audience: p.aud.filter, course_id: p.aud.course_id,
+                vars: JSON.stringify(getVars()), when: p.when
+            }).then(function (d) {
+                statusEl.innerHTML = (d && d.ok)
+                    ? 'Scheduled for ' + d.when + '. <a href="wa_broadcasts.php">View scheduled →</a>'
+                    : 'Could not schedule: ' + ((d && d.error) || 'error');
+            });
+            return;
+        }
+        statusEl.textContent = 'Starting…';
+        post('broadcast_create', {
+            template: p.t.name, lang: p.t.language, audience: p.aud.filter, course_id: p.aud.course_id, total: p.list.length
+        }).then(function (c) {
+            runBroadcast(p.t, getVars(), p.list, (c && c.ok) ? c.broadcast_id : 0);
         });
     });
 
