@@ -317,12 +317,13 @@ $tplJs = array_map(function ($t) {
         sendBtn.disabled = true; statusEl.textContent = '';
         document.getElementById('bProgWrap').classList.remove('d-none');
         var prog = document.getElementById('bProg'), result = document.getElementById('bResult');
-        var CHUNK = 25, i = 0, sent = 0, failed = 0;
+        var CHUNK = 25, i = 0, sent = 0, failed = 0, lastErr = '';
         function step() {
             if (i >= list.length) {
                 prog.style.width = '100%'; prog.textContent = '100%';
-                result.innerHTML = 'Done — sent ' + sent + ', failed ' + failed + '. '
-                    + '<a href="wa_broadcasts.php">View delivery report →</a>';
+                result.innerHTML = 'Done — sent ' + sent + ', failed ' + failed + '.'
+                    + (failed && lastErr ? ' <span class="text-danger">Reason: ' + esc(lastErr) + '</span>' : '')
+                    + ' <a href="wa_broadcasts.php">View delivery report →</a>';
                 sendBtn.disabled = false; return;
             }
             var chunk = list.slice(i, i + CHUNK);
@@ -330,7 +331,8 @@ $tplJs = array_map(function ($t) {
                 template: t.name, lang: t.language, broadcast_id: bid || 0,
                 vars: JSON.stringify(vars), wa_ids: JSON.stringify(chunk)
             }).then(function (d) {
-                if (d && d.ok) { sent += d.sent; failed += d.failed; } else { failed += chunk.length; }
+                if (d && d.ok) { sent += d.sent; failed += d.failed; if (d.error) lastErr = d.error; }
+                else { failed += chunk.length; }
                 i += CHUNK;
                 var pct = Math.round(i / list.length * 100); if (pct > 100) pct = 100;
                 prog.style.width = pct + '%'; prog.textContent = pct + '%';

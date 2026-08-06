@@ -117,6 +117,15 @@ $runs = wa_broadcasts_list($conn, 100);
                                         </div>
                                     </td>
                                 </tr>
+                                <?php if (!empty($b['last_error'])): ?>
+                                <tr>
+                                    <td></td>
+                                    <td colspan="8" class="small text-danger pt-0 pb-2">
+                                        <i class="bi bi-exclamation-octagon me-1"></i><strong>Why it didn't send:</strong>
+                                        <?php echo wa_e($b['last_error']); ?>
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                                 <?php endforeach; else: ?>
                                 <tr><td colspan="9" class="text-center py-4 text-muted">No broadcasts sent yet.</td></tr>
                                 <?php endif; ?>

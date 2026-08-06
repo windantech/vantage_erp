@@ -160,7 +160,8 @@ if ($action === 'broadcast_send') {
     $ids  = json_decode((string)($_POST['wa_ids'] ?? '[]'), true) ?: [];
     if ($tpl === '') { wa_json_out(['ok' => false, 'error' => 'no_template']); }
 
-    $sent = 0; $failed = 0;
+    $sent = 0; $failed = 0; $lastErr = '';
+    if ($bid > 0) { $GLOBALS['WA_BROADCAST_ID'] = $bid; }   // tag every message (sent or failed)
     foreach ($ids as $item) {
         $waId = is_array($item) ? ($item['wa_id'] ?? '') : $item;
         $nm   = is_array($item) ? ($item['name'] ?? '') : '';
@@ -173,13 +174,14 @@ if ($action === 'broadcast_send') {
             ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
             : [];
         $r = wa_send_template($conn, $waId, $tpl, $lang, $components);
-        if (!empty($r['ok'])) {
-            $sent++;
-            if ($bid > 0) { wa_broadcast_tag_message($conn, $bid, $r['wa_message_id'] ?? ''); }
-        } else { $failed++; }
+        if (!empty($r['ok'])) { $sent++; }
+        else { $failed++; $lastErr = (string)($r['error'] ?? 'unknown'); }
         usleep(120000);   // ~8/sec, gentle on the rate limit
     }
-    wa_json_out(['ok' => true, 'sent' => $sent, 'failed' => $failed]);
+    unset($GLOBALS['WA_BROADCAST_ID']);
+    if ($bid > 0 && $lastErr !== '') { wa_broadcast_set_error($conn, $bid, $lastErr); }
+    // Return the last error so the sender sees WHY sends failed, not just a count.
+    wa_json_out(['ok' => true, 'sent' => $sent, 'failed' => $failed, 'error' => $lastErr]);
 }
 
 // ---- Retry a failed outbound message (any agent on their own chats) ----

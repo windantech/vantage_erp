@@ -270,13 +270,19 @@ function wa_save_outbound($conn, $contactId, $m) {
     // other send (AI answer, follow-up, payment confirm, broadcast) leaves it unset = AI.
     $sentBy = (isset($GLOBALS['WA_SENT_BY_STAFF']) && (int)$GLOBALS['WA_SENT_BY_STAFF'] > 0)
         ? (int)$GLOBALS['WA_SENT_BY_STAFF'] : 'NULL';
+    // A broadcast send sets $GLOBALS['WA_BROADCAST_ID'] so EVERY message it produces —
+    // sent OR failed — is tagged to the run. Without this, failed sends (which have no
+    // wa_message_id to tag by) were never linked, so the delivery report showed "Failed 0"
+    // and hid that the whole broadcast bounced.
+    $bcast = (isset($GLOBALS['WA_BROADCAST_ID']) && (int)$GLOBALS['WA_BROADCAST_ID'] > 0)
+        ? (int)$GLOBALS['WA_BROADCAST_ID'] : 'NULL';
     // Stamp wa_timestamp = NOW() on every outbound. Without it the column is NULL, and the
     // unanswered-sweeper's "is there a reply after the customer's message?" test
     // (wa_timestamp >= last_inbound_at) can never see the reply — so it re-sends the same
     // answer every minute. NOW() is server time, always >= the inbound timestamp.
     mysqli_query($conn,
-        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff, wa_timestamp)
-         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy, NOW())");
+        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff, wa_timestamp, broadcast_id)
+         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy, NOW(), $bcast)");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -1196,6 +1202,24 @@ function wa_broadcast_create($conn, $template, $language, $audience, $courseId, 
     return (int)mysqli_insert_id($conn);
 }
 
+/** Idempotently ensure the last_error column exists on wa_broadcasts. */
+function wa_broadcast_error_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_broadcasts` ADD COLUMN IF NOT EXISTS `last_error` VARCHAR(300) NULL DEFAULT NULL");
+}
+
+/** Record WHY a broadcast failed (e.g. "template ... does not exist in en") so the history
+ *  shows the reason instead of a silent "Failed 0". */
+function wa_broadcast_set_error($conn, $bid, $err) {
+    $bid = (int)$bid;
+    if ($bid < 1 || trim((string)$err) === '') { return; }
+    wa_broadcast_error_schema_ensure($conn);
+    $e = "'" . mysqli_real_escape_string($conn, mb_substr((string)$err, 0, 290)) . "'";
+    mysqli_query($conn, "UPDATE wa_broadcasts SET last_error = $e WHERE id = $bid");
+}
+
 /** Tag an already-sent outbound message as belonging to a broadcast (by wa_message_id). */
 function wa_broadcast_tag_message($conn, $broadcastId, $wamid) {
     $bid = (int)$broadcastId;
@@ -1209,6 +1233,7 @@ function wa_broadcast_tag_message($conn, $broadcastId, $wamid) {
  * is aggregated from wa_messages (status: sent -> delivered -> read / failed).
  */
 function wa_broadcasts_list($conn, $limit = 50) {
+    wa_broadcast_error_schema_ensure($conn);   // so b.* includes last_error
     $limit = (int)$limit;
     $sql = "
         SELECT b.*,
@@ -1298,7 +1323,8 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
     $list = wa_broadcast_audience($conn, $audience, $courseId);
     $total = count($list);
     $bid = wa_broadcast_create($conn, $template, $lang, $audience, $courseId, $total, $createdBy);
-    $sent = 0; $failed = 0;
+    $sent = 0; $failed = 0; $lastErr = '';
+    $GLOBALS['WA_BROADCAST_ID'] = $bid;   // tag every message (sent or failed) to this run
     foreach ($list as $item) {
         $waId = $item['wa_id'] ?? '';
         $nm   = $item['name'] ?? '';
@@ -1310,11 +1336,13 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
             ? [['type' => 'body', 'parameters' => array_map(function ($t) { return ['type' => 'text', 'text' => $t]; }, $params)]]
             : [];
         $r = wa_send_template($conn, $waId, $template, $lang, $components);
-        if (!empty($r['ok'])) { $sent++; wa_broadcast_tag_message($conn, $bid, $r['wa_message_id'] ?? ''); }
-        else { $failed++; }
+        if (!empty($r['ok'])) { $sent++; }
+        else { $failed++; $lastErr = (string)($r['error'] ?? 'unknown'); }
         usleep(120000);   // ~8/sec, gentle on the rate limit
     }
-    return ['ok' => true, 'broadcast_id' => $bid, 'total' => $total, 'sent' => $sent, 'failed' => $failed];
+    unset($GLOBALS['WA_BROADCAST_ID']);
+    if ($lastErr !== '') { wa_broadcast_set_error($conn, $bid, $lastErr); }
+    return ['ok' => true, 'broadcast_id' => $bid, 'total' => $total, 'sent' => $sent, 'failed' => $failed, 'error' => $lastErr];
 }
 
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
