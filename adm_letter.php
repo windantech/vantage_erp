@@ -31,15 +31,22 @@ $invoice_no = $adm_no;
 // matters most for academic programmes (Event.location contains 'academic#'), which
 // run continuously with no intake or fixed dates and are often registered before
 // their letter text and fee structure have been configured.
-$ADM_PLACEHOLDER     = '<p>Your detailed admission letter will be shared by our team shortly.</p>';
 $INVOICE_PLACEHOLDER = 'Invoice details will be configured here';
-
-$adm = (isset($adm) && trim(strip_tags((string) $adm)) !== '') ? $adm : $ADM_PLACEHOLDER;
 
 // $purpose doubles as the invoice line-item description and as the programme name in
 // prose, so keep a readable version for the latter — the placeholder must not end up
 // mid-sentence as "registering for Invoice details will be configured here".
 $purpose_name = (isset($purpose) && trim((string) $purpose) !== '') ? trim((string) $purpose) : 'your programme';
+
+// If the caller didn't supply admission-letter body text (e.g. the website
+// registration flow includes this file without setting $adm), generate a proper,
+// professional default instead of a placeholder. The template already prints the
+// "Dear <name>," line above, so this is body-only to avoid a double greeting.
+$ADM_DEFAULT = '<p>We are pleased to offer you admission to <strong>' . htmlspecialchars($purpose_name) . '</strong> '
+    . 'at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the fees indicated below.</p>'
+    . '<p>We look forward to welcoming you and wish you a successful journey with us.</p>';
+$adm = (isset($adm) && trim(strip_tags((string) $adm)) !== '') ? $adm : $ADM_DEFAULT;
+
 $purpose      = (isset($purpose) && trim((string) $purpose) !== '') ? $purpose : $INVOICE_PLACEHOLDER;
 
 // Keep the fee blank-with-placeholder rather than printing a misleading 0.00.
