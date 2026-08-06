@@ -224,10 +224,13 @@ $tplJs = array_map(function ($t) {
     // back to a manual show if the bundle somehow isn't present, so the preview never dies
     // silently the way it did before.
     function openPreview() {
-        if (!previewModal && window.bootstrap && bootstrap.Modal) {
-            previewModal = bootstrap.Modal.getOrCreateInstance(previewEl);
+        // new bootstrap.Modal() exists in ALL Bootstrap 5 versions; getOrCreateInstance was
+        // only added in 5.1, and this server loads an older bundle (hence the throw that got
+        // mislabelled 'network error'). Guard + try/catch so we always fall back cleanly.
+        if (!previewModal && window.bootstrap && typeof bootstrap.Modal === 'function') {
+            try { previewModal = new bootstrap.Modal(previewEl); } catch (e) { previewModal = null; }
         }
-        if (previewModal) { previewModal.show(); return; }
+        if (previewModal && typeof previewModal.show === 'function') { previewModal.show(); return; }
         previewEl.classList.add('show'); previewEl.style.display = 'block';
         previewEl.removeAttribute('aria-hidden'); document.body.classList.add('modal-open');
         if (!backdropEl) { backdropEl = document.createElement('div'); backdropEl.className = 'modal-backdrop fade show'; }
