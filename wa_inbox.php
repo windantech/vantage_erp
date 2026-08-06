@@ -38,9 +38,9 @@ $sql = "
            (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
            (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
               FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-           -- Unread means "needs a HUMAN". While the AI is handling a chat it's not unread;
-           -- it only counts once the chat is escalated or a human owns it (i.e. a person
-           -- must look). So an AI conversing normally never clutters the unread badge.
+           -- Unread means it needs a HUMAN. While the AI is handling a chat it is not unread;
+           -- it only counts once the chat is escalated or a human owns it, so an AI
+           -- conversing normally never clutters the unread badge.
            (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
               (SELECT COUNT(*) FROM wa_messages m
                  WHERE m.contact_id = c.id AND m.direction = 'inbound'

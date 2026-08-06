@@ -339,8 +339,8 @@ if ($action === 'inbox') {
                (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
                (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
                   FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-               -- Unread = "needs a human". AI-handled chats aren't unread until escalated
-               -- or a human owns them (mirrors wa_inbox.php).
+               -- Unread means it needs a human. AI-handled chats are not unread until
+               -- escalated or a human owns them (mirrors wa_inbox.php).
                (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
                   (SELECT COUNT(*) FROM wa_messages m
                      WHERE m.contact_id = c.id AND m.direction = 'inbound'
