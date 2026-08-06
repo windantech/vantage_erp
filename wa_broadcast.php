@@ -399,6 +399,21 @@ $tplJs = array_map(function ($t) {
             });
             return;
         }
+        // Large list -> reliable server-side queue (survives closing the page, resumes on
+        // interruption). Small/test list -> instant browser send for immediate feedback.
+        if (p.list.length > 50) {
+            statusEl.textContent = 'Queuing ' + p.list.length + ' recipients…';
+            post('broadcast_enqueue', {
+                template: p.t.name, lang: p.t.language, audience: p.aud.filter, course_id: p.aud.course_id,
+                vars: JSON.stringify(getVars()),
+                header_media_id: (headerMedia ? headerMedia.id : ''), header_type: (headerMedia ? headerMedia.type : '')
+            }).then(function (d) {
+                if (!d || !d.ok) { statusEl.textContent = 'Could not queue: ' + ((d && d.error) || 'error'); return; }
+                statusEl.textContent = '';
+                trackProgress(d.broadcast_id, d.total);
+            });
+            return;
+        }
         statusEl.textContent = 'Starting…';
         post('broadcast_create', {
             template: p.t.name, lang: p.t.language, audience: p.aud.filter, course_id: p.aud.course_id, total: p.list.length
@@ -406,6 +421,31 @@ $tplJs = array_map(function ($t) {
             runBroadcast(p.t, getVars(), p.list, (c && c.ok) ? c.broadcast_id : 0);
         });
     });
+
+    // Poll a queued broadcast's progress; the send itself runs server-side via cron.
+    function trackProgress(bid, total) {
+        sendBtn.disabled = false;
+        document.getElementById('bProgWrap').classList.remove('d-none');
+        var prog = document.getElementById('bProg'), result = document.getElementById('bResult');
+        result.innerHTML = 'Queued ' + total + ' recipients. Sending starts within a minute and continues in the background…';
+        function tick() {
+            fetch('includes/wa_api.php?action=broadcast_progress&id=' + bid + '&_=' + (new Date().getTime()))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.ok) { setTimeout(tick, 5000); return; }
+                    var tot = d.total || total || 1, done = d.sent + d.failed;
+                    var pct = Math.round(done / tot * 100); if (pct > 100) pct = 100;
+                    prog.style.width = pct + '%'; prog.textContent = pct + '%';
+                    var finished = d.status === 'done';
+                    result.innerHTML = (finished ? '<strong>Done.</strong> ' : 'Sending in the background — ')
+                        + d.sent + ' sent, ' + d.failed + ' failed of ' + tot + '. '
+                        + (finished ? '' : 'You can safely close this page; it keeps sending. ')
+                        + '<a href="wa_broadcasts.php">Delivery report →</a>';
+                    if (!finished) { setTimeout(tick, 4000); }
+                }).catch(function () { setTimeout(tick, 6000); });
+        }
+        tick();
+    }
 
     function runBroadcast(t, vars, list, bid) {
         sendBtn.disabled = true; statusEl.textContent = '';

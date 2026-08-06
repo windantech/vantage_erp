@@ -157,6 +157,36 @@ if ($action === 'broadcast_create') {
     wa_json_out(['ok' => true, 'broadcast_id' => $id]);
 }
 
+// ---- Broadcast: queue a large send for reliable background delivery (supervisor only) ----
+if ($action === 'broadcast_enqueue') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    @set_time_limit(300);   // snapshotting a big audience can take a moment
+    $tpl  = (string)($_POST['template'] ?? '');
+    $lang = (string)($_POST['lang'] ?? 'en');
+    $aud  = (string)($_POST['audience'] ?? 'all');
+    $cid  = (int)($_POST['course_id'] ?? 0);
+    $vars = json_decode((string)($_POST['vars'] ?? '[]'), true) ?: [];
+    $hm   = (string)($_POST['header_media_id'] ?? '');
+    $ht   = (string)($_POST['header_type'] ?? '');
+    if ($tpl === '') { wa_json_out(['ok' => false, 'error' => 'no_template']); }
+    try { wa_json_out(wa_broadcast_enqueue($conn, $tpl, $lang, $vars, $aud, $cid, (int)$staff_id, $hm, $ht)); }
+    catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
+// ---- Broadcast: live progress of a queued run (supervisor only) ----
+if ($action === 'broadcast_progress') {
+    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    wa_broadcast_queue_schema_ensure($conn);
+    $bid = (int)($_GET['id'] ?? $_POST['id'] ?? 0);
+    $total  = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid");
+    $sent   = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid AND status = 'sent'");
+    $failed = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid AND status = 'failed'");
+    $sr = mysqli_query($conn, "SELECT queue_status FROM wa_broadcasts WHERE id = $bid LIMIT 1");
+    $st = ($sr && ($row = mysqli_fetch_assoc($sr))) ? (string)$row['queue_status'] : 'unknown';
+    wa_json_out(['ok' => true, 'total' => $total, 'sent' => $sent, 'failed' => $failed,
+                 'pending' => max(0, $total - $sent - $failed), 'status' => $st]);
+}
+
 // ---- Broadcast: schedule for a future time (supervisor only) ----
 if ($action === 'broadcast_schedule') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }

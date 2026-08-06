@@ -1475,6 +1475,132 @@ function wa_broadcast_execute($conn, $template, $lang, $vars, $audience, $course
     return ['ok' => true, 'broadcast_id' => $bid, 'total' => $total, 'sent' => $sent, 'failed' => $failed, 'error' => $lastErr];
 }
 
+/* ------------------------------------------------------------------------------------
+ * Large-scale broadcast QUEUE — reliable background delivery for tens of thousands.
+ * A broadcast is snapshotted into wa_broadcast_queue (one row per recipient), then the
+ * cron drains it in batches. It survives the browser closing, timeouts and restarts:
+ * every row is marked the instant it's sent, so an interrupted run just resumes.
+ * ---------------------------------------------------------------------------------- */
+
+/** Idempotent schema for the broadcast queue + the run columns the cron needs. */
+function wa_broadcast_queue_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    wa_broadcast_error_schema_ensure($conn);
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_broadcast_queue` (
+        `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `broadcast_id` INT UNSIGNED NOT NULL,
+        `wa_id` VARCHAR(32) NOT NULL,
+        `name` VARCHAR(190) DEFAULT NULL,
+        `course` VARCHAR(255) DEFAULT NULL,
+        `link` VARCHAR(255) DEFAULT NULL,
+        `rep` VARCHAR(190) DEFAULT NULL,
+        `status` ENUM('pending','sent','failed') NOT NULL DEFAULT 'pending',
+        `error` VARCHAR(255) DEFAULT NULL,
+        `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_bq_pick` (`broadcast_id`, `status`, `id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    @mysqli_query($conn, "ALTER TABLE `wa_broadcasts`
+        ADD COLUMN IF NOT EXISTS `vars` TEXT NULL DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS `header_media_id` VARCHAR(255) NULL DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS `header_type` VARCHAR(16) NULL DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS `queue_status` VARCHAR(16) NOT NULL DEFAULT 'none'");
+}
+
+/**
+ * Queue a broadcast for reliable background delivery. Snapshots the whole audience into
+ * wa_broadcast_queue and stores what the cron needs (template, vars, flier). Returns the
+ * run id + recipient count. The cron (wa_run_broadcast_queue) does the actual sending.
+ */
+function wa_broadcast_enqueue($conn, $template, $lang, $vars, $audience, $courseId, $createdBy, $headerMediaId = '', $headerType = '') {
+    wa_broadcast_queue_schema_ensure($conn);
+    $lang = $lang ?: 'en';
+    $list = wa_broadcast_audience($conn, $audience, $courseId);
+    $total = count($list);
+    $bid = wa_broadcast_create($conn, $template, $lang, $audience, $courseId, $total, $createdBy);
+    $v  = "'" . mysqli_real_escape_string($conn, json_encode(array_values((array)$vars), JSON_UNESCAPED_UNICODE)) . "'";
+    $hm = trim((string)$headerMediaId) !== '' ? "'" . mysqli_real_escape_string($conn, $headerMediaId) . "'" : 'NULL';
+    $ht = in_array($headerType, ['image', 'video', 'document'], true) ? "'" . $headerType . "'" : 'NULL';
+    mysqli_query($conn, "UPDATE wa_broadcasts SET vars = $v, header_media_id = $hm, header_type = $ht, queue_status = 'queued' WHERE id = " . (int)$bid);
+    // Bulk-insert recipients (500 per statement) — fast even for 70k.
+    $rows = [];
+    foreach ($list as $it) {
+        $wa = trim((string)($it['wa_id'] ?? ''));
+        if ($wa === '') { continue; }
+        $rows[] = "(" . (int)$bid . ", '" . mysqli_real_escape_string($conn, $wa) . "', "
+            . "'" . mysqli_real_escape_string($conn, (string)($it['name'] ?? '')) . "', "
+            . "'" . mysqli_real_escape_string($conn, (string)($it['course'] ?? '')) . "', "
+            . "'" . mysqli_real_escape_string($conn, (string)($it['link'] ?? '')) . "', "
+            . "'" . mysqli_real_escape_string($conn, (string)($it['rep'] ?? '')) . "')";
+        if (count($rows) >= 500) {
+            mysqli_query($conn, "INSERT INTO wa_broadcast_queue (broadcast_id, wa_id, name, course, link, rep) VALUES " . implode(',', $rows));
+            $rows = [];
+        }
+    }
+    if ($rows) { mysqli_query($conn, "INSERT INTO wa_broadcast_queue (broadcast_id, wa_id, name, course, link, rep) VALUES " . implode(',', $rows)); }
+    return ['ok' => true, 'broadcast_id' => $bid, 'total' => $total];
+}
+
+/**
+ * Cron worker: drain pending queue rows for up to $maxSeconds, sending each template.
+ * A MySQL named lock ensures only ONE drainer runs at a time (so overlapping every-minute
+ * ticks never double-send), and each row is marked the moment it's sent so an interrupted
+ * run resumes cleanly. Tagging via $GLOBALS['WA_BROADCAST_ID'] keeps the delivery report live.
+ */
+function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
+    wa_broadcast_queue_schema_ensure($conn);
+    $lk = mysqli_query($conn, "SELECT GET_LOCK('wa_bcast_queue', 0) AS g");
+    if (!$lk || (int)(mysqli_fetch_assoc($lk)['g'] ?? 0) !== 1) { return ['ok' => true, 'skipped' => 'locked']; }
+    $deadline = time() + max(5, (int)$maxSeconds);
+    $sent = 0; $failed = 0; $doneRuns = [];
+    try {
+        while (time() < $deadline) {
+            $br = mysqli_query($conn,
+                "SELECT b.id, b.template, b.language, b.vars, b.header_media_id, b.header_type
+                   FROM wa_broadcasts b
+                  WHERE b.queue_status IN ('queued','sending')
+                    AND EXISTS (SELECT 1 FROM wa_broadcast_queue q WHERE q.broadcast_id = b.id AND q.status = 'pending')
+                  ORDER BY b.id ASC LIMIT 1");
+            $run = $br ? mysqli_fetch_assoc($br) : null;
+            if (!$run) { break; }
+            $bid = (int)$run['id'];
+            mysqli_query($conn, "UPDATE wa_broadcasts SET queue_status = 'sending' WHERE id = $bid AND queue_status = 'queued'");
+            $vars = json_decode((string)$run['vars'], true) ?: [];
+            $hm = (string)($run['header_media_id'] ?? ''); $ht = (string)($run['header_type'] ?? '');
+            $GLOBALS['WA_BROADCAST_ID'] = $bid;
+            $rows = [];
+            $rs = mysqli_query($conn, "SELECT id, wa_id, name, course, link, rep FROM wa_broadcast_queue
+                WHERE broadcast_id = $bid AND status = 'pending' ORDER BY id ASC LIMIT " . (int)$batch);
+            if ($rs) { while ($r = mysqli_fetch_assoc($rs)) { $rows[] = $r; } }
+            foreach ($rows as $row) {
+                if (time() >= $deadline) { break; }
+                $qid = (int)$row['id'];
+                $params = array_map(function ($v) use ($row) { return wa_broadcast_fill($v, $row); }, $vars);
+                $components = wa_broadcast_components($params, $hm, $ht);
+                $res = wa_send_template($conn, (string)$row['wa_id'], (string)$run['template'], (string)$run['language'], $components);
+                if (!empty($res['ok'])) {
+                    mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'sent', error = NULL WHERE id = $qid");
+                    $sent++;
+                } else {
+                    $err = "'" . mysqli_real_escape_string($conn, mb_substr((string)($res['error'] ?? 'failed'), 0, 240)) . "'";
+                    mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'failed', error = $err WHERE id = $qid");
+                    wa_broadcast_set_error($conn, $bid, (string)($res['error'] ?? 'failed'));
+                    $failed++;
+                }
+            }
+            unset($GLOBALS['WA_BROADCAST_ID']);
+            $left = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid AND status = 'pending'");
+            if ($left === 0) { mysqli_query($conn, "UPDATE wa_broadcasts SET queue_status = 'done' WHERE id = $bid"); $doneRuns[] = $bid; }
+        }
+    } finally {
+        unset($GLOBALS['WA_BROADCAST_ID']);
+        mysqli_query($conn, "SELECT RELEASE_LOCK('wa_bcast_queue')");
+    }
+    return ['ok' => true, 'sent' => $sent, 'failed' => $failed, 'done' => $doneRuns];
+}
+
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
 function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy, $headerMediaId = '', $headerType = '') {
     wa_broadcast_header_schema_ensure($conn);
@@ -1540,15 +1666,17 @@ function wa_run_due_scheduled($conn, $limit = 5) {
         if (!$row) { continue; }
         try {
             $vars = json_decode((string)$row['vars'], true) ?: [];
-            $r = wa_broadcast_execute($conn, $row['template'], $row['language'], $vars,
+            // Enqueue for reliable background delivery instead of sending all at once — a
+            // large scheduled send then drains over many cron ticks (see wa_run_broadcast_queue).
+            $r = wa_broadcast_enqueue($conn, $row['template'], $row['language'], $vars,
                                       $row['audience'], $row['course_id'], $row['created_by'],
                                       (string)($row['header_media_id'] ?? ''), (string)($row['header_type'] ?? ''));
-            $bid = (int)$r['broadcast_id']; $sent = (int)$r['sent']; $failed = (int)$r['failed']; $total = (int)$r['total'];
+            $bid = (int)$r['broadcast_id']; $total = (int)$r['total'];
             mysqli_query($conn,
                 "UPDATE wa_scheduled_broadcasts
-                    SET status = 'sent', broadcast_id = $bid, total = $total, sent = $sent, failed = $failed, error = NULL
+                    SET status = 'sent', broadcast_id = $bid, total = $total, error = NULL
                   WHERE id = $id");
-            $done[] = ['id' => $id, 'sent' => $sent, 'failed' => $failed, 'total' => $total];
+            $done[] = ['id' => $id, 'queued' => $total];
         } catch (Throwable $e) {
             $err = "'" . mysqli_real_escape_string($conn, substr($e->getMessage(), 0, 240)) . "'";
             mysqli_query($conn, "UPDATE wa_scheduled_broadcasts SET status = 'failed', error = $err WHERE id = $id");
