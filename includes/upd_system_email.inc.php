@@ -11,6 +11,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $upd_id = $conn->real_escape_string($_POST['upd_id']); // Get the ID for the update
     $updated_by = $conn->real_escape_string($_SESSION['login_id']); // Capture who made the update
 
+    // Persist the type + linked course/event id so the edit form fully saves the
+    // record. Academic uses the academic event's id — the same key the send-time
+    // match already uses. Kept additive: a blank value preserves what's stored.
+    $email_type = isset($_POST['upd_email_type']) ? $conn->real_escape_string($_POST['upd_email_type']) : '';
+    $event_id   = (isset($_POST['upd_event_id']) && $_POST['upd_event_id'] !== '') ? (int) $_POST['upd_event_id'] : null;
+
     // Get the current date and time in the format YYYY-MM-DD HH:MM:SS
     $last_updated = date('Y-m-d');
 
@@ -28,25 +34,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // Use a prepared statement to update the record in the database
     $stmt = $conn->prepare("
-        UPDATE system_emails1 
-        SET `subject` = ?, 
-            `course_opt` = ?, 
-            `email_opt` = ?, 
-            `temp_opt` = ?, 
-            `body` = ?, 
-            `updated_by` = ?, 
-            `last_updated` = ? 
+        UPDATE system_emails1
+        SET `subject` = ?,
+            `course_opt` = ?,
+            `email_opt` = ?,
+            `temp_opt` = ?,
+            `body` = ?,
+            `email_type` = COALESCE(NULLIF(?, ''), `email_type`),
+            `event_id` = COALESCE(?, `event_id`),
+            `updated_by` = ?,
+            `last_updated` = ?
         WHERE `id` = ?
     ");
     $stmt->bind_param(
-        "sssssssi", 
-        $email_subject, 
-        $course_opt, 
-        $email_opt, 
-        $temp_opt, 
-        $body_json, 
-        $updated_by, 
-        $last_updated, 
+        "ssssssissi",
+        $email_subject,
+        $course_opt,
+        $email_opt,
+        $temp_opt,
+        $body_json,
+        $email_type,
+        $event_id,
+        $updated_by,
+        $last_updated,
         $upd_id
     );
 
