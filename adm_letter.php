@@ -45,7 +45,11 @@ $purpose_name = (isset($purpose) && trim((string) $purpose) !== '') ? trim((stri
 $ADM_DEFAULT = '<p>We are pleased to offer you admission to <strong>' . htmlspecialchars($purpose_name) . '</strong> '
     . 'at Vantage Africa School of Leadership. Your place is confirmed upon settlement of the fees indicated below.</p>'
     . '<p>We look forward to welcoming you and wish you a successful journey with us.</p>';
-$adm = (isset($adm) && trim(strip_tags((string) $adm)) !== '') ? $adm : $ADM_DEFAULT;
+// Treat an empty body OR the legacy "ADM letter to be configured here" note
+// (still injected as $adm by the website registration flow) as "no body", so we
+// ship the proper generated letter instead of that placeholder text.
+$adm_clean = isset($adm) ? trim(strip_tags((string) $adm)) : '';
+$adm = ($adm_clean !== '' && stripos($adm_clean, 'to be configured') === false) ? $adm : $ADM_DEFAULT;
 
 $purpose      = (isset($purpose) && trim((string) $purpose) !== '') ? $purpose : $INVOICE_PLACEHOLDER;
 
