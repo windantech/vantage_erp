@@ -1856,7 +1856,9 @@ function wa_import_map_columns($conn, $headers, $sampleRows) {
 /** Normalise a raw number to a WhatsApp wa_id (digits, international, no +). Local numbers
  *  (leading 0 or short) get the default country code; already-international ones are kept. */
 function wa_import_normalize_phone($raw, $defaultCc = '254') {
-    $d = preg_replace('/\D+/', '', (string)$raw);
+    $s = trim((string)$raw);
+    $s = preg_replace('/\.\d+$/', '', $s);      // drop an Excel decimal fraction, e.g. "…678.0"
+    $d = preg_replace('/\D+/', '', $s);
     if ($d === '') { return ''; }
     if (strpos($d, '00') === 0) { $d = substr($d, 2); }            // 00 international prefix
     $cc = preg_replace('/\D+/', '', (string)$defaultCc); if ($cc === '') { $cc = '254'; }
@@ -1884,10 +1886,16 @@ function wa_csv_first_column($path, $maxRows = 500000) {
 
 /** Import a plain list of phone numbers into wa_contacts (no names/AI). Upserts by wa_id. */
 function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
-    $imported = 0; $updated = 0; $bad = 0;
+    $imported = 0; $updated = 0; $bad = 0; $samples = [];
     foreach ($phones as $raw) {
         $phone = wa_import_normalize_phone($raw, $defaultCc);
-        if (strlen($phone) < 9 || strlen($phone) > 15) { $bad++; continue; }
+        if (strlen($phone) < 9 || strlen($phone) > 15) {
+            $bad++;
+            // Keep a few examples of what was skipped so the cause is visible (header row,
+            // blank, Excel scientific-notation like "2.5E+11", junk, etc.).
+            if (count($samples) < 15) { $samples[] = mb_substr(trim((string)$raw), 0, 40); }
+            continue;
+        }
         $existing = wa_find_contact_by_waid($conn, $phone);
         $cid = wa_upsert_contact($conn, $phone, null);
         if ($cid > 0) {
@@ -1895,7 +1903,8 @@ function wa_import_phones($conn, $phones, $defaultCc = '254', $optIn = false) {
             if ($existing) { $updated++; } else { $imported++; }
         } else { $bad++; }
     }
-    return ['ok' => true, 'imported' => $imported, 'updated' => $updated, 'bad' => $bad, 'total' => count($phones)];
+    return ['ok' => true, 'imported' => $imported, 'updated' => $updated, 'bad' => $bad,
+            'total' => count($phones), 'skipped_samples' => $samples];
 }
 
 /** Import parsed rows into wa_contacts using a field->column map. Upserts by wa_id. */

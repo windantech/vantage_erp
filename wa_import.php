@@ -171,9 +171,14 @@ if (!in_array(777, $role)) {
             .then(function (d) {
                 document.getElementById('iDirect').disabled = false;
                 if (!d || !d.ok) { st.innerHTML = '<span class="text-danger">Import failed: ' + esc((d && d.error) || 'error') + '</span>'; return; }
+                var skipped = (d.skipped_samples && d.skipped_samples.length)
+                    ? '<br><span class="text-muted">Skipped examples (first column values that aren\'t valid numbers): '
+                        + d.skipped_samples.map(function (x) { return '<code>' + esc(x || '(blank)') + '</code>'; }).join(', ')
+                        + '. If these look like real numbers shown as <code>2.5E+11</code> or with <code>.0</code>, format the phone column as <strong>Text</strong> in Excel and re-save the CSV.</span>'
+                    : '';
                 st.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Done — ' + d.imported
                     + ' new, ' + d.updated + ' updated, ' + d.bad + ' skipped, of ' + d.total
-                    + '. <a href="wa_broadcast.php">Broadcast to them →</a></span>';
+                    + '. <a href="wa_broadcast.php">Broadcast to them →</a></span>' + skipped;
             }).catch(function () { document.getElementById('iDirect').disabled = false; st.innerHTML = '<span class="text-danger">Import failed (network).</span>'; });
     });
 
