@@ -28,13 +28,14 @@ ignore_user_abort(true);
 @set_time_limit(300);
 
 $res     = wa_run_due_scheduled($wa_conn, 5);
-$queue   = wa_run_broadcast_queue($wa_conn, 45, 150);   // drain large broadcasts, batch by batch
 $replies = wa_run_due_replies($wa_conn, 20);   // send any batched replies whose window elapsed
 $staleSecs = (int)wa_setting_get($wa_conn, 'unanswered_after_secs', '120');   // default 2 min — never quiet for long
 $sweep   = wa_run_unanswered_sweep($wa_conn, $staleSecs, 50);   // #11: never leave a customer on read
 $fuHours = (int)wa_setting_get($wa_conn, 'followup_after_hours', '23');       // inside the 24h window
 $follow  = wa_run_followups($wa_conn, $fuHours, 20);            // #14: one gentle nudge on quiet chats
 $pay     = wa_run_payment_confirms($wa_conn, 20);              // #15: confirm completed payments
+// LAST: drain large broadcasts (up to ~45s) so a big send never delays live customer chats.
+$queue   = wa_run_broadcast_queue($wa_conn, 45, 150);
 echo json_encode([
     'scheduled'  => $res,
     'bcast_queue'=> $queue,
