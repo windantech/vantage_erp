@@ -10,18 +10,26 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
      * Send email to existing Moodle user with login URL and password reset link.
      * Requires send_mail_function to be available. Returns true if sent.
      */
-    function send_moodle_existing_user_reset_email($email, $recipient_name, $username = '', $is_academic = false) {
+    function send_moodle_existing_user_reset_email($email, $recipient_name, $username = '', $portalOverride = null) {
         if (!function_exists('send_mail_function')) {
             return false;
         }
         $year = date('Y');
-        // Academic courses use the LMS at system.vantageafricaleaders.com with
-        // "learning management system" wording; everything else keeps the
-        // e-learning portal at vantageafricaleaders.com/moodle.
-        $portal_title = $is_academic ? 'Your Learning Management System Access' : 'Your E-learning Portal Access';
-        $portal_name  = $is_academic ? 'learning management system' : 'e-learning portal';
-        $login_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/index.php' : 'https://vantageafricaleaders.com/moodle/login/index.php';
-        $reset_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/forgot_password.php' : 'https://vantageafricaleaders.com/moodle/login/forgot_password.php';
+        // Optional per-registration portal override (e.g. academic registrations
+        // pass the LMS at system.vantageafricaleaders.com). When absent, keep the
+        // default e-learning portal wording + vantageafricaleaders.com/moodle links.
+        $has_override = (is_array($portalOverride) && !empty($portalOverride['login_url']));
+        $portal_title = (is_array($portalOverride) && !empty($portalOverride['portal_title'])) ? $portalOverride['portal_title'] : 'Your E-learning Portal Access';
+        $portal_name  = $has_override ? 'learning management system' : 'e-learning portal';
+        if ($has_override) {
+            $login_url = $portalOverride['login_url'];
+            $pu        = parse_url($login_url);
+            $host_base = ($pu['scheme'] ?? 'https') . '://' . ($pu['host'] ?? '');
+            $reset_url = $host_base . '/login/forgot_password.php';
+        } else {
+            $login_url = 'https://vantageafricaleaders.com/moodle/login/index.php';
+            $reset_url = 'https://vantageafricaleaders.com/moodle/login/forgot_password.php';
+        }
         $subject = $portal_title . ' - Vantage Africa School of Leadership';
         $support_phone = '+254796393864';
         $support_whatsapp = 'https://wa.me/254796393864';
@@ -59,7 +67,7 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
 }
 
 if (!function_exists('create_moodle_user_and_send_email')) {
-    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true, $is_academic = false) {
+    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true, $portalOverride = null) {
         $firstname = trim((string) $firstname);
         $lastname = trim((string) $lastname);
         $email = trim((string) $email);
@@ -90,7 +98,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             $email_sent = false;
             if ($send_email && function_exists('send_moodle_existing_user_reset_email')) {
                 $recipient_name = trim($firstname . ' ' . $lastname);
-                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $username, $is_academic);
+                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $username, $portalOverride);
             }
             return ['success' => false, 'username' => $username, 'password' => $plain_password, 'error' => 'already_created', 'email_sent' => $email_sent];
         }
@@ -134,10 +142,16 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         $email_sent = false;
         if ($send_email && function_exists('send_mail_function')) {
             $recipient_name = trim($firstname . ' ' . $lastname);
-            $portal_title = $is_academic ? 'Your Learning Management System Access' : 'Your E-learning Portal Access';
-            $created_line = $is_academic ? 'Your learning management system account has been created. Here are your login credentials:' : 'Your learning portal account has been created. Here are your login credentials:';
-            $login_url    = $is_academic ? 'https://system.vantageafricaleaders.com/login/index.php' : 'https://vantageafricaleaders.com/moodle/login/index.php';
-            $login_label  = $is_academic ? 'system.vantageafricaleaders.com/login' : 'vantageafricaleaders.com/moodle/login';
+            $has_override = (is_array($portalOverride) && !empty($portalOverride['login_url']));
+            $portal_title = (is_array($portalOverride) && !empty($portalOverride['portal_title'])) ? $portalOverride['portal_title'] : 'Your E-learning Portal Access';
+            $created_line = $has_override ? 'Your learning management system account has been created. Here are your login credentials:' : 'Your learning portal account has been created. Here are your login credentials:';
+            if ($has_override) {
+                $login_url   = $portalOverride['login_url'];
+                $login_label = parse_url($login_url, PHP_URL_HOST) ?: $login_url;
+            } else {
+                $login_url   = 'https://vantageafricaleaders.com/moodle/login/index.php';
+                $login_label = 'vantageafricaleaders.com/moodle/login';
+            }
             $subject = $portal_title . ' - Vantage Africa School of Leadership';
             $support_phone = '+254796393864';
             $support_whatsapp = 'https://wa.me/254796393864';
