@@ -1544,6 +1544,82 @@ function wa_broadcast_enqueue($conn, $template, $lang, $vars, $audience, $course
 }
 
 /**
+ * Send one batch of queued rows CONCURRENTLY (curl_multi), $concurrency at a time — the
+ * big throughput win for large broadcasts. Saves each outbound (tagged to the run via the
+ * caller's $GLOBALS['WA_BROADCAST_ID']) and marks its queue row sent/failed. Returns counts.
+ */
+function wa_broadcast_send_batch($conn, $bid, $rows, $template, $lang, $vars, $hm, $ht, $concurrency = 10) {
+    $url = rtrim(WA_DIALOG_URL, '/') . '/messages';
+    $headers = ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY];
+    // Resolve wa_id -> contact_id once so we can store each outbound.
+    $cmap = [];
+    $ids = [];
+    foreach ($rows as $r) { $w = trim((string)$r['wa_id']); if ($w !== '') { $ids[] = "'" . mysqli_real_escape_string($conn, $w) . "'"; } }
+    if ($ids) {
+        $cr = mysqli_query($conn, "SELECT id, wa_id FROM wa_contacts WHERE wa_id IN (" . implode(',', $ids) . ")");
+        if ($cr) { while ($c = mysqli_fetch_assoc($cr)) { $cmap[(string)$c['wa_id']] = (int)$c['id']; } }
+    }
+    $sent = 0; $failed = 0; $lastErr = '';
+    foreach (array_chunk($rows, max(1, (int)$concurrency)) as $window) {
+        $mh = curl_multi_init();
+        $handles = [];
+        foreach ($window as $row) {
+            $params = array_map(function ($v) use ($row) { return wa_broadcast_fill($v, $row); }, $vars);
+            $components = wa_broadcast_components($params, $hm, $ht);
+            $tpl = ['name' => $template, 'language' => ['code' => $lang]];
+            if ($components) { $tpl['components'] = $components; }
+            $payload = ['messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
+                        'to' => (string)$row['wa_id'], 'type' => 'template', 'template' => $tpl];
+            $display = wa_template_rendered($conn, $template, $lang, $components);
+            if (trim($display) === '') { $display = "[template:{$template}/{$lang}]"; }
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+            ]);
+            curl_multi_add_handle($mh, $ch);
+            $handles[] = ['ch' => $ch, 'row' => $row, 'payload' => $payload, 'display' => $display];
+        }
+        $running = null;
+        do {
+            $mrc = curl_multi_exec($mh, $running);
+            if ($running) { curl_multi_select($mh, 1.0); }
+        } while ($running > 0 && $mrc === CURLM_OK);
+
+        foreach ($handles as $h) {
+            $raw = curl_multi_getcontent($h['ch']);
+            $status = (int)curl_getinfo($h['ch'], CURLINFO_HTTP_CODE);
+            curl_multi_remove_handle($mh, $h['ch']); curl_close($h['ch']);
+            $data = json_decode((string)$raw, true);
+            $wamid = $data['messages'][0]['id'] ?? null;
+            $ok = $status >= 200 && $status < 300 && $wamid !== null;
+            $cid = $cmap[(string)$h['row']['wa_id']] ?? 0;
+            if ($cid > 0) {
+                wa_save_outbound($conn, $cid, ['wa_message_id' => $wamid, 'type' => 'template', 'body' => $h['display'],
+                    'status' => $ok ? 'sent' : 'failed',
+                    'raw_payload' => ['request' => $h['payload'], 'response' => $data, 'http' => $status]]);
+            }
+            $qid = (int)$h['row']['id'];
+            if ($ok) {
+                mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'sent', error = NULL WHERE id = $qid");
+                $sent++;
+            } else {
+                $lastErr = $data['error']['message'] ?? ('HTTP ' . $status);
+                $e = "'" . mysqli_real_escape_string($conn, mb_substr($lastErr, 0, 240)) . "'";
+                mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'failed', error = $e WHERE id = $qid");
+                $failed++;
+            }
+        }
+        curl_multi_close($mh);
+    }
+    if ($lastErr !== '') { wa_broadcast_set_error($conn, $bid, $lastErr); }
+    return ['sent' => $sent, 'failed' => $failed];
+}
+
+/**
  * Cron worker: drain pending queue rows for up to $maxSeconds, sending each template.
  * A MySQL named lock ensures only ONE drainer runs at a time (so overlapping every-minute
  * ticks never double-send), and each row is marked the moment it's sent so an interrupted
@@ -1554,6 +1630,7 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
     $lk = mysqli_query($conn, "SELECT GET_LOCK('wa_bcast_queue', 0) AS g");
     if (!$lk || (int)(mysqli_fetch_assoc($lk)['g'] ?? 0) !== 1) { return ['ok' => true, 'skipped' => 'locked']; }
     $deadline = time() + max(5, (int)$maxSeconds);
+    $concurrency = max(1, min(30, (int)wa_setting_get($conn, 'broadcast_concurrency', '10')));
     $sent = 0; $failed = 0; $doneRuns = [];
     try {
         while (time() < $deadline) {
@@ -1569,26 +1646,15 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
             mysqli_query($conn, "UPDATE wa_broadcasts SET queue_status = 'sending' WHERE id = $bid AND queue_status = 'queued'");
             $vars = json_decode((string)$run['vars'], true) ?: [];
             $hm = (string)($run['header_media_id'] ?? ''); $ht = (string)($run['header_type'] ?? '');
-            $GLOBALS['WA_BROADCAST_ID'] = $bid;
+            $GLOBALS['WA_BROADCAST_ID'] = $bid;   // tag every message this batch produces
             $rows = [];
             $rs = mysqli_query($conn, "SELECT id, wa_id, name, course, link, rep FROM wa_broadcast_queue
                 WHERE broadcast_id = $bid AND status = 'pending' ORDER BY id ASC LIMIT " . (int)$batch);
             if ($rs) { while ($r = mysqli_fetch_assoc($rs)) { $rows[] = $r; } }
-            foreach ($rows as $row) {
-                if (time() >= $deadline) { break; }
-                $qid = (int)$row['id'];
-                $params = array_map(function ($v) use ($row) { return wa_broadcast_fill($v, $row); }, $vars);
-                $components = wa_broadcast_components($params, $hm, $ht);
-                $res = wa_send_template($conn, (string)$row['wa_id'], (string)$run['template'], (string)$run['language'], $components);
-                if (!empty($res['ok'])) {
-                    mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'sent', error = NULL WHERE id = $qid");
-                    $sent++;
-                } else {
-                    $err = "'" . mysqli_real_escape_string($conn, mb_substr((string)($res['error'] ?? 'failed'), 0, 240)) . "'";
-                    mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'failed', error = $err WHERE id = $qid");
-                    wa_broadcast_set_error($conn, $bid, (string)($res['error'] ?? 'failed'));
-                    $failed++;
-                }
+            if ($rows) {
+                $r = wa_broadcast_send_batch($conn, $bid, $rows, (string)$run['template'], (string)$run['language'],
+                                             $vars, $hm, $ht, $concurrency);
+                $sent += (int)$r['sent']; $failed += (int)$r['failed'];
             }
             unset($GLOBALS['WA_BROADCAST_ID']);
             $left = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid AND status = 'pending'");
