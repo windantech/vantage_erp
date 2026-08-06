@@ -3723,6 +3723,19 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
         . "Sound like a trusted, knowledgeable admissions advisor — not a chatbot. Your job is to build genuine "
         . "interest and trust, then guide the prospect towards registering.\n\n"
 
+        . "UNDERSTAND BEFORE YOU REPLY (most important rule): read the customer's message(s) carefully and work out "
+        . "what they ACTUALLY mean and want before writing anything. Respond specifically to THAT — never fire a "
+        . "generic or templated reply that ignores what they said. If several messages arrived together, treat them "
+        . "as ONE and respond once, not to each separately. Judge the kind of message first:\n"
+        . "- A genuine enquiry → answer their real question.\n"
+        . "- An automated / away / auto-reply message, another business's bot, spam, or clearly a wrong number → do "
+        . "NOT launch into a sales script or repeat yourself. Reply once, briefly and warmly, and only offer to help "
+        . "with leadership/professional training if relevant; otherwise a short, polite acknowledgement is enough.\n"
+        . "- NEVER tell someone they 'reached us by mistake' when in fact WE messaged them first (e.g. after a "
+        . "broadcast). If we contacted them and they're not interested, be gracious — don't imply they contacted us.\n"
+        . "- If you're not sure what they want, ask ONE short clarifying question instead of guessing.\n"
+        . "Never send the same message twice; if you'd only repeat yourself, say something genuinely new or stop.\n\n"
+
         . "Today's date is " . date('j M Y') . " — use it to work out which fee tier or upcoming session applies.\n\n"
 
         . ($profile !== ''
@@ -4746,19 +4759,40 @@ function wa_maybe_ai_answer($conn, $waId, $inboundText) {
     // "Human" to own the chat, so the AI must not talk over them.
     if ($conv['handler'] === 'human') { return ['ok' => false, 'skip' => 'handler_human']; }
 
-    // From here the customer ALWAYS gets a response — we never leave them on read.
-    // If the AI provider isn't configured/available, don't go silent: acknowledge
-    // and escalate to a human instead.
-    if (!wa_provider_ready(wa_active_provider($conn))) {
-        return wa_ai_soft_handoff($conn, $conv, 'no_provider');
-    }
-    // Outside WhatsApp's 24-hour window the platform blocks a free-form reply; still
-    // acknowledge + escalate so a human follows up (the send no-ops if truly outside).
-    if (!wa_within_window($contact['last_inbound_at'] ?? null)) {
-        return wa_ai_soft_handoff($conn, $conv, 'outside_window');
-    }
+    // Serialise answering PER CONTACT. Two messages arriving in the same second used to be
+    // answered concurrently — each read the same "previous outbound", so the dedup never
+    // saw the other and the customer got the IDENTICAL reply twice. A named lock makes the
+    // second wait for the first; then the burst-coalesce check below skips the repeat.
+    $cid = (int)$contact['id'];
+    $lockName = 'wa_ai_c' . $cid;
+    $gotLock = false;
+    $lr = mysqli_query($conn, "SELECT GET_LOCK('" . $lockName . "', 8) AS g");
+    if ($lr) { $gotLock = ((int)(mysqli_fetch_assoc($lr)['g'] ?? 0) === 1); }
+    try {
+        // Coalesce a burst: if we've already replied since this contact's LATEST inbound
+        // (an outbound with a higher id exists), the burst is handled — don't send another
+        // (often identical) reply. Id-based so it's immune to timezone skew.
+        $already = (int) wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages o
+            WHERE o.contact_id = $cid AND o.direction = 'outbound' AND o.type <> 'note'
+              AND o.id > (SELECT COALESCE(MAX(i.id), 0) FROM wa_messages i
+                           WHERE i.contact_id = $cid AND i.direction = 'inbound')");
+        if ($already > 0) { return ['ok' => true, 'skip' => 'already_answered']; }
 
-    return wa_ai_answer($conn, $conv, $inboundText);
+        // From here the customer ALWAYS gets a response — we never leave them on read.
+        // If the AI provider isn't configured/available, don't go silent: acknowledge
+        // and escalate to a human instead.
+        if (!wa_provider_ready(wa_active_provider($conn))) {
+            return wa_ai_soft_handoff($conn, $conv, 'no_provider');
+        }
+        // Outside WhatsApp's 24-hour window the platform blocks a free-form reply; still
+        // acknowledge + escalate so a human follows up (the send no-ops if truly outside).
+        if (!wa_within_window($contact['last_inbound_at'] ?? null)) {
+            return wa_ai_soft_handoff($conn, $conv, 'outside_window');
+        }
+        return wa_ai_answer($conn, $conv, $inboundText);
+    } finally {
+        if ($gotLock) { mysqli_query($conn, "SELECT RELEASE_LOCK('" . $lockName . "')"); }
+    }
 }
 
 // =====================================================================
