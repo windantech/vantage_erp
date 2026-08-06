@@ -58,29 +58,50 @@ $amount_raw = isset($amount) ? trim((string) $amount) : '';
 $has_amount = ($amount_raw !== '' && (float) str_replace(',', '', $amount_raw) > 0);
 $amount     = $has_amount ? $amount_raw : $INVOICE_PLACEHOLDER;
 
-// Academic programmes carry a curriculum. When modules are configured for this
-// programme, render them as a styled two-column "Areas to be trained" outline —
-// the same treatment the virtual-course letter uses — between the body and the
-// fee table. When there are none, $areas_html stays empty and nothing is added.
+// Academic outline + fee. Two cases:
+//  (a) UNIT-BASED courses (e.g. CHRP): the website registration sets the
+//      applicant's selection in $selected_units_list / $selected_level_name /
+//      $selected_unit_count / $selected_amount(_fmt). List ONLY those units,
+//      head with the level + count, and price from their selected total (KES).
+//  (b) EVERYTHING ELSE (AI for Leaders, dated courses, etc.): unchanged — fall
+//      back to the full programme curriculum and leave the fee/currency as-is.
 if (!function_exists('academic_program_modules') && is_file(__DIR__ . '/includes/academic_approval.php')) {
     require_once __DIR__ . '/includes/academic_approval.php';
 }
+$invoice_currency   = 'USD';   // column-header currency for the invoice
+$has_unit_selection = (isset($selected_units_list) && is_array($selected_units_list) && !empty($selected_units_list));
+if ($has_unit_selection) {
+    $outline_items = array_values($selected_units_list);
+    $lvl = isset($selected_level_name) ? trim((string) $selected_level_name) : '';
+    $cnt = isset($selected_unit_count) ? (int) $selected_unit_count : count($outline_items);
+    $outline_heading = ($lvl !== '' ? $lvl : 'Selected Units') . ($cnt > 0 ? ' — ' . $cnt . ' Unit(s)' : '');
+    // Academic courses are priced in KES; use the applicant's selected total.
+    if (isset($selected_amount) && (int) $selected_amount > 0) {
+        $sel_fmt = (isset($selected_amount_fmt) && trim((string) $selected_amount_fmt) !== '')
+            ? trim((string) $selected_amount_fmt) : number_format((float) $selected_amount, 2);
+        $amount           = 'KES ' . $sel_fmt;   // currency shown in the value
+        $has_amount       = true;
+        $invoice_currency = '';                  // amount already carries "KES"
+    }
+} else {
+    $outline_items = (isset($conn) && $conn && function_exists('academic_program_modules'))
+        ? academic_program_modules($conn, $purpose_name) : [];
+    $outline_heading = 'The Areas To Be Trained Include';
+}
 $areas_html = '';
-$academic_modules = (isset($conn) && $conn && function_exists('academic_program_modules'))
-    ? academic_program_modules($conn, $purpose_name) : [];
-if (!empty($academic_modules)) {
-    $mod_count = count($academic_modules);
+if (!empty($outline_items)) {
+    $mod_count = count($outline_items);
     $mod_half  = (int) ceil($mod_count / 2);
     $mod_rows  = '';
     for ($mi = 0; $mi < $mod_half; $mi++) {
-        $left  = '<b>' . ($mi + 1) . '.</b> ' . htmlspecialchars($academic_modules[$mi]);
+        $left  = '<b>' . ($mi + 1) . '.</b> ' . htmlspecialchars($outline_items[$mi]);
         $ri    = $mi + $mod_half;
-        $right = isset($academic_modules[$ri]) ? '<b>' . ($ri + 1) . '.</b> ' . htmlspecialchars($academic_modules[$ri]) : '';
+        $right = isset($outline_items[$ri]) ? '<b>' . ($ri + 1) . '.</b> ' . htmlspecialchars($outline_items[$ri]) : '';
         $mod_rows .= '<tr><td style="padding:5px;width:50%;vertical-align:top;">' . $left . '</td>'
                    . '<td style="padding:5px;width:50%;vertical-align:top;">' . $right . '</td></tr>';
     }
     $areas_html = '<table style="margin-top:8px;width:100%;border-collapse:collapse;" border="1" cellspacing="0" cellpadding="0">'
-        . '<tr style="background:#D96800;"><th colspan="2" style="padding:5px;color:white;text-align:left;text-transform:uppercase;">The Areas To Be Trained Include</th></tr>'
+        . '<tr style="background:#D96800;"><th colspan="2" style="padding:5px;color:white;text-align:left;text-transform:uppercase;">' . htmlspecialchars($outline_heading) . '</th></tr>'
         . '<tbody>' . $mod_rows . '</tbody></table>';
 }
 
@@ -194,8 +215,11 @@ function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter
 }
 
 // Generate Invoice PDF
-function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount = true)
+function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount = true, $currency = 'USD')
 {
+    // Column-header currency suffix. Empty => the amount already carries its
+    // currency (e.g. "KES 14,000.00" for unit-based academic courses).
+    $cur_suffix = ($currency !== '') ? ' (' . htmlspecialchars($currency) . ')' : '';
     // With no fee configured, a single spanning placeholder row reads correctly;
     // repeating the placeholder sentence in the Cost/Total columns would not.
     if ($has_amount) {
@@ -256,8 +280,8 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
                         <th style="padding: 5px; color: white;">Item</th>
                         <th style="padding: 5px; color: white;">Unit</th>
                         <th style="padding: 5px; color: white;">Qty</th>
-                        <th style="padding: 5px; color: white;">Cost (USD)</th>
-                        <th style="padding: 5px; color: white;">Total (USD)</th>
+                        <th style="padding: 5px; color: white;">Cost'.$cur_suffix.'</th>
+                        <th style="padding: 5px; color: white;">Total'.$cur_suffix.'</th>
                     </tr>
                     '.$items_rows_html.'
                 </table>
@@ -396,7 +420,7 @@ try {
 }
 
 try {
-    $invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount);
+    $invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount, $invoice_currency);
 } catch (\Throwable $e) {
     error_log('[adm_letter] invoice PDF failed for ' . $email_address
         . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());

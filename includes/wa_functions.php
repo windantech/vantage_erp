@@ -1497,11 +1497,17 @@ function wa_broadcast_queue_schema_ensure($conn) {
         `link` VARCHAR(255) DEFAULT NULL,
         `rep` VARCHAR(190) DEFAULT NULL,
         `status` ENUM('pending','sent','failed') NOT NULL DEFAULT 'pending',
+        `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        `next_attempt_at` DATETIME DEFAULT NULL,
         `error` VARCHAR(255) DEFAULT NULL,
         `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`),
         KEY `idx_bq_pick` (`broadcast_id`, `status`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    // Existing installs: add the retry columns in place.
+    @mysqli_query($conn, "ALTER TABLE `wa_broadcast_queue`
+        ADD COLUMN IF NOT EXISTS `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS `next_attempt_at` DATETIME DEFAULT NULL");
     @mysqli_query($conn, "ALTER TABLE `wa_broadcasts`
         ADD COLUMN IF NOT EXISTS `vars` TEXT NULL DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS `header_media_id` VARCHAR(255) NULL DEFAULT NULL,
@@ -1548,6 +1554,42 @@ function wa_broadcast_enqueue($conn, $template, $lang, $vars, $audience, $course
  * big throughput win for large broadcasts. Saves each outbound (tagged to the run via the
  * caller's $GLOBALS['WA_BROADCAST_ID']) and marks its queue row sent/failed. Returns counts.
  */
+/** How many times a transiently-failed recipient is retried before giving up. */
+if (!defined('WA_BCAST_MAX_ATTEMPTS')) { define('WA_BCAST_MAX_ATTEMPTS', 5); }
+
+/**
+ * Is this send failure worth retrying?
+ *
+ * Meta throttles by throughput and answers with a transient error — the SAME
+ * recipient succeeds moments later. Treating those as permanent silently drops
+ * people from a broadcast, so they must go back on the queue. Everything else
+ * (invalid number, unapproved template, closed 24h window) will fail identically
+ * on every retry, so it is marked failed immediately rather than burning quota.
+ *
+ *   130429  rate limit hit — Cloud API throughput reached
+ *   131056  pair rate limit — too many messages to this one recipient
+ *   80007   business-account rate limit
+ *   133016  account temporarily blocked/restricted, clears on its own
+ *   HTTP 429  throttled;  HTTP 5xx  Meta-side fault;  HTTP 0  network/curl failure
+ */
+function wa_broadcast_is_retryable($code, $httpStatus) {
+    if (in_array((int) $code, [130429, 131056, 80007, 133016], true)) { return true; }
+    $s = (int) $httpStatus;
+    return ($s === 429 || $s >= 500 || $s === 0);
+}
+
+/** Is this specifically a throughput throttle? Drives the adaptive slow-down. */
+function wa_broadcast_is_throttle($code, $httpStatus) {
+    return in_array((int) $code, [130429, 131056, 80007], true) || (int) $httpStatus === 429;
+}
+
+/** Exponential backoff, in seconds, for attempt N (1-based). */
+function wa_broadcast_retry_delay($attempt) {
+    $ladder = [30, 60, 120, 300, 600];
+    $i = max(1, (int) $attempt) - 1;
+    return $ladder[min($i, count($ladder) - 1)];
+}
+
 function wa_broadcast_send_batch($conn, $bid, $rows, $template, $lang, $vars, $hm, $ht, $concurrency = 10) {
     $url = rtrim(WA_DIALOG_URL, '/') . '/messages';
     $headers = ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY];
@@ -1559,8 +1601,25 @@ function wa_broadcast_send_batch($conn, $bid, $rows, $template, $lang, $vars, $h
         $cr = mysqli_query($conn, "SELECT id, wa_id FROM wa_contacts WHERE wa_id IN (" . implode(',', $ids) . ")");
         if ($cr) { while ($c = mysqli_fetch_assoc($cr)) { $cmap[(string)$c['wa_id']] = (int)$c['id']; } }
     }
-    $sent = 0; $failed = 0; $lastErr = '';
-    foreach (array_chunk($rows, max(1, (int)$concurrency)) as $window) {
+    $sent = 0; $failed = 0; $retried = 0; $lastErr = '';
+
+    // Adaptive pacing. Firing every window flat-out is what provokes 130429 in the
+    // first place, so a throttled window halves the in-flight count and doubles the
+    // pause; clean windows walk both back toward the configured maximum. This keeps
+    // throughput high when Meta is happy and self-corrects the moment it is not.
+    $queue   = array_values($rows);
+    $total   = count($queue);
+    $maxWin  = max(1, (int) $concurrency);
+    $win     = $maxWin;
+    $pauseMs = max(0, min(5000, (int) wa_setting_get($conn, 'broadcast_window_pause_ms', '200')));
+    $basePause = $pauseMs;
+    $offset  = 0;
+
+    while ($offset < $total) {
+        $window  = array_slice($queue, $offset, $win);
+        $offset += count($window);
+        $throttled = 0;
+
         $mh = curl_multi_init();
         $handles = [];
         foreach ($window as $row) {
@@ -1596,27 +1655,71 @@ function wa_broadcast_send_batch($conn, $bid, $rows, $template, $lang, $vars, $h
             $data = json_decode((string)$raw, true);
             $wamid = $data['messages'][0]['id'] ?? null;
             $ok = $status >= 200 && $status < 300 && $wamid !== null;
+            $qid = (int)$h['row']['id'];
             $cid = $cmap[(string)$h['row']['wa_id']] ?? 0;
-            if ($cid > 0) {
+
+            $errCode  = (int)($data['error']['code'] ?? 0);
+            $attempts = (int)($h['row']['attempts'] ?? 0) + 1;
+            $willRetry = !$ok
+                && wa_broadcast_is_retryable($errCode, $status)
+                && $attempts < WA_BCAST_MAX_ATTEMPTS;
+
+            // Only record an outbound message for a settled result. A transient
+            // throttle that we are about to retry is not a failed message to the
+            // customer, and logging one would litter the chat thread with every retry.
+            if ($cid > 0 && !$willRetry) {
                 wa_save_outbound($conn, $cid, ['wa_message_id' => $wamid, 'type' => 'template', 'body' => $h['display'],
                     'status' => $ok ? 'sent' : 'failed',
                     'raw_payload' => ['request' => $h['payload'], 'response' => $data, 'http' => $status]]);
             }
-            $qid = (int)$h['row']['id'];
+
             if ($ok) {
-                mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'sent', error = NULL WHERE id = $qid");
+                mysqli_query($conn, "UPDATE wa_broadcast_queue
+                    SET status = 'sent', attempts = $attempts, error = NULL, next_attempt_at = NULL
+                    WHERE id = $qid");
                 $sent++;
+                continue;
+            }
+
+            $lastErr = $data['error']['message'] ?? ('HTTP ' . $status);
+            if ($errCode > 0) { $lastErr = '(#' . $errCode . ') ' . $lastErr; }
+            $e = "'" . mysqli_real_escape_string($conn, mb_substr($lastErr, 0, 240)) . "'";
+
+            if (wa_broadcast_is_throttle($errCode, $status)) { $throttled++; }
+
+            if ($willRetry) {
+                // Back on the queue: still 'pending', but not picked up again until
+                // the backoff elapses.
+                $delay = wa_broadcast_retry_delay($attempts);
+                mysqli_query($conn, "UPDATE wa_broadcast_queue
+                    SET status = 'pending', attempts = $attempts, error = $e,
+                        next_attempt_at = DATE_ADD(NOW(), INTERVAL $delay SECOND)
+                    WHERE id = $qid");
+                $retried++;
             } else {
-                $lastErr = $data['error']['message'] ?? ('HTTP ' . $status);
-                $e = "'" . mysqli_real_escape_string($conn, mb_substr($lastErr, 0, 240)) . "'";
-                mysqli_query($conn, "UPDATE wa_broadcast_queue SET status = 'failed', error = $e WHERE id = $qid");
+                mysqli_query($conn, "UPDATE wa_broadcast_queue
+                    SET status = 'failed', attempts = $attempts, error = $e, next_attempt_at = NULL
+                    WHERE id = $qid");
                 $failed++;
             }
         }
         curl_multi_close($mh);
+
+        // Adapt to what that window just told us, then pause before the next one.
+        if ($throttled > 0) {
+            $win     = max(1, (int) floor($win / 2));
+            $pauseMs = (int) min(5000, max(250, ($pauseMs > 0 ? $pauseMs : 250) * 2));
+            error_log('[wa-broadcast] throttled on ' . $throttled . ' message(s) — concurrency now '
+                . $win . ', pause ' . $pauseMs . 'ms');
+        } elseif ($win < $maxWin) {
+            $win     = min($maxWin, $win + 1);
+            $pauseMs = (int) max($basePause, (int) floor($pauseMs / 2));
+        }
+        if ($offset < $total && $pauseMs > 0) { usleep($pauseMs * 1000); }
     }
+
     if ($lastErr !== '') { wa_broadcast_set_error($conn, $bid, $lastErr); }
-    return ['sent' => $sent, 'failed' => $failed];
+    return ['sent' => $sent, 'failed' => $failed, 'retrying' => $retried];
 }
 
 /**
@@ -1631,14 +1734,22 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
     if (!$lk || (int)(mysqli_fetch_assoc($lk)['g'] ?? 0) !== 1) { return ['ok' => true, 'skipped' => 'locked']; }
     $deadline = time() + max(5, (int)$maxSeconds);
     $concurrency = max(1, min(30, (int)wa_setting_get($conn, 'broadcast_concurrency', '10')));
-    $sent = 0; $failed = 0; $doneRuns = [];
+    $sent = 0; $failed = 0; $retrying = 0; $doneRuns = []; $waiting = [];
     try {
         while (time() < $deadline) {
+            // Only consider a broadcast that has a recipient ready NOW: rows inside
+            // their retry backoff are pending but not yet due. $waiting excludes any
+            // broadcast this tick already found nothing sendable for, so the loop can
+            // never spin on it until the deadline.
+            $skip = $waiting ? ' AND b.id NOT IN (' . implode(',', array_map('intval', $waiting)) . ')' : '';
             $br = mysqli_query($conn,
                 "SELECT b.id, b.template, b.language, b.vars, b.header_media_id, b.header_type
                    FROM wa_broadcasts b
                   WHERE b.queue_status IN ('queued','sending')
-                    AND EXISTS (SELECT 1 FROM wa_broadcast_queue q WHERE q.broadcast_id = b.id AND q.status = 'pending')
+                    AND EXISTS (SELECT 1 FROM wa_broadcast_queue q
+                                 WHERE q.broadcast_id = b.id AND q.status = 'pending'
+                                   AND (q.next_attempt_at IS NULL OR q.next_attempt_at <= NOW()))
+                    $skip
                   ORDER BY b.id ASC LIMIT 1");
             $run = $br ? mysqli_fetch_assoc($br) : null;
             if (!$run) { break; }
@@ -1648,15 +1759,24 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
             $hm = (string)($run['header_media_id'] ?? ''); $ht = (string)($run['header_type'] ?? '');
             $GLOBALS['WA_BROADCAST_ID'] = $bid;   // tag every message this batch produces
             $rows = [];
-            $rs = mysqli_query($conn, "SELECT id, wa_id, name, course, link, rep FROM wa_broadcast_queue
-                WHERE broadcast_id = $bid AND status = 'pending' ORDER BY id ASC LIMIT " . (int)$batch);
+            $rs = mysqli_query($conn, "SELECT id, wa_id, name, course, link, rep, attempts FROM wa_broadcast_queue
+                WHERE broadcast_id = $bid AND status = 'pending'
+                  AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+                ORDER BY id ASC LIMIT " . (int)$batch);
             if ($rs) { while ($r = mysqli_fetch_assoc($rs)) { $rows[] = $r; } }
-            if ($rows) {
-                $r = wa_broadcast_send_batch($conn, $bid, $rows, (string)$run['template'], (string)$run['language'],
-                                             $vars, $hm, $ht, $concurrency);
-                $sent += (int)$r['sent']; $failed += (int)$r['failed'];
+            if (!$rows) {
+                // Everything left for this broadcast is inside its backoff — leave it
+                // for a later tick and move on to any other broadcast.
+                unset($GLOBALS['WA_BROADCAST_ID']);
+                $waiting[] = $bid;
+                continue;
             }
+            $r = wa_broadcast_send_batch($conn, $bid, $rows, (string)$run['template'], (string)$run['language'],
+                                         $vars, $hm, $ht, $concurrency);
+            $sent += (int)$r['sent']; $failed += (int)$r['failed']; $retrying += (int)($r['retrying'] ?? 0);
             unset($GLOBALS['WA_BROADCAST_ID']);
+            // Done only when nothing is pending at all — a row awaiting retry is still
+            // pending, so a run with outstanding retries is never reported as finished.
             $left = (int)wa_scalar($conn, "SELECT COUNT(*) FROM wa_broadcast_queue WHERE broadcast_id = $bid AND status = 'pending'");
             if ($left === 0) { mysqli_query($conn, "UPDATE wa_broadcasts SET queue_status = 'done' WHERE id = $bid"); $doneRuns[] = $bid; }
         }
@@ -1664,7 +1784,8 @@ function wa_run_broadcast_queue($conn, $maxSeconds = 45, $batch = 150) {
         unset($GLOBALS['WA_BROADCAST_ID']);
         mysqli_query($conn, "SELECT RELEASE_LOCK('wa_bcast_queue')");
     }
-    return ['ok' => true, 'sent' => $sent, 'failed' => $failed, 'done' => $doneRuns];
+    return ['ok' => true, 'sent' => $sent, 'failed' => $failed, 'retrying' => $retrying,
+            'waiting' => $waiting, 'done' => $doneRuns];
 }
 
 /* ------------------------------------------------------------------------------------
