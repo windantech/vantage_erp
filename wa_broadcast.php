@@ -253,10 +253,11 @@ $tplJs = array_map(function ($t) {
         if (scheduled && !whenInput.value) { statusEl.textContent = 'Pick a date & time.'; return; }
 
         statusEl.textContent = 'Resolving recipients…';
-        var afd = new FormData();
-        afd.append('action', 'broadcast_audience');
-        afd.append('filter', aud.filter); afd.append('course_id', aud.course_id);
-        fetch('includes/wa_api.php', { method: 'POST', body: afd }).then(function (r) {
+        // Use GET (not POST) — the same request that works when opened directly. Some hosts'
+        // firewalls block the POST, which showed up as a bogus "network error".
+        var qs = 'action=broadcast_audience&filter=' + encodeURIComponent(aud.filter)
+               + '&course_id=' + encodeURIComponent(aud.course_id) + '&_=' + (new Date().getTime());
+        fetch('includes/wa_api.php?' + qs).then(function (r) {
             return r.text().then(function (txt) { return { status: r.status, txt: txt }; });
         }).then(function (res) {
             var d;
@@ -290,7 +291,10 @@ $tplJs = array_map(function ($t) {
                 : '<i class="bi bi-send me-1"></i>Send now to ' + list.length + ' contact(s)';
             pending = { t: t, aud: aud, list: list, scheduled: scheduled, when: whenInput.value };
             openPreview();
-        }).catch(function () { statusEl.textContent = 'Could not load recipients (network error).'; });
+        }).catch(function (err) {
+            statusEl.textContent = 'Could not load recipients: ' + ((err && err.message) ? err.message : 'request blocked')
+                + ' — check DevTools ▸ Network ▸ wa_api.php.';
+        });
     });
 
     // Step 2 — the user has SEEN the recipients and confirmed. Now send (or schedule).
