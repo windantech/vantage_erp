@@ -3038,13 +3038,26 @@ function wa_program_save($conn, $id, $name, $keywords, $status = 1, $assignedTo 
 /** Rep ids (registered_users.id) for a programme, in order. First = the one an
  *  unlocated onsite enquiry is assigned to; all of them can see it in the inbox. */
 function wa_program_owner_ids($program) {
-    $raw = is_array($program) ? (string)($program['assigned_to'] ?? '') : (string)$program;
+    // Accepts a programme row, a CSV string, or the raw array a multi-select posts.
+    $raw = is_array($program) && array_key_exists('assigned_to', $program) ? $program['assigned_to'] : $program;
+    if (is_array($raw)) { $raw = implode(',', $raw); }
+    $raw = (string)$raw;
     $out = [];
     foreach (explode(',', $raw) as $p) {
         $n = (int)trim($p);
         if ($n > 0 && !in_array($n, $out, true)) { $out[] = $n; }
     }
     return $out;
+}
+
+/** Replace ONE programme's reps. Scoped to that programme by id, so setting reps
+ *  on one never affects another. Empty CSV clears them. */
+function wa_program_set_owners($conn, $programId, $csv) {
+    wa_kb_ensure_schema($conn);
+    $pid = (int)$programId;
+    if ($pid < 1) { return; }
+    $clean = implode(',', wa_program_owner_ids(['assigned_to' => $csv]));
+    mysqli_query($conn, "UPDATE wa_programs SET assigned_to = " . wa_sql($conn, $clean) . " WHERE id = $pid");
 }
 
 /** The rep an unlocated onsite enquiry goes to, or null if the programme has none. */

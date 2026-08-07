@@ -449,18 +449,31 @@ switch ($action) {
         $pid  = (int)($_POST['program_id'] ?? 0);
         $name = trim((string)($_POST['name'] ?? ''));
         if ($name === '') { wa_flash('warning', 'Programme name is required.'); wa_redirect('../wa_knowledge.php'); }
-        // Reps: a multi-select posts an array; absent means the form had no picker, so
-        // pass null ("leave alone") rather than '' which would clear the existing reps.
-        $reps = null;
-        if (array_key_exists('assigned_to', $_POST)) {
-            $reps = is_array($_POST['assigned_to'])
-                ? implode(',', array_map('intval', $_POST['assigned_to']))
-                : (string)$_POST['assigned_to'];
-        }
+        // Reps are set per programme on their own row (save_program_reps), so this
+        // form never carries them — pass null so saving a name/keyword edit can
+        // never wipe the reps already chosen for that programme.
         $id = wa_program_save($conn, $pid, $name, (string)($_POST['keywords'] ?? ''),
-                              (($_POST['status'] ?? '1') === '0') ? 0 : 1, $reps);
+                              (($_POST['status'] ?? '1') === '0') ? 0 : 1, null);
         wa_flash('success', 'Training programme saved.');
         wa_redirect('../wa_knowledge.php?ref=program:' . (int)$id);
+    }
+
+    case 'save_program_reps': {
+        // Reps for ONE programme, from that programme's own row. Each programme has
+        // its own set — saving one never touches another's.
+        $pid = (int)($_POST['program_id'] ?? 0);
+        if ($pid < 1) { wa_flash('warning', 'Unknown programme.'); wa_redirect('../wa_knowledge.php'); }
+        $posted = $_POST['assigned_to'] ?? [];      // empty when every rep is deselected
+        $csv = is_array($posted)
+            ? implode(',', array_map('intval', $posted))
+            : (string)$posted;
+        wa_program_set_owners($conn, $pid, $csv);
+        $prog = wa_program_get($conn, $pid);
+        $n = count(wa_program_owner_ids($prog));
+        wa_flash('success', $n > 0
+            ? 'Reps saved for ' . htmlspecialchars((string)($prog['name'] ?? 'programme')) . ' (' . $n . ').'
+            : 'Reps cleared for ' . htmlspecialchars((string)($prog['name'] ?? 'programme')) . ' — onsite enquiries with no country will stay unassigned.');
+        wa_redirect('../wa_knowledge.php');
     }
 
     case 'delete_program': {

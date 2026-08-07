@@ -459,28 +459,50 @@ MNEKB;
                               $repIds = wa_program_owner_ids($p);
                               $repNames = [];
                               foreach ($waStaff as $u) { if (in_array((int)$u['id'], $repIds, true)) { $repNames[] = $u['fullname']; } } ?>
-                            <div class="d-flex justify-content-between align-items-center bg-white border rounded p-2 mb-1">
-                                <div>
-                                    <a href="wa_knowledge.php?ref=program:<?php echo (int)$p['id']; ?>" class="fw-semibold text-decoration-none"><?php echo wa_e($p['name']); ?></a>
-                                    <?php if ((int)$p['status'] !== 1): ?><span class="badge bg-secondary ms-1">inactive</span><?php endif; ?>
-                                    <div class="small text-muted">Keywords: <?php echo wa_e($p['keywords'] ?: '(name)'); ?> · <?php echo count($matched); ?> upcoming session<?php echo count($matched) === 1 ? '' : 's'; ?></div>
-                                    <div class="small">
-                                        <?php if ($repNames): ?>
-                                            <i class="bi bi-person-check me-1 text-success"></i><?php echo wa_e(implode(', ', $repNames)); ?>
-                                        <?php else: ?>
-                                            <span class="text-danger"><i class="bi bi-person-x me-1"></i>No rep — onsite enquiries with no country stay unassigned</span>
-                                        <?php endif; ?>
+                            <div class="bg-white border rounded p-2 mb-1">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <a href="wa_knowledge.php?ref=program:<?php echo (int)$p['id']; ?>" class="fw-semibold text-decoration-none"><?php echo wa_e($p['name']); ?></a>
+                                        <?php if ((int)$p['status'] !== 1): ?><span class="badge bg-secondary ms-1">inactive</span><?php endif; ?>
+                                        <div class="small text-muted">Keywords: <?php echo wa_e($p['keywords'] ?: '(name)'); ?> · <?php echo count($matched); ?> upcoming session<?php echo count($matched) === 1 ? '' : 's'; ?></div>
+                                    </div>
+                                    <div class="d-flex gap-1">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            onclick="waEditProg(<?php echo (int)$p['id']; ?>, <?php echo htmlspecialchars(json_encode($p['name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($p['keywords'] ?: ''), ENT_QUOTES); ?>, <?php echo (int)$p['status']; ?>)">Edit</button>
+                                        <form method="post" action="includes/wa_process.php" class="m-0" onsubmit="return confirm('Delete this programme and its knowledge base?');">
+                                            <input type="hidden" name="action" value="delete_program">
+                                            <input type="hidden" name="program_id" value="<?php echo (int)$p['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
                                     </div>
                                 </div>
-                                <div class="d-flex gap-1">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                        onclick="waEditProg(<?php echo (int)$p['id']; ?>, <?php echo htmlspecialchars(json_encode($p['name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($p['keywords'] ?: ''), ENT_QUOTES); ?>, <?php echo (int)$p['status']; ?>, <?php echo htmlspecialchars(json_encode($repIds), ENT_QUOTES); ?>)">Edit</button>
-                                    <form method="post" action="includes/wa_process.php" class="m-0" onsubmit="return confirm('Delete this programme and its knowledge base?');">
-                                        <input type="hidden" name="action" value="delete_program">
-                                        <input type="hidden" name="program_id" value="<?php echo (int)$p['id']; ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                                    </form>
-                                </div>
+
+                                <!-- Reps for THIS programme only. Each programme has its own; the
+                                     first one selected is who an onsite enquiry with no country is
+                                     assigned to, and everyone selected can see it in their inbox. -->
+                                <form method="post" action="includes/wa_process.php" class="d-flex align-items-end gap-2 mt-2 pt-2 border-top">
+                                    <input type="hidden" name="action" value="save_program_reps">
+                                    <input type="hidden" name="program_id" value="<?php echo (int)$p['id']; ?>">
+                                    <div class="flex-grow-1">
+                                        <label class="form-label small mb-0">
+                                            Reps for <strong><?php echo wa_e($p['name']); ?></strong>
+                                            <span class="text-muted">— first selected gets the chat; Ctrl/Cmd-click for more</span>
+                                        </label>
+                                        <select name="assigned_to[]" class="form-select form-select-sm" multiple size="3">
+                                            <?php foreach ($waStaff as $u): ?>
+                                                <option value="<?php echo (int)$u['id']; ?>" <?php echo in_array((int)$u['id'], $repIds, true) ? 'selected' : ''; ?>><?php echo wa_e($u['fullname']); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="small mt-1">
+                                            <?php if ($repNames): ?>
+                                                <i class="bi bi-person-check me-1 text-success"></i>Currently: <?php echo wa_e(implode(', ', $repNames)); ?>
+                                            <?php else: ?>
+                                                <span class="text-danger"><i class="bi bi-person-x me-1"></i>No rep — onsite enquiries with no country stay unassigned</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-sm btn-primary">Save reps</button>
+                                </form>
                             </div>
                         <?php endforeach; ?>
                         <form method="post" action="includes/wa_process.php" class="row g-2 mt-1">
@@ -492,31 +514,15 @@ MNEKB;
                                 <select name="status" id="progStatus" class="form-select form-select-sm"><option value="1">Active</option><option value="0">Inactive</option></select>
                             </div>
                             <div class="col-6 col-md-1"><button type="submit" class="btn btn-sm btn-primary w-100">Save</button></div>
-                            <div class="col-12">
-                                <label class="form-label small mb-0 mt-1">
-                                    Reps for this programme
-                                    <span class="text-muted">— an onsite enquiry that hasn't named a country goes to the
-                                    <strong>first</strong> rep listed; everyone selected sees it in their inbox.
-                                    Ctrl/Cmd-click for more than one.</span>
-                                </label>
-                                <select name="assigned_to[]" id="progReps" class="form-select form-select-sm" multiple size="4">
-                                    <?php foreach ($waStaff as $u): ?>
-                                        <option value="<?php echo (int)$u['id']; ?>"><?php echo wa_e($u['fullname']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
+                            <div class="col-12"><div class="small text-muted">Reps are set per programme on each row above — save the programme first, then pick its reps.</div></div>
                         </form>
                     </div>
                     <script>
-                    function waEditProg(id, name, kw, status, reps) {
+                    function waEditProg(id, name, kw, status) {
                         document.getElementById('progId').value = id;
                         document.getElementById('progName').value = name;
                         document.getElementById('progKw').value = kw;
                         document.getElementById('progStatus').value = String(status);
-                        var sel = document.getElementById('progReps'), want = (reps || []).map(String);
-                        for (var i = 0; i < sel.options.length; i++) {
-                            sel.options[i].selected = want.indexOf(sel.options[i].value) !== -1;
-                        }
                         document.getElementById('progName').focus();
                     }
                     </script>
