@@ -228,8 +228,19 @@ if (!headers_sent()) {
             </div>
         </div>
     </li>
-<?php } 
- if(in_array(4, $role)) {
+<?php } ?>
+
+<?php if (in_array(55, $role) || in_array(777, $role)) { ?>
+    <!-- Corporate Trainings -->
+    <li class="nav-item">
+        <a class="nav-link" href="corporate_programs.php">
+            <i class="bi bi-briefcase"></i>
+            <span>Corporate Trainings</span>
+        </a>
+    </li>
+<?php } ?>
+
+<?php if(in_array(4, $role)) {
 ?>
     <!-- Marketing -->
 <li class="nav-item">
