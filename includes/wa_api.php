@@ -323,6 +323,7 @@ if ($action === 'resend') {
 if ($action === 'inbox') {
     wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before we read it
     wa_conv_reengage_schema_ensure($conn);   // ensure reengaged_at exists before we read it
+    wa_conv_mode_schema_ensure($conn);       // ensure program_id exists before the scope/triage SQL reads it
     $where = wa_inbox_scope_where($staff_id, $is_supervisor);   // reps see their own courses' chats
     $sql = "
         SELECT cv.id, cv.handler, cv.escalated, cv.last_message_at,
@@ -331,6 +332,7 @@ if ($action === 'inbox') {
                     SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
                       AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
                  THEN 1 ELSE 0 END) AS reengaged_responded,
+               " . wa_triage_sql('cv') . " AS is_triage,
                CASE cv.ref_type
                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
@@ -368,6 +370,7 @@ if ($action === 'inbox') {
                 'last_kind' => $r['last_kind'] ?: 'in',
                 'unread'    => (int)$r['unread'],
                 'reengaged' => (int)$r['reengaged_responded'],
+                'triage'    => (int)$r['is_triage'],
             ];
         }
     }

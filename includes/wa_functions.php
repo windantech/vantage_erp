@@ -460,6 +460,23 @@ function wa_user_can_see_conv($conn, $conv, $staffId, $isSupervisor) {
 /** WHERE fragment (incl. leading WHERE) that limits the inbox list to what $staffId may
  *  see under the same rule as wa_user_can_see_conv(). '' for supervisors (see all).
  *  Assumes the wa_conversations alias is 'cv'. */
+/**
+ * SQL predicate for a TRIAGE chat: nobody can act on it and nobody owns it.
+ *
+ * No owner, no programme link, and no topic the router could classify — so every
+ * ownership rule in wa_inbox_scope_where() fails and the chat is invisible to
+ * every rep, supervisors aside. These are the "is it online or in person?",
+ * "do you have a class in Abuja?" enquiries that arrive before the bot has
+ * worked out what they want. Left alone they are seen by nobody at all.
+ *
+ * Shared so the inbox page, the live JSON feed and the scope all agree.
+ */
+function wa_triage_sql($a = 'cv') {
+    return "(($a.assigned_user_id IS NULL OR $a.assigned_user_id = '')
+             AND $a.program_id IS NULL
+             AND ($a.ref_type = 'unknown' OR $a.ref_id IS NULL))";
+}
+
 function wa_inbox_scope_where($staffId, $isSupervisor) {
     if ($isSupervisor) { return ''; }
     $sid = (int)$staffId;
@@ -471,6 +488,9 @@ function wa_inbox_scope_where($staffId, $isSupervisor) {
         -- Training-programme reps: an onsite enquiry with no country yet belongs to the
         -- programme, so every rep on it sees the chat, not only the one it was assigned to.
         OR EXISTS (SELECT 1 FROM wa_programs wp WHERE wp.id = cv.program_id AND FIND_IN_SET($sid, wp.assigned_to) > 0)
+        -- Triage: unrouted AND unowned, so no rule above can ever match it. Show it to
+        -- every rep rather than to nobody. The Triage tab isolates these.
+        OR " . wa_triage_sql('cv') . "
     ) ";
 }
 
