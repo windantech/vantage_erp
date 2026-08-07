@@ -105,6 +105,27 @@ if (!empty($outline_items)) {
         . '<tbody>' . $mod_rows . '</tbody></table>';
 }
 
+// Payment-plan breakdown for the invoice. The academic registration provides
+// $invoice_plan ('full'|'instalment') + totals; academic fees are in KES. When
+// none are set (other flows), $invoice_breakdown_html stays empty.
+$invoice_breakdown_html = '';
+if (isset($invoice_plan) && $invoice_plan !== '') {
+    $bd_money = function ($v) { return 'KES ' . number_format((float) str_replace(',', '', (string) $v), 2); };
+    if ($invoice_plan === 'instalment') {
+        $bd_title = 'Payment Plan &mdash; Instalment';
+        $bd_rows  = '<tr><td style="padding:6px 8px;">Total</td><td style="padding:6px 8px;">' . $bd_money($invoice_total ?? 0) . '</td></tr>'
+                  . '<tr><td style="padding:6px 8px;">Paid now (1st instalment)</td><td style="padding:6px 8px;">' . $bd_money($invoice_amount_now ?? 0) . '</td></tr>'
+                  . '<tr><td style="padding:6px 8px;">Balance (2nd instalment)</td><td style="padding:6px 8px;">' . $bd_money($invoice_balance ?? 0)
+                  . (!empty($invoice_balance_due) ? ' &mdash; due by ' . htmlspecialchars($invoice_balance_due) : '') . '</td></tr>';
+    } else {
+        $bd_title = 'Payment Plan';
+        $bd_rows  = '<tr><td style="padding:6px 8px;">Total paid in full</td><td style="padding:6px 8px;">' . $bd_money($invoice_total ?? 0) . '</td></tr>';
+    }
+    $invoice_breakdown_html = '<table style="margin-top:8px;width:100%;border-collapse:collapse;" border="1" cellspacing="0" cellpadding="0">'
+        . '<tr style="background:#D96800;"><th colspan="2" style="padding:5px;color:white;text-align:left;text-transform:uppercase;">' . $bd_title . '</th></tr>'
+        . '<tbody>' . $bd_rows . '</tbody></table>';
+}
+
 // Generate Admission Letter PDF
 function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount = true, $areas_html = '')
 {
@@ -215,7 +236,7 @@ function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter
 }
 
 // Generate Invoice PDF
-function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount = true, $currency = 'USD')
+function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount = true, $currency = 'USD', $breakdown_html = '')
 {
     // Column-header currency suffix. Empty => the amount already carries its
     // currency (e.g. "KES 14,000.00" for unit-based academic courses).
@@ -289,6 +310,8 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
                     </tr>
                     '.$items_rows_html.'
                 </table>
+
+                '.$breakdown_html.'
 
                 <h3 style="text-align: left; margin-bottom: 0;">HOW TO PAY:</h3>
                 <p style="text-align: left; margin: 1px;"><b>Direct Bank Transfer</b></p>
@@ -424,7 +447,7 @@ try {
 }
 
 try {
-    $invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount, $invoice_currency);
+    $invoice_path = generatePdf_invoice($email_address, $recipient_name, $subject, $invoice_no, $invoice_date, $amount, $purpose, $entry_id, $has_amount, $invoice_currency, $invoice_breakdown_html);
 } catch (\Throwable $e) {
     error_log('[adm_letter] invoice PDF failed for ' . $email_address
         . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
