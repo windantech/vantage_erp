@@ -114,7 +114,7 @@ if (isset($invoice_plan) && $invoice_plan !== '') {
     if ($invoice_plan === 'instalment') {
         $bd_title = 'Payment Plan &mdash; Instalment';
         $bd_rows  = '<tr><td style="padding:6px 8px;">Total</td><td style="padding:6px 8px;">' . $bd_money($invoice_total ?? 0) . '</td></tr>'
-                  . '<tr><td style="padding:6px 8px;">Paid now (1st instalment)</td><td style="padding:6px 8px;">' . $bd_money($invoice_amount_now ?? 0) . '</td></tr>'
+                  . '<tr style="background:#FDEBCB;"><td style="padding:6px 8px;font-weight:bold;">Payable now (1st instalment)</td><td style="padding:6px 8px;font-weight:bold;">' . $bd_money($invoice_amount_now ?? 0) . '</td></tr>'
                   . '<tr><td style="padding:6px 8px;">Balance (2nd instalment)</td><td style="padding:6px 8px;">' . $bd_money($invoice_balance ?? 0)
                   . (!empty($invoice_balance_due) ? ' &mdash; due by ' . htmlspecialchars($invoice_balance_due) : '') . '</td></tr>';
     } else {
