@@ -78,6 +78,10 @@ $step('followups',  function () use ($wa_conn) {                                
     return wa_run_followups($wa_conn, $fuHours, 20);
 });
 $step('payments',   function () use ($wa_conn) { return wa_run_payment_confirms($wa_conn, 20); }); // #15: confirm completed payments
+$step('onsite',     function () use ($wa_conn) {                                                // in-person leads the AI cannot close
+    $mins = (int) wa_setting_get($wa_conn, 'onsite_escalate_after_mins', '60');
+    return wa_run_onsite_escalation($wa_conn, $mins, 50);
+});
 // LAST: drain large broadcasts (up to ~45s) so a big send never delays live customer chats.
 $step('bcast_queue', function () use ($wa_conn) { return wa_run_broadcast_queue($wa_conn, 45, 150); });
 

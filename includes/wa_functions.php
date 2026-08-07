@@ -4751,6 +4751,59 @@ function wa_followup_schema_ensure($conn) {
  * replied to and haven't nudged yet. Gated by the 'followup_enabled' setting (off by
  * default) so it never starts messaging customers until you switch it on.
  */
+/**
+ * Surface onsite leads the AI cannot close.
+ *
+ * Only a human can pin down WHICH country/session an in-person client wants and
+ * register them — the AI can ask, but it cannot finish the job. Meanwhile the
+ * inbox only counts a chat as unread when `escalated = 1 OR handler = 'human'`,
+ * so an AI-handled onsite chat carries no unread badge and sits invisible among
+ * thousands of others. That is how in-person leads go unfollowed even once they
+ * have an owner.
+ *
+ * Escalate onsite chats that have gone quiet, so they appear as unread for their
+ * rep, and leave a staff-only note saying what is needed. Never touches a chat a
+ * human already owns, or one already escalated, so it cannot nag.
+ *
+ * Off by default: set onsite_escalate_enabled=1 in WhatsApp settings.
+ */
+function wa_run_onsite_escalation($conn, $afterMins = 60, $limit = 50) {
+    if (wa_setting_get($conn, 'onsite_escalate_enabled', '0') !== '1') {
+        return ['ok' => true, 'skipped' => 'disabled'];
+    }
+    wa_conv_mode_schema_ensure($conn);
+    $after = max(5, (int)$afterMins);
+    $limit = max(1, (int)$limit);
+
+    $res = mysqli_query($conn, "
+        SELECT cv.id AS conv_id, cv.contact_id, cv.assigned_user_id, cv.last_route_reason
+          FROM wa_conversations cv
+          JOIN wa_contacts c ON c.id = cv.contact_id
+         WHERE cv.delivery_mode = 'onsite'
+           AND cv.escalated = 0
+           AND cv.handler <> 'human'
+           AND cv.status = 'open'
+           AND c.opted_out = 0
+           AND c.last_inbound_at IS NOT NULL
+           AND c.last_inbound_at <= (NOW() - INTERVAL $after MINUTE)
+         ORDER BY c.last_inbound_at ASC
+         LIMIT $limit");
+    if (!$res) { return ['ok' => false, 'error' => mysqli_error($conn)]; }
+
+    $done = 0;
+    while ($r = mysqli_fetch_assoc($res)) {
+        $convId = (int)$r['conv_id'];
+        mysqli_query($conn, "UPDATE wa_conversations SET escalated = 1 WHERE id = $convId");
+        $awaiting = ($r['last_route_reason'] ?? '') === 'await_onsite_location';
+        wa_ai_post_note($conn, (int)$r['contact_id'],
+            'In-person lead needing a human. ' . ($awaiting
+                ? 'They have asked for onsite training but have not said which country yet — confirm their location, then register them on that session.'
+                : 'They want in-person training — pick up the conversation and take them through to registration.'));
+        $done++;
+    }
+    return ['ok' => true, 'escalated' => $done];
+}
+
 function wa_run_followups($conn, $afterHours = 23, $limit = 20) {
     if (wa_setting_get($conn, 'followup_enabled', '0') !== '1') { return ['ok' => true, 'skipped' => 'disabled']; }
     wa_followup_schema_ensure($conn);
