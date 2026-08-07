@@ -240,6 +240,11 @@ $bulletBox = static function ($name, $label) use ($v) {
                             <input type="text" name="fee_unit" class="form-control rounded-0" value="<?php echo htmlspecialchars($v('fee_unit')); ?>" placeholder="e.g. per participant">
                         </div>
                         <div class="col-md-3">
+                            <label class="form-label">Currency</label>
+                            <input type="text" name="currency" class="form-control rounded-0" value="<?php echo htmlspecialchars($v('currency', 'KES')); ?>" placeholder="KES">
+                            <small class="text-muted">Used on the invoice the registrant receives.</small>
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">Sort order</label>
                             <input type="number" name="sort_order" class="form-control rounded-0" value="<?php echo htmlspecialchars($v('sort_order', '0')); ?>">
                         </div>

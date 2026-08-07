@@ -16,7 +16,7 @@ if (!function_exists('corporate_get_all_programs')) {
     {
         return [
             'title', 'tagline', 'accreditation', 'start_date', 'end_date', 'location', 'venue_details',
-            'mode', 'duration', 'fee', 'fee_unit', 'overview',
+            'mode', 'duration', 'fee', 'fee_unit', 'currency', 'overview',
             'featured_solution_title', 'featured_solution_text', 'featured_solution_points',
             'challenges', 'why_solution', 'features', 'gains', 'whats_included', 'who_should_attend', 'why_vantage',
             'registration_link', 'course_outline_link', 'group_rate_link', 'contact_whatsapp', 'image_url',
@@ -128,6 +128,12 @@ if (!function_exists('corporate_get_all_programs')) {
     function corporate_delete_program($conn, $id)
     {
         $id = (int) $id;
+        // Deactivate the linked Event (keep it so any existing registrations / payments stay intact).
+        $er = mysqli_query($conn, "SELECT `event_id` FROM `corporate_programs` WHERE `id` = $id LIMIT 1");
+        if ($er && ($row = mysqli_fetch_assoc($er)) && (int) $row['event_id'] > 0) {
+            $eid = (int) $row['event_id'];
+            mysqli_query($conn, "UPDATE `Event` SET `status` = 0 WHERE `event_id` = $eid LIMIT 1");
+        }
         mysqli_query($conn, "DELETE FROM `corporate_curriculum` WHERE `program_id` = $id");
         mysqli_query($conn, "DELETE FROM `corporate_lecturers` WHERE `program_id` = $id");
         return (bool) mysqli_query($conn, "DELETE FROM `corporate_programs` WHERE `id` = $id LIMIT 1");
@@ -140,7 +146,60 @@ if (!function_exists('corporate_get_all_programs')) {
         }
         $id = (int) $id;
         $st = $conn->real_escape_string($status);
-        return (bool) mysqli_query($conn, "UPDATE `corporate_programs` SET `status` = '$st' WHERE `id` = $id LIMIT 1");
+        $ok = (bool) mysqli_query($conn, "UPDATE `corporate_programs` SET `status` = '$st' WHERE `id` = $id LIMIT 1");
+        if ($ok) {
+            corporate_sync_event($conn, $id);
+        }
+        return $ok;
+    }
+
+    /**
+     * Create or update the hidden Event that makes a corporate training registrable.
+     * The Event.location marker `corporate#<id>` is what the registration / invoice
+     * flow reads to route a signup back to this training (parallel to `academic#`).
+     * Idempotent: safe to call on every save / status change.
+     */
+    function corporate_sync_event($conn, $program_id)
+    {
+        $program_id = (int) $program_id;
+        $p = corporate_get_program($conn, $program_id);
+        if (!$p) {
+            return 0;
+        }
+        $title = (string) $p['title'];
+        $start = (string) $p['start_date'];
+        $end = (string) $p['end_date'];
+        if ($start === '0000-00-00') { $start = ''; }
+        if ($end === '0000-00-00') { $end = ''; }
+        $feeNum = preg_replace('/[^0-9.]/', '', (string) $p['fee']);      // "49,500" -> "49500"
+        $currency = trim((string) $p['currency']) !== '' ? (string) $p['currency'] : 'KES';
+        $marker = 'corporate#' . $program_id;
+        $evStatus = ($p['status'] === 'active') ? 1 : 0;
+        $existingEventId = (int) $p['event_id'];
+
+        if ($existingEventId > 0) {
+            $stmt = $conn->prepare("UPDATE `Event` SET `event_title`=?, `start_on`=?, `end_on`=?, `location`=?, `early_amount`=?, `currency_code`=?, `status`=? WHERE `event_id`=? LIMIT 1");
+            if ($stmt) {
+                $stmt->bind_param('ssssssii', $title, $start, $end, $marker, $feeNum, $currency, $evStatus, $existingEventId);
+                $stmt->execute();
+                $stmt->close();
+            }
+            return $existingEventId;
+        }
+
+        // assigned_to / status / commission_* all have DB defaults, so we omit them here.
+        $stmt = $conn->prepare("INSERT INTO `Event` (`event_title`, `start_on`, `end_on`, `location`, `early_amount`, `currency_code`, `status`) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        if (!$stmt) {
+            return 0;
+        }
+        $stmt->bind_param('ssssssi', $title, $start, $end, $marker, $feeNum, $currency, $evStatus);
+        $stmt->execute();
+        $newEventId = (int) $stmt->insert_id;
+        $stmt->close();
+        if ($newEventId > 0) {
+            mysqli_query($conn, "UPDATE `corporate_programs` SET `event_id` = $newEventId WHERE `id` = $program_id LIMIT 1");
+        }
+        return $newEventId;
     }
 
     /** Build the value list (scalar cols + sort_order + status) from $data, dates blank -> null. */
@@ -184,6 +243,7 @@ if (!function_exists('corporate_get_all_programs')) {
 
         corporate_save_curriculum($conn, $newId, $curriculum_rows);
         corporate_save_lecturers($conn, $newId, is_array($lecturers) ? $lecturers : []);
+        corporate_sync_event($conn, $newId);
         return $newId;
     }
 
@@ -216,6 +276,7 @@ if (!function_exists('corporate_get_all_programs')) {
         }
         corporate_save_curriculum($conn, $id, $curriculum_rows);
         corporate_save_lecturers($conn, $id, is_array($lecturers) ? $lecturers : []);
+        corporate_sync_event($conn, $id);
         return true;
     }
 

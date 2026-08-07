@@ -1445,8 +1445,99 @@ function sendAdmissionEmail($client_email, $client_name, $subject, $generatedFil
 // COMBINED FUNCTION - ADMISSION + INVOICE
 // =============================================
 // $event_id (last param) is passed through into generateAdmissionLetter().
+/**
+ * Corporate trainings (corporate_programs, Event.location = 'corporate#<id>').
+ * Fully self-contained, currency-aware (KES by default) proforma invoice + confirmation
+ * email — NO admission letter. Deliberately does not touch the USD generateInvoice /
+ * generateInvoicePdf path used by every other programme.
+ */
+function generateCorporateTrainingInvoice($conn, $program_id, $client_email, $client_name, $start_date = null, $end_date = null, $ticket_id = null, $record_id = null) {
+    $program_id = (int) $program_id;
+    $res = mysqli_query($conn, "SELECT `title`, `fee`, `fee_unit`, `currency`, `location`, `start_date`, `end_date` FROM `corporate_programs` WHERE `id` = $program_id LIMIT 1");
+    if (!$res || !($p = mysqli_fetch_assoc($res))) {
+        return false;
+    }
+
+    $title    = trim((string) $p['title']) !== '' ? (string) $p['title'] : 'Corporate Training';
+    $currency = trim((string) $p['currency']) !== '' ? strtoupper((string) $p['currency']) : 'KES';
+    $fee_num  = (float) preg_replace('/[^0-9.]/', '', (string) $p['fee']);
+    $fee_unit = trim((string) $p['fee_unit']);
+    $venue    = trim((string) $p['location']);
+    // Fall back to the training's own dates if the caller didn't pass any.
+    $sd = $start_date ?: ((!empty($p['start_date']) && $p['start_date'] !== '0000-00-00') ? $p['start_date'] : null);
+    $ed = $end_date   ?: ((!empty($p['end_date'])   && $p['end_date']   !== '0000-00-00') ? $p['end_date']   : null);
+    $sd_fmt = $sd ? date('j M Y', strtotime($sd)) : null;
+    $ed_fmt = $ed ? date('j M Y', strtotime($ed)) : null;
+
+    $invoice_no   = generateInvoiceNumber();
+    $invoice_date = date("jS F Y");
+
+    $pay_link = ($ticket_id !== null && $ticket_id !== '')
+        ? ('https://vantageafricaleaders.com/pay/complete_payment.php?ticket_id=' . urlencode($ticket_id) . '&pay=1')
+        : 'https://vantageafricaleaders.com/pay.php';
+
+    $money = function ($n) use ($currency) {
+        return htmlspecialchars($currency) . ' ' . number_format((float) $n, 2);
+    };
+    $desc = $title . ($fee_unit !== '' ? ' (' . $fee_unit . ')' : '');
+    $dates_line = $sd_fmt ? ($sd_fmt . ($ed_fmt && $ed_fmt !== $sd_fmt ? ' &#8211; ' . $ed_fmt : '')) : '';
+
+    $html = '<html><head><meta charset="utf-8"><style>
+        body{font-family:DejaVu Sans, Arial, sans-serif;color:#222;font-size:13px;}
+        .wrap{padding:24px;}
+        .top{border-bottom:3px solid #A85431;padding-bottom:10px;margin-bottom:18px;}
+        .top h1{color:#2B5470;margin:0;font-size:22px;}
+        .muted{color:#666;}
+        table{width:100%;border-collapse:collapse;margin:14px 0;}
+        th,td{border:1px solid #ddd;padding:9px;text-align:left;}
+        th{background:#2B5470;color:#fff;}
+        td.r,th.r{text-align:right;}
+        .tot{background:#FDEBCB;font-weight:bold;}
+        .pay{margin-top:16px;padding:12px;border:1px solid #A85431;background:#f0f8ff;}
+        .pay a{color:#2B5470;font-weight:bold;word-break:break-all;}
+    </style></head><body><div class="wrap">
+        <div class="top">
+            <h1>Proforma Invoice</h1>
+            <div class="muted">Vantage Africa School of Leadership</div>
+        </div>
+        <p><strong>Invoice No:</strong> ' . htmlspecialchars($invoice_no) . '<br>
+           <strong>Date:</strong> ' . htmlspecialchars($invoice_date) . '<br>
+           <strong>Bill To:</strong> ' . htmlspecialchars($client_name) . ' (' . htmlspecialchars($client_email) . ')' .
+           ($dates_line !== '' ? '<br><strong>Training Dates:</strong> ' . $dates_line : '') .
+           ($venue !== '' ? '<br><strong>Venue:</strong> ' . htmlspecialchars($venue) : '') . '</p>
+        <table>
+            <thead><tr><th>Description</th><th class="r">Amount (' . htmlspecialchars($currency) . ')</th></tr></thead>
+            <tbody>
+                <tr><td>' . htmlspecialchars($desc) . '</td><td class="r">' . $money($fee_num) . '</td></tr>
+                <tr class="tot"><td>Total Payable</td><td class="r">' . $money($fee_num) . '</td></tr>
+            </tbody>
+        </table>
+        <div class="pay">
+            <strong>Pay online:</strong> <a href="' . htmlspecialchars($pay_link) . '">' . htmlspecialchars($pay_link) . '</a>
+        </div>
+    </div></body></html>';
+
+    $directory = 'invoices';
+    $file = str_replace(" ", "_", $invoice_no) . "_" . $invoice_date;
+    $pdfPath = convertHtmlToPdf($html, $directory, $file);
+    if (!$pdfPath) {
+        return false;
+    }
+
+    // Confirmation email (reuses the shared, currency-agnostic invoice email + logging).
+    sendInvoiceEmail($client_email, $client_name, "Proforma Invoice - " . $invoice_no, $pdfPath, $sd_fmt, $ed_fmt, $venue, $conn, $ticket_id, $record_id, '');
+    return $pdfPath;
+}
+
 function generateAdmissionWithInvoice($client_email, $client_name, $training_program, $invoice_items = [], $discount_percent = 0, $training_areas = [], $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $corporate_variant = '', $event_amount = null, $invite_position = '', $invite_organization = '', $invite_country = '', $event_id = null) {
     global $code;
+
+    // Corporate trainings (Event.location = 'corporate#<id>') are table-driven and run their own
+    // isolated KES proforma-invoice + confirmation path — no admission letter. Early return leaves
+    // every other flow (academic / virtual / corporate_variant) completely untouched.
+    if ($conn && preg_match('/corporate#(\d+)/i', (string) $location, $cm)) {
+        return generateCorporateTrainingInvoice($conn, (int) $cm[1], $client_email, $client_name, $start_date, $end_date, $ticket_id, $record_id);
+    }
 
     // Use explicit corporate variant from process_payment (by event title): 'corporate_sldp', 'corporate_me', 'singapore_me' or ''
     $is_corporate_sldp = ($corporate_variant === 'corporate_sldp');
