@@ -516,21 +516,32 @@ function wa_triage_sql($a = 'cv') {
                               WHERE tc.id = $a.contact_id AND tc.opted_out = 1))";
 }
 
-function wa_inbox_scope_where($staffId, $isSupervisor) {
-    if ($isSupervisor) { return ''; }
+/**
+ * SQL predicate for "this chat is MINE" — every ownership route a rep can have to a
+ * conversation: assigned to them, a rep of its course or event, a manual override,
+ * or a rep of its training programme.
+ *
+ * Deliberately excludes triage, which is the shared pool nobody owns yet. Kept
+ * separate from wa_triage_sql() so the inbox can offer them as distinct tabs, and
+ * so the scope below is provably "mine OR up for grabs" with nothing else.
+ *
+ * Distinct aliases (mc/me/mo/mp) because callers already use c for wa_contacts.
+ */
+function wa_mine_sql($staffId, $a = 'cv') {
     $sid = (int)$staffId;
-    return " WHERE (
-        cv.assigned_user_id = $sid
-        OR (cv.ref_type = 'course' AND EXISTS (SELECT 1 FROM course c  WHERE c.course_id = cv.ref_id AND FIND_IN_SET($sid, c.assigned_to) > 0))
-        OR (cv.ref_type = 'event'  AND EXISTS (SELECT 1 FROM `Event` e WHERE e.event_id  = cv.ref_id AND FIND_IN_SET($sid, e.assigned_to) > 0))
-        OR EXISTS (SELECT 1 FROM wa_course_owner wo WHERE wo.ref_type = cv.ref_type AND wo.ref_id = cv.ref_id AND wo.user_id = $sid)
+    return "($a.assigned_user_id = $sid
+        OR ($a.ref_type = 'course' AND EXISTS (SELECT 1 FROM course mc  WHERE mc.course_id = $a.ref_id AND FIND_IN_SET($sid, mc.assigned_to) > 0))
+        OR ($a.ref_type = 'event'  AND EXISTS (SELECT 1 FROM `Event` me WHERE me.event_id  = $a.ref_id AND FIND_IN_SET($sid, me.assigned_to) > 0))
+        OR EXISTS (SELECT 1 FROM wa_course_owner mo WHERE mo.ref_type = $a.ref_type AND mo.ref_id = $a.ref_id AND mo.user_id = $sid)
         -- Training-programme reps: an onsite enquiry with no country yet belongs to the
         -- programme, so every rep on it sees the chat, not only the one it was assigned to.
-        OR EXISTS (SELECT 1 FROM wa_programs wp WHERE wp.id = cv.program_id AND FIND_IN_SET($sid, wp.assigned_to) > 0)
-        -- Triage: unrouted AND unowned, so no rule above can ever match it. Show it to
-        -- every rep rather than to nobody. The Triage tab isolates these.
-        OR " . wa_triage_sql('cv') . "
-    ) ";
+        OR EXISTS (SELECT 1 FROM wa_programs mp WHERE mp.id = $a.program_id AND FIND_IN_SET($sid, mp.assigned_to) > 0))";
+}
+
+function wa_inbox_scope_where($staffId, $isSupervisor) {
+    if ($isSupervisor) { return ''; }
+    // Everything a rep may see is either theirs, or in the unowned triage pool.
+    return " WHERE (" . wa_mine_sql($staffId, 'cv') . " OR " . wa_triage_sql('cv') . ") ";
 }
 
 /** Manually-assigned rep for a course/event (fallback), or null. */

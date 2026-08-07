@@ -32,6 +32,7 @@ $sql = "
                   AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
              THEN 1 ELSE 0 END) AS reengaged_responded,
            " . wa_triage_sql('cv') . " AS is_triage,
+           " . wa_mine_sql($staff_id, 'cv') . " AS is_mine,
            CASE cv.ref_type
                 WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
                 WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
@@ -111,6 +112,7 @@ if ($result) {
                         <div class="d-flex align-items-center gap-2">
                             <div class="btn-group btn-group-sm" role="group" id="waFilters">
                                 <button type="button" class="btn btn-outline-secondary active" data-filter="all">All <span class="badge bg-secondary ms-1" id="cntAll">0</span></button>
+                                <button type="button" class="btn btn-outline-primary" data-filter="mine" title="Chats for courses, events and programmes you are a rep of, plus anything assigned to you — excludes the shared Triage pool.">My courses <span class="badge bg-primary ms-1" id="cntMine">0</span></button>
                                 <button type="button" class="btn btn-outline-danger" data-filter="unread">Unread <span class="badge bg-danger ms-1" id="cntUnread">0</span></button>
                                 <button type="button" class="btn btn-outline-warning" data-filter="escalated">Escalated <span class="badge bg-warning text-dark ms-1" id="cntEsc">0</span></button>
                                 <button type="button" class="btn btn-outline-success" data-filter="reengaged" title="Clients who replied after a re-engagement template">Re-engaged <span class="badge bg-success ms-1" id="cntReeng">0</span></button>
@@ -162,6 +164,7 @@ if ($result) {
                                     <tr style="cursor:pointer;<?php echo (int)$row['escalated'] === 1 ? 'border-left:4px solid #ffc107;' : ''; ?>" class="<?php echo $u ? 'table-active' : ''; ?>"
                                         data-reengaged="<?php echo (int)$row['reengaged_responded']; ?>"
                                         data-triage="<?php echo (int)$row['is_triage']; ?>"
+                                        data-mine="<?php echo (int)$row['is_mine']; ?>"
                                         onclick="location.href='wa_thread.php?id=<?php echo (int)$row['id']; ?>'">
                                         <td class="ps-3">
                                             <strong class="<?php echo $u ? 'fw-bold' : ''; ?>"><?php echo wa_e($row['profile_name'] ?: '—'); ?></strong>
@@ -247,6 +250,7 @@ if ($result) {
                             if (s.tab === 'escalated' && !escalated)          ok = false;
                             if (s.tab === 'reengaged' && tr.getAttribute('data-reengaged') !== '1') ok = false;
                             if (s.tab === 'triage'    && tr.getAttribute('data-triage')    !== '1') ok = false;
+                            if (s.tab === 'mine'      && tr.getAttribute('data-mine')      !== '1') ok = false;
                             if (s.course  && course  !== s.course)            ok = false;
                             if (s.handler && handler !== s.handler)           ok = false;
                             if (q && (tr.textContent || '').toLowerCase().indexOf(q) === -1) ok = false;
@@ -389,17 +393,19 @@ if ($result) {
         var q = (searchEl.value || '').toLowerCase();
         var courseVal  = courseEl  ? courseEl.value  : '';
         var handlerVal = handlerEl ? handlerEl.value : '';
-        var counts = { all: list.length, unread: 0, escalated: 0, reengaged: 0, triage: 0 };
+        var counts = { all: list.length, unread: 0, escalated: 0, reengaged: 0, triage: 0, mine: 0 };
         var shown = 0, html = '';
         list.forEach(function (c) {
             if (c.unread)    counts.unread++;
             if (c.escalated) counts.escalated++;
             if (c.reengaged) counts.reengaged++;
             if (c.triage) counts.triage++;
+            if (c.mine) counts.mine++;
             if (currentFilter === 'unread'    && !c.unread)    return;
             if (currentFilter === 'escalated' && !c.escalated) return;
             if (currentFilter === 'reengaged' && !c.reengaged) return;
             if (currentFilter === 'triage'    && !c.triage)    return;
+            if (currentFilter === 'mine'      && !c.mine)      return;
             if (courseVal  && (c.ref_name || '') !== courseVal) return;   // filter by course/event
             if (handlerVal && c.handler !== handlerVal) return;           // filter by AI/Human
             var hay = (c.name + ' ' + c.wa_id + ' ' + c.ref_name + ' ' + c.owner + ' ' + c.last_body).toLowerCase();
@@ -413,6 +419,7 @@ if ($result) {
             html += '<tr style="' + rowStyle + '" class="' + (c.unread ? 'table-active' : '') + '"'
                  + ' data-reengaged="' + (c.reengaged ? '1' : '0') + '"'
                  + ' data-triage="' + (c.triage ? '1' : '0') + '"'
+                 + ' data-mine="' + (c.mine ? '1' : '0') + '"'
                  + ' onclick="location.href=\'wa_thread.php?id=' + c.id + '\'">'
                  + '<td class="ps-3">' + name + '</td>'
                  + '<td>' + esc(c.wa_id) + '</td>'
@@ -430,6 +437,7 @@ if ($result) {
         document.getElementById('cntEsc').textContent    = counts.escalated;
         document.getElementById('cntReeng').textContent  = counts.reengaged;
         document.getElementById('cntTriage').textContent = counts.triage;
+        document.getElementById('cntMine').textContent   = counts.mine;
         if (counts.unread) { unreadEl.textContent = counts.unread + ' unread'; unreadEl.style.display = ''; }
         else { unreadEl.style.display = 'none'; }
         document.title = (counts.unread ? '(' + counts.unread + ') ' : '') + 'WhatsApp Inbox';

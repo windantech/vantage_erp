@@ -333,6 +333,7 @@ if ($action === 'inbox') {
                       AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
                  THEN 1 ELSE 0 END) AS reengaged_responded,
                " . wa_triage_sql('cv') . " AS is_triage,
+               " . wa_mine_sql($staff_id, 'cv') . " AS is_mine,
                CASE cv.ref_type
                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
@@ -371,6 +372,7 @@ if ($action === 'inbox') {
                 'unread'    => (int)$r['unread'],
                 'reengaged' => (int)$r['reengaged_responded'],
                 'triage'    => (int)$r['is_triage'],
+                'mine'      => (int)$r['is_mine'],
             ];
         }
     }
