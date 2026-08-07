@@ -36,7 +36,7 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
         $body = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px;">
         <div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
             <div style="background: linear-gradient(135deg, #8B4513, #A0522D); padding: 20px; text-align: center;">
-                <img src="https://vantageafricaleaders.com/assets/logo.png" style="height: 50px; padding: 0.5rem 0;" alt="Vantage Africa">
+                <span style="display:inline-block; background:#ffffff; padding:10px 18px; border-radius:10px;"><img src="https://vantageafricaleaders.com/assets/logo.png" style="height: 50px; display:block;" alt="Vantage Africa"></span>
             </div>
             <hr style="border: solid 1px #d1d3e2; margin: 8px 0">
             <div style="padding: 0 1.5rem 1rem;">
@@ -157,7 +157,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             $body = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px;">
         <div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
             <div style="background: linear-gradient(135deg, #8B4513, #A0522D); padding: 20px; text-align: center;">
-                <img src="https://vantageafricaleaders.com/assets/logo.png" style="height: 50px; padding: 0.5rem 0;" alt="Vantage Africa">
+                <span style="display:inline-block; background:#ffffff; padding:10px 18px; border-radius:10px;"><img src="https://vantageafricaleaders.com/assets/logo.png" style="height: 50px; display:block;" alt="Vantage Africa"></span>
             </div>
             <hr style="border: solid 1px #d1d3e2; margin: 8px 0">
             <div style="padding: 0 1.5rem 1rem;">
