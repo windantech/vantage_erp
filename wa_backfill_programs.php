@@ -84,6 +84,7 @@ if (!$res) { exit('Query failed: ' . mysqli_error($conn) . "\n"); }
 
 $stat = ['seen'=>0,'linked'=>0,'assigned'=>0,'reassigned'=>0,'no_match'=>0,'no_reps'=>0,'human_skipped'=>0,'already'=>0];
 $byProgram = [];
+$unmatched = [];
 
 while ($cv = mysqli_fetch_assoc($res)) {
     $stat['seen']++;
@@ -105,8 +106,16 @@ while ($cv = mysqli_fetch_assoc($res)) {
 
     if (!$prog) {
         $stat['no_match']++;
-        printf("  %-14s %-22s -> NO PROGRAMME MATCH (%s #%s)\n",
-            $cv['wa_id'], mb_substr($name, 0, 21), $cv['ref_type'], (string)$cv['ref_id']);
+        // Record WHAT they were asking about — the tally at the end tells you which
+        // programmes are missing, which is the only way to fix a no-match.
+        $topic = '(unclassified)';
+        if ($cv['ref_type'] === 'course' && (int)$cv['ref_id'] > 0) {
+            $topic = (string)wa_scalar($conn, "SELECT course FROM course WHERE course_id = " . (int)$cv['ref_id'] . " LIMIT 1");
+        } elseif ($cv['ref_type'] === 'event' && (int)$cv['ref_id'] > 0) {
+            $topic = (string)wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = " . (int)$cv['ref_id'] . " LIMIT 1");
+        }
+        $topic = trim($topic) !== '' ? trim($topic) : '(unclassified — no topic bound)';
+        $unmatched[$topic] = ($unmatched[$topic] ?? 0) + 1;
         continue;
     }
 
@@ -162,7 +171,17 @@ while ($cv = mysqli_fetch_assoc($res)) {
 }
 
 echo "\n--- matched per programme ---\n";
-foreach ($byProgram as $n => $c) { printf("  %-38s %d\n", $n, $c); }
+if (!$byProgram) { echo "  (none)\n"; }
+foreach ($byProgram as $n => $c) { printf("  %-46s %d\n", $n, $c); }
+
+if ($unmatched) {
+    arsort($unmatched);
+    echo "\n--- NO PROGRAMME COVERS THESE (create one, or they can never route) ---\n";
+    foreach ($unmatched as $t => $c) { printf("  %-46s %d\n", mb_substr($t, 0, 45), $c); }
+    echo "\n  Each line is a topic customers asked about in person that no ACTIVE\n";
+    echo "  training programme matches. Add a programme (Knowledge Base -> Training\n";
+    echo "  programmes) whose keywords appear in these titles, give it reps, re-run.\n";
+}
 
 echo "\n--- summary ---\n";
 printf("  chats considered            %d\n", $stat['seen']);
