@@ -185,6 +185,19 @@ function wa_scalar($conn, $sql) {
     return $row ? (int)$row[0] : 0;
 }
 
+/**
+ * First column of the first row as a STRING ('' when there is no row).
+ *
+ * wa_scalar() int-casts, so using it for a title or a name silently yields 0 —
+ * a trap that has already cost us an event-title lookup and a staff note reading
+ * "this is now 0". Use this for anything textual.
+ */
+function wa_scalar_str($conn, $sql) {
+    $res = mysqli_query($conn, $sql);
+    $row = $res ? mysqli_fetch_row($res) : null;
+    return ($row && $row[0] !== null) ? (string)$row[0] : '';
+}
+
 /** Headline KPIs for the Insights page. $days scopes the message/broadcast window. */
 function wa_insights_summary($conn, $days = 30) {
     $days = (int)$days;
@@ -1065,8 +1078,8 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
                 $keepUid = (int)$conv['assigned_user_id'];
                 wa_assign_conversation($conn, $contactId, 'event', $eid, $keepUid, $evMethod . '_kept_owner', $evGuess['confidence']);
                 if ($uid !== null && $uid !== $keepUid) {
-                    $evName = wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
-                    $repName = wa_scalar($conn, "SELECT fullname FROM registered_users WHERE id = " . (int)$uid . " LIMIT 1");
+                    $evName = wa_scalar_str($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
+                    $repName = wa_scalar_str($conn, "SELECT fullname FROM registered_users WHERE id = " . (int)$uid . " LIMIT 1");
                     wa_ai_post_note($conn, $contactId,
                         'Location confirmed — this is now ' . trim((string)$evName) . '. '
                       . 'The rep for that session is ' . trim((string)$repName) . '. '
@@ -3165,7 +3178,7 @@ function wa_program_match($conn, $text) {
 function wa_program_for_course($conn, $courseId, $text = '', $eventId = 0) {
     $eid = (int)$eventId;
     if ($eid > 0) {
-        $evTitle = wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
+        $evTitle = wa_scalar_str($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
         if (trim((string)$evTitle) !== '') {
             $p = wa_program_match($conn, $evTitle);
             if ($p) { return $p; }
@@ -4555,7 +4568,7 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     // captured in an in-progress registration, plus the programme of interest).
     $cid = (int)$conv['contact_id'];
     $known = [];
-    $pn = wa_scalar($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid");
+    $pn = wa_scalar_str($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid");
     if ($pn) { $known['Name'] = $pn; }
     $enrolling = false;
     $es = function_exists('wa_enroll_active') ? wa_enroll_active($conn, $cid) : null;

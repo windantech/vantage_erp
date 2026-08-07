@@ -92,7 +92,7 @@ while ($cv = mysqli_fetch_assoc($res)) {
     $name   = trim((string)$cv['profile_name']) ?: '(no name)';
 
     // The customer's own words help when the course title is ambiguous.
-    $txt = (string)wa_scalar($conn,
+    $txt = wa_scalar_str($conn,
         "SELECT body FROM wa_messages WHERE contact_id = " . (int)$cv['contact_id'] . "
           AND direction = 'inbound' AND type <> 'note' ORDER BY id ASC LIMIT 1");
 
@@ -110,9 +110,9 @@ while ($cv = mysqli_fetch_assoc($res)) {
         // programmes are missing, which is the only way to fix a no-match.
         $topic = '(unclassified)';
         if ($cv['ref_type'] === 'course' && (int)$cv['ref_id'] > 0) {
-            $topic = (string)wa_scalar($conn, "SELECT course FROM course WHERE course_id = " . (int)$cv['ref_id'] . " LIMIT 1");
+            $topic = wa_scalar_str($conn, "SELECT course FROM course WHERE course_id = " . (int)$cv['ref_id'] . " LIMIT 1");
         } elseif ($cv['ref_type'] === 'event' && (int)$cv['ref_id'] > 0) {
-            $topic = (string)wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = " . (int)$cv['ref_id'] . " LIMIT 1");
+            $topic = wa_scalar_str($conn, "SELECT event_title FROM `Event` WHERE event_id = " . (int)$cv['ref_id'] . " LIMIT 1");
         }
         $topic = trim($topic) !== '' ? trim($topic) : '(unclassified — no topic bound)';
         $unmatched[$topic] = ($unmatched[$topic] ?? 0) + 1;
