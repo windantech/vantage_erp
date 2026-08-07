@@ -12,11 +12,12 @@ if (!in_array(WA_ROLE, $role)) {
     exit;
 }
 $is_supervisor = in_array(777, $role);
+wa_contact_country_schema_ensure($conn);   // ensure c.country exists before the query below reads it
 $conv_id = (int)($_GET['id'] ?? 0);
 
 // Load the conversation + contact.
 $res = mysqli_query($conn,
-    "SELECT cv.*, c.wa_id, c.profile_name, c.last_inbound_at,
+    "SELECT cv.*, c.wa_id, c.profile_name, c.last_inbound_at, c.country,
             CASE cv.ref_type
                  WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
                  WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
@@ -93,6 +94,9 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         </h6>
                         <small class="text-muted">
                             <?php echo wa_e($conv['wa_id']); ?>
+                            <?php if (!empty($conv['country'])): ?>
+                            · <i class="bi bi-geo-alt"></i> <?php echo wa_e($conv['country']); ?>
+                            <?php endif; ?>
                             · <i class="bi bi-mortarboard"></i> <?php echo wa_e($conv['ref_name'] ?: 'Unassigned'); ?>
                             · <i class="bi bi-person"></i> <?php echo wa_e($conv['owner_name'] ?: 'No owner'); ?>
                         </small>

@@ -48,13 +48,90 @@ function wa_sql($conn, $v) {
 // Contacts + messages
 // =====================================================================
 
+/**
+ * International dialling code -> country. Longest match wins, so 27 (South Africa)
+ * never steals a 254/265 number and 234 is not read as 23. Africa in full since
+ * that is where the enquiries come from, plus the other codes seen in the inbox.
+ */
+function wa_dial_codes() {
+    static $m = null;
+    if ($m !== null) { return $m; }
+    return $m = [
+        // --- Africa ---
+        '20'=>'Egypt', '211'=>'South Sudan', '212'=>'Morocco', '213'=>'Algeria',
+        '216'=>'Tunisia', '218'=>'Libya', '220'=>'Gambia', '221'=>'Senegal',
+        '222'=>'Mauritania', '223'=>'Mali', '224'=>'Guinea', '225'=>"Cote d'Ivoire",
+        '226'=>'Burkina Faso', '227'=>'Niger', '228'=>'Togo', '229'=>'Benin',
+        '230'=>'Mauritius', '231'=>'Liberia', '232'=>'Sierra Leone', '233'=>'Ghana',
+        '234'=>'Nigeria', '235'=>'Chad', '236'=>'Central African Republic',
+        '237'=>'Cameroon', '238'=>'Cape Verde', '239'=>'Sao Tome and Principe',
+        '240'=>'Equatorial Guinea', '241'=>'Gabon', '242'=>'Congo',
+        '243'=>'DR Congo', '244'=>'Angola', '245'=>'Guinea-Bissau',
+        '248'=>'Seychelles', '249'=>'Sudan', '250'=>'Rwanda', '251'=>'Ethiopia',
+        '252'=>'Somalia', '253'=>'Djibouti', '254'=>'Kenya', '255'=>'Tanzania',
+        '256'=>'Uganda', '257'=>'Burundi', '258'=>'Mozambique', '260'=>'Zambia',
+        '261'=>'Madagascar', '262'=>'Reunion', '263'=>'Zimbabwe', '264'=>'Namibia',
+        '265'=>'Malawi', '266'=>'Lesotho', '267'=>'Botswana', '268'=>'Eswatini',
+        '269'=>'Comoros', '27'=>'South Africa', '291'=>'Eritrea',
+        // --- elsewhere, as seen in the inbox ---
+        '1'=>'United States/Canada', '44'=>'United Kingdom', '353'=>'Ireland',
+        '61'=>'Australia', '64'=>'New Zealand', '65'=>'Singapore', '60'=>'Malaysia',
+        '90'=>'Turkey', '91'=>'India', '92'=>'Pakistan', '880'=>'Bangladesh',
+        '94'=>'Sri Lanka', '63'=>'Philippines', '971'=>'United Arab Emirates',
+        '966'=>'Saudi Arabia', '974'=>'Qatar', '968'=>'Oman', '973'=>'Bahrain',
+        '965'=>'Kuwait', '962'=>'Jordan', '961'=>'Lebanon', '86'=>'China',
+        '49'=>'Germany', '33'=>'France', '39'=>'Italy', '34'=>'Spain',
+        '31'=>'Netherlands', '46'=>'Sweden', '47'=>'Norway', '45'=>'Denmark',
+        '7'=>'Russia/Kazakhstan', '55'=>'Brazil', '52'=>'Mexico',
+        '592'=>'Guyana', '1868'=>'Trinidad and Tobago', '1876'=>'Jamaica',
+        '1246'=>'Barbados', '675'=>'Papua New Guinea', '679'=>'Fiji',
+        '977'=>'Nepal', '95'=>'Myanmar', '855'=>'Cambodia', '84'=>'Vietnam',
+    ];
+}
+
+/**
+ * Country for a WhatsApp id (which is the full international number, digits only).
+ * Returns ['code' => '254', 'country' => 'Kenya'], or empty strings when unknown.
+ */
+function wa_country_from_wa_id($waId) {
+    $d = preg_replace('/\D/', '', (string)$waId);
+    if ($d === '') { return ['code' => '', 'country' => '']; }
+    $map = wa_dial_codes();
+    // Longest prefix first: 1868 (Trinidad) must beat 1 (US), 254 must beat 25.
+    for ($len = 4; $len >= 1; $len--) {
+        $p = substr($d, 0, $len);
+        if ($p !== false && isset($map[$p])) {
+            return ['code' => $p, 'country' => $map[$p]];
+        }
+    }
+    return ['code' => '', 'country' => ''];
+}
+
+/** Add the contact country columns once (idempotent). */
+function wa_contact_country_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_contacts`
+        ADD COLUMN IF NOT EXISTS `country` VARCHAR(64) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS `dial_code` VARCHAR(8) DEFAULT NULL");
+}
+
 function wa_upsert_contact($conn, $waId, $name = null) {
+    wa_contact_country_schema_ensure($conn);
     $wa   = "'" . mysqli_real_escape_string($conn, $waId) . "'";
     $nm   = wa_sql($conn, $name);
+    // The wa_id IS the full international number, so we know the country from the
+    // first message — no need to ask. COALESCE keeps a value a human corrected.
+    $loc  = wa_country_from_wa_id($waId);
+    $co   = wa_sql($conn, $loc['country'] !== '' ? $loc['country'] : null);
+    $dc   = wa_sql($conn, $loc['code'] !== '' ? $loc['code'] : null);
     mysqli_query($conn,
-        "INSERT INTO wa_contacts (wa_id, profile_name) VALUES ($wa, $nm)
+        "INSERT INTO wa_contacts (wa_id, profile_name, country, dial_code) VALUES ($wa, $nm, $co, $dc)
          ON DUPLICATE KEY UPDATE
              profile_name = COALESCE($nm, profile_name),
+             country      = COALESCE(country, $co),
+             dial_code    = COALESCE(dial_code, $dc),
              id = LAST_INSERT_ID(id)");
     return (int)mysqli_insert_id($conn);
 }
@@ -4640,6 +4717,11 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     $known = [];
     $pn = wa_scalar_str($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid");
     if ($pn) { $known['Name'] = $pn; }
+    // Country comes free from their number, so never ask where they are. For an
+    // in-person enquiry this is the whole question — knowing it up front lets the
+    // AI name the nearest session instead of stalling on "which country are you in?".
+    $co = wa_scalar_str($conn, "SELECT country FROM wa_contacts WHERE id = $cid");
+    if ($co !== '') { $known['Country (from their phone number)'] = $co; }
     $enrolling = false;
     $es = function_exists('wa_enroll_active') ? wa_enroll_active($conn, $cid) : null;
     if ($es) {
