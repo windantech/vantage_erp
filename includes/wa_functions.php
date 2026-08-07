@@ -1127,7 +1127,9 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
             // in-person yet, so it is not the onsite team's chat.
             $ownerUid = null;
             if ($mode === 'onsite') {
-                $prog = wa_program_for_course($conn, (int)$courseId, $text);
+                // $onsite is the in-person twin of this virtual course — the event the
+                // programme's keywords are actually written against, so pass it.
+                $prog = wa_program_for_course($conn, (int)$courseId, $text, (int)($onsite['event_id'] ?? 0));
                 if ($prog) {
                     $ownerUid = wa_program_first_owner($prog);
                     if ($conv) { wa_conv_set_program($conn, (int)$conv['id'], (int)$prog['id']); }
@@ -3098,8 +3100,24 @@ function wa_program_match($conn, $text) {
     return $best;
 }
 
-/** Programme for a chat bound to a course: match the course title, then the message. */
-function wa_program_for_course($conn, $courseId, $text = '') {
+/**
+ * Programme for an onsite enquiry, most faithful signal first.
+ *
+ * A chat is bound to a virtual COURSE (e.g. "Data Analysis Using SPSS"), but a
+ * programme groups the ONSITE trainings (e.g. "Data Analysis & Visualization"),
+ * and its keywords are written to match EVENT titles. So when the router has
+ * already resolved the onsite twin event, match that first; fall back to the
+ * course title, then to the customer's own words.
+ */
+function wa_program_for_course($conn, $courseId, $text = '', $eventId = 0) {
+    $eid = (int)$eventId;
+    if ($eid > 0) {
+        $evTitle = wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
+        if (trim((string)$evTitle) !== '') {
+            $p = wa_program_match($conn, $evTitle);
+            if ($p) { return $p; }
+        }
+    }
     $cid = (int)$courseId;
     $title = '';
     if ($cid > 0) {
