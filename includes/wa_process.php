@@ -449,8 +449,16 @@ switch ($action) {
         $pid  = (int)($_POST['program_id'] ?? 0);
         $name = trim((string)($_POST['name'] ?? ''));
         if ($name === '') { wa_flash('warning', 'Programme name is required.'); wa_redirect('../wa_knowledge.php'); }
+        // Reps: a multi-select posts an array; absent means the form had no picker, so
+        // pass null ("leave alone") rather than '' which would clear the existing reps.
+        $reps = null;
+        if (array_key_exists('assigned_to', $_POST)) {
+            $reps = is_array($_POST['assigned_to'])
+                ? implode(',', array_map('intval', $_POST['assigned_to']))
+                : (string)$_POST['assigned_to'];
+        }
         $id = wa_program_save($conn, $pid, $name, (string)($_POST['keywords'] ?? ''),
-                              (($_POST['status'] ?? '1') === '0') ? 0 : 1);
+                              (($_POST['status'] ?? '1') === '0') ? 0 : 1, $reps);
         wa_flash('success', 'Training programme saved.');
         wa_redirect('../wa_knowledge.php?ref=program:' . (int)$id);
     }

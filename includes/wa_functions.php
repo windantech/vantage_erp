@@ -455,6 +455,9 @@ function wa_inbox_scope_where($staffId, $isSupervisor) {
         OR (cv.ref_type = 'course' AND EXISTS (SELECT 1 FROM course c  WHERE c.course_id = cv.ref_id AND FIND_IN_SET($sid, c.assigned_to) > 0))
         OR (cv.ref_type = 'event'  AND EXISTS (SELECT 1 FROM `Event` e WHERE e.event_id  = cv.ref_id AND FIND_IN_SET($sid, e.assigned_to) > 0))
         OR EXISTS (SELECT 1 FROM wa_course_owner wo WHERE wo.ref_type = cv.ref_type AND wo.ref_id = cv.ref_id AND wo.user_id = $sid)
+        -- Training-programme reps: an onsite enquiry with no country yet belongs to the
+        -- programme, so every rep on it sees the chat, not only the one it was assigned to.
+        OR EXISTS (SELECT 1 FROM wa_programs wp WHERE wp.id = cv.program_id AND FIND_IN_SET($sid, wp.assigned_to) > 0)
     ) ";
 }
 
@@ -870,6 +873,19 @@ function wa_conv_mode_schema_ensure($conn) {
     $done = true;
     @mysqli_query($conn, "ALTER TABLE `wa_conversations`
         ADD COLUMN IF NOT EXISTS `delivery_mode` ENUM('unknown','virtual','onsite') NOT NULL DEFAULT 'unknown'");
+    // Which training programme (wa_programs.id) an onsite-but-unlocated chat belongs
+    // to. Set when the programme's rep takes it, and kept afterwards so every rep on
+    // that programme keeps seeing the chat even once it binds to a country's Event.
+    @mysqli_query($conn, "ALTER TABLE `wa_conversations`
+        ADD COLUMN IF NOT EXISTS `program_id` INT UNSIGNED DEFAULT NULL");
+}
+
+/** Remember the training programme a conversation belongs to (never clears it). */
+function wa_conv_set_program($conn, $convId, $programId) {
+    $convId = (int)$convId; $pid = (int)$programId;
+    if ($convId < 1 || $pid < 1) { return; }
+    wa_conv_mode_schema_ensure($conn);
+    mysqli_query($conn, "UPDATE wa_conversations SET program_id = $pid WHERE id = $convId");
 }
 
 /** Add the conversation reengaged_at column once (idempotent). Stamped when a human sends
@@ -998,6 +1014,26 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
         $eid = (int)$evGuess['event_id'];
         if (!$returning || (int)$conv['ref_id'] !== $eid || $conv['ref_type'] !== 'event') {
             $uid = wa_first_owner($conn, 'event', $eid);
+            // A programme rep already owns this chat (they picked it up while the customer
+            // had said "onsite" but not where). Binding the country's Event must not yank
+            // it out from under them mid-conversation: keep the owner, move the topic, and
+            // leave a staff-only note so the country's rep knows the lead is theirs to
+            // share. Ownership only transfers if nobody holds it.
+            $progOwned = $conv && !empty($conv['program_id'])
+                      && $conv['assigned_user_id'] !== null && $conv['assigned_user_id'] !== '';
+            if ($progOwned) {
+                $keepUid = (int)$conv['assigned_user_id'];
+                wa_assign_conversation($conn, $contactId, 'event', $eid, $keepUid, $evMethod . '_kept_owner', $evGuess['confidence']);
+                if ($uid !== null && $uid !== $keepUid) {
+                    $evName = wa_scalar($conn, "SELECT event_title FROM `Event` WHERE event_id = $eid LIMIT 1");
+                    $repName = wa_scalar($conn, "SELECT fullname FROM registered_users WHERE id = " . (int)$uid . " LIMIT 1");
+                    wa_ai_post_note($conn, $contactId,
+                        'Location confirmed — this is now ' . trim((string)$evName) . '. '
+                      . 'The rep for that session is ' . trim((string)$repName) . '. '
+                      . 'This chat stays with you; loop them in to register the client.');
+                }
+                return wa_route_result($conn, 'assigned', $evMethod . '_kept_owner', 'event', $eid, $keepUid);
+            }
             wa_assign_conversation($conn, $contactId, 'event', $eid, $uid, $evMethod, $evGuess['confidence']);
             return wa_route_result($conn, 'assigned', $evMethod, 'event', $eid, $uid);
         }
@@ -1083,8 +1119,31 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
             // WHICH location. A named location then binds the specific event + its onsite rep
             // (via the event classifier). We never pre-assign a session the client never chose.
             $reason = $mode === 'onsite' ? 'await_onsite_location' : 'await_mode';
-            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, null, $reason, $conf);
-            return wa_route_result($conn, 'assigned_unowned', $reason, 'course', (int)$courseId, null);
+            // ONSITE confirmed but no country yet: there is no Event to route to, and
+            // leaving it unowned is why these chats went unfollowed when the customer
+            // stopped replying. Hand it to the training programme's rep so it lands in
+            // a real inbox; the country's own rep still takes over below once a location
+            // is named. 'await_mode' stays unowned — the customer has not committed to
+            // in-person yet, so it is not the onsite team's chat.
+            $ownerUid = null;
+            if ($mode === 'onsite') {
+                $prog = wa_program_for_course($conn, (int)$courseId, $text);
+                if ($prog) {
+                    $ownerUid = wa_program_first_owner($prog);
+                    if ($conv) { wa_conv_set_program($conn, (int)$conv['id'], (int)$prog['id']); }
+                }
+            }
+            wa_assign_conversation($conn, $contactId, 'course', (int)$courseId, $ownerUid, $reason, $conf);
+            if ($ownerUid === null) {
+                return wa_route_result($conn, 'assigned_unowned', $reason, 'course', (int)$courseId, null);
+            }
+            // The programme was matched after wa_assign_conversation created the row on a
+            // first-contact chat, so stamp it once the conversation certainly exists.
+            if (!$conv && isset($prog['id'])) {
+                $c2 = wa_get_conversation($conn, $contactId);
+                if ($c2) { wa_conv_set_program($conn, (int)$c2['id'], (int)$prog['id']); }
+            }
+            return wa_route_result($conn, 'assigned', $reason, 'course', (int)$courseId, $ownerUid);
         }
         // Virtual-only course, or the customer confirmed virtual -> normal assignment.
         $uid = wa_first_owner($conn, 'course', (int)$courseId);
@@ -2950,20 +3009,106 @@ function wa_program_get($conn, $id) {
 }
 
 /** Create/update a programme. Returns the id. */
-function wa_program_save($conn, $id, $name, $keywords, $status = 1) {
+function wa_program_save($conn, $id, $name, $keywords, $status = 1, $assignedTo = null) {
     wa_kb_ensure_schema($conn);
     $id = (int)$id;
     $n = wa_sql($conn, trim((string)$name));
     $k = wa_sql($conn, trim((string)$keywords));
     $s = $status ? 1 : 0;
+    // null = "don't touch" (callers that never learned about reps keep the existing ones).
+    $setA = '';
+    if ($assignedTo !== null) {
+        $csv  = implode(',', wa_program_owner_ids(['assigned_to' => $assignedTo]));
+        $setA = ', assigned_to = ' . wa_sql($conn, $csv);
+    }
     if ($id > 0) {
-        mysqli_query($conn, "UPDATE wa_programs SET name = $n, keywords = $k, status = $s WHERE id = $id");
+        mysqli_query($conn, "UPDATE wa_programs SET name = $n, keywords = $k, status = $s $setA WHERE id = $id");
         return $id;
     }
-    mysqli_query($conn, "INSERT INTO wa_programs (name, keywords, status) VALUES ($n, $k, $s)
+    $aCol = $assignedTo !== null ? ', assigned_to' : '';
+    $aVal = $assignedTo !== null ? ', ' . wa_sql($conn, implode(',', wa_program_owner_ids(['assigned_to' => $assignedTo]))) : '';
+    mysqli_query($conn, "INSERT INTO wa_programs (name, keywords, status$aCol) VALUES ($n, $k, $s$aVal)
         ON DUPLICATE KEY UPDATE keywords = VALUES(keywords), status = VALUES(status)");
     return (int)mysqli_insert_id($conn) ?: (int)(mysqli_fetch_assoc(mysqli_query($conn,
         "SELECT id FROM wa_programs WHERE name = $n LIMIT 1"))['id'] ?? 0);
+}
+
+/** Rep ids (registered_users.id) for a programme, in order. First = the one an
+ *  unlocated onsite enquiry is assigned to; all of them can see it in the inbox. */
+function wa_program_owner_ids($program) {
+    $raw = is_array($program) ? (string)($program['assigned_to'] ?? '') : (string)$program;
+    $out = [];
+    foreach (explode(',', $raw) as $p) {
+        $n = (int)trim($p);
+        if ($n > 0 && !in_array($n, $out, true)) { $out[] = $n; }
+    }
+    return $out;
+}
+
+/** The rep an unlocated onsite enquiry goes to, or null if the programme has none. */
+function wa_program_first_owner($program) {
+    $ids = wa_program_owner_ids($program);
+    return $ids ? $ids[0] : null;
+}
+
+/**
+ * Best-matching ACTIVE programme for a piece of text (the course title the chat was
+ * bound to, plus the customer's own words). Scores by how many of the programme's
+ * keywords appear, longest keyword first so "Data Analysis training" beats a bare
+ * "training". Returns the programme row or null.
+ *
+ * Used when an onsite enquiry has confirmed in-person but not yet named a country:
+ * there is no Event to route to, so the programme's rep takes it.
+ */
+function wa_program_match($conn, $text) {
+    $hay = ' ' . wa_normalize((string)$text) . ' ';
+    if (trim($hay) === '') { return null; }
+    $stop = wa_stopwords();
+    $best = null; $bestScore = 0;
+    foreach (wa_programs_list($conn, true) as $p) {
+        $score = 0;
+        foreach (wa_program_keywords_arr($p) as $kw) {
+            $phrase = trim(wa_normalize($kw));
+            if ($phrase === '') { continue; }
+
+            // Whole phrase present — the strongest signal, worth double.
+            if (strpos($hay, ' ' . $phrase . ' ') !== false) {
+                $score += 2 * mb_strlen($phrase);
+                continue;
+            }
+
+            // Otherwise score the phrase's DISTINCTIVE words. A keyword like
+            // "Data Analysis training" must still match a course called "Data
+            // Analysis Using SPSS", so generic words ('training', 'course',
+            // 'programme') are ignored on both sides via the shared stoplist.
+            $words = []; $hits = [];
+            foreach (explode(' ', $phrase) as $w) {
+                if ($w === '' || mb_strlen($w) < 3 || isset($stop[$w])) { continue; }
+                $words[] = $w;
+                if (strpos($hay, ' ' . $w . ' ') !== false) { $hits[] = $w; }
+            }
+            // Require most of them, so a lone "data" can't claim the Data Analysis
+            // programme off an unrelated sentence.
+            if ($words && (count($hits) / count($words)) >= 0.5) {
+                foreach ($hits as $w) { $score += mb_strlen($w); }
+            }
+        }
+        if ($score > $bestScore) { $bestScore = $score; $best = $p; }
+    }
+    return $best;
+}
+
+/** Programme for a chat bound to a course: match the course title, then the message. */
+function wa_program_for_course($conn, $courseId, $text = '') {
+    $cid = (int)$courseId;
+    $title = '';
+    if ($cid > 0) {
+        $r = mysqli_query($conn, "SELECT course FROM course WHERE course_id = $cid LIMIT 1");
+        $row = $r ? mysqli_fetch_assoc($r) : null;
+        $title = (string)($row['course'] ?? '');
+    }
+    $p = $title !== '' ? wa_program_match($conn, $title) : null;
+    return $p ?: wa_program_match($conn, $text);
 }
 
 /** Delete a programme and its KB. */
@@ -3191,11 +3336,18 @@ function wa_kb_ensure_schema($conn) {
         `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `name` VARCHAR(190) NOT NULL,
         `keywords` VARCHAR(500) DEFAULT NULL,
+        `assigned_to` VARCHAR(255) DEFAULT NULL,
         `status` TINYINT(1) NOT NULL DEFAULT 1,
         `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`),
         UNIQUE KEY `uq_wa_program_name` (`name`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    // Reps for a programme: CSV of registered_users.id, same convention as
+    // course.assigned_to / Event.assigned_to. An onsite enquiry that has not yet
+    // named a country is assigned to the FIRST id here, and every id in the list
+    // can see the chat in their inbox.
+    @mysqli_query($conn, "ALTER TABLE `wa_programs`
+        ADD COLUMN IF NOT EXISTS `assigned_to` VARCHAR(255) DEFAULT NULL");
     @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `wa_kb_learnings` (
         `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `ref_type` ENUM('course','event') NOT NULL,
