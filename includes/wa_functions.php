@@ -454,6 +454,19 @@ function wa_user_can_see_conv($conn, $conv, $staffId, $isSupervisor) {
         foreach (wa_owners($conn, $rt, $rid) as $o) { if ((int)$o['user_id'] === $sid) { return true; } }
         if ((int)wa_owner_override($conn, $rt, $rid) === $sid) { return true; }
     }
+    // A rep of the chat's training programme. Without this the inbox lists the chat
+    // (the scope allows it) but opening it says "not one of your courses".
+    $pid = (int)($conv['program_id'] ?? 0);
+    if ($pid > 0) {
+        $prog = wa_program_get($conn, $pid);
+        if ($prog && in_array($sid, wa_program_owner_ids($prog), true)) { return true; }
+    }
+    // Triage: unowned, unrouted, no programme — belongs to everyone until someone
+    // takes it, so any rep may open it. Mirrors wa_triage_sql().
+    $owner = $conv['assigned_user_id'] ?? null;
+    if (($owner === null || $owner === '') && $pid === 0 && ($rt === 'unknown' || $rid === 0)) {
+        return true;
+    }
     return false;
 }
 
@@ -471,10 +484,36 @@ function wa_user_can_see_conv($conn, $conv, $staffId, $isSupervisor) {
  *
  * Shared so the inbox page, the live JSON feed and the scope all agree.
  */
+/** Shortest inbound message that counts as a real enquiry ("Onsite" = 6, so this
+ *  keeps short but meaningful answers while dropping "hi" / "ok" / a stray emoji). */
+if (!defined('WA_TRIAGE_MIN_CHARS'))   { define('WA_TRIAGE_MIN_CHARS', 8); }
+/** How far back a triage chat stays worth chasing. */
+if (!defined('WA_TRIAGE_RECENT_DAYS')) { define('WA_TRIAGE_RECENT_DAYS', 30); }
+
 function wa_triage_sql($a = 'cv') {
+    // Only chats worth a human's time. Being unrouted is not enough on its own —
+    // most unrouted contacts are stray taps, bare greetings and long-dead numbers,
+    // and listing all of them buries the real enquiries. Require evidence the person
+    // actually asked us something, recently, and is still reachable.
+    $minChars = WA_TRIAGE_MIN_CHARS;
+    $days     = WA_TRIAGE_RECENT_DAYS;
     return "(($a.assigned_user_id IS NULL OR $a.assigned_user_id = '')
              AND $a.program_id IS NULL
-             AND ($a.ref_type = 'unknown' OR $a.ref_id IS NULL))";
+             AND ($a.ref_type = 'unknown' OR $a.ref_id IS NULL)
+             AND $a.status = 'open'
+             AND $a.last_message_at >= (NOW() - INTERVAL $days DAY)
+             AND (
+                  -- They wrote a real enquiry...
+                  EXISTS (SELECT 1 FROM wa_messages tm
+                           WHERE tm.contact_id = $a.contact_id
+                             AND tm.direction = 'inbound' AND tm.type <> 'note'
+                             AND CHAR_LENGTH(TRIM(COALESCE(tm.body, ''))) >= $minChars)
+                  -- ...or they told us onsite/virtual, which is a direction on its own
+                  -- even when the whole message is a single word such as: Onsite
+                  OR $a.delivery_mode <> 'unknown'
+             )
+             AND NOT EXISTS (SELECT 1 FROM wa_contacts tc
+                              WHERE tc.id = $a.contact_id AND tc.opted_out = 1))";
 }
 
 function wa_inbox_scope_where($staffId, $isSupervisor) {
