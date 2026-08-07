@@ -223,7 +223,7 @@ function generatePdf_invoice($email_address, $recipient_name, $subject, $invoice
 
     // DPO pay page: lands on the correct amount/units via the ticket id (the pay
     // page fetches those from the DB — don't append amount or units here).
-    $pay_link = 'https://vantageafricaleaders.com/pay/complete_payment.php?ticket_id=' . urlencode($entry_id);
+    $pay_link = 'https://vantageafricaleaders.com/pay/complete_payment.php?ticket_id=' . urlencode($entry_id) . '&pay=1';
     // With no fee configured, a single spanning placeholder row reads correctly;
     // repeating the placeholder sentence in the Cost/Total columns would not.
     if ($has_amount) {
