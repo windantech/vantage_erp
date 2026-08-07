@@ -126,6 +126,18 @@ if (isset($invoice_plan) && $invoice_plan !== '') {
         . '<tbody>' . $bd_rows . '</tbody></table>';
 }
 
+// The admission letter's Fee Structure must state the FULL course fee — even when the
+// applicant chose to pay by instalment (that split lives on the invoice breakdown only).
+// When a KES payment plan is present, use its grand total; otherwise keep $amount as-is
+// (e.g. USD courses / flows that never set a plan) so no other case is affected.
+$letter_amount = $amount;
+if (isset($invoice_total)) {
+    $lt = (float) str_replace(',', '', (string) $invoice_total);
+    if ($lt > 0) {
+        $letter_amount = 'KES ' . number_format($lt, 2);
+    }
+}
+
 // Generate Admission Letter PDF
 function generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount = true, $areas_html = '')
 {
@@ -440,7 +452,7 @@ $adm_letter_path = null;
 $invoice_path = null;
 
 try {
-    $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $amount, $purpose, $body, $adm, $has_amount, $areas_html);
+    $adm_letter_path = generatePdf($email_address, $recipient_name, $subject, $adm_no, $letter_date, $letter_amount, $purpose, $body, $adm, $has_amount, $areas_html);
 } catch (\Throwable $e) {
     error_log('[adm_letter] admission letter PDF failed for ' . $email_address
         . ' (' . $purpose . '): ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
