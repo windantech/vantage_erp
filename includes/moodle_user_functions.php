@@ -48,8 +48,7 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
                     <p style="margin: 5px 0;"><strong>🔑 Forgot password?</strong> <a href="' . htmlspecialchars($reset_url) . '" style="color: #2B5470; font-weight: bold;">Reset your password here</a></p>
                     ' . ($username !== '' ? '<p style="margin: 5px 0;"><strong>👤 Username:</strong> ' . htmlspecialchars($username) . '</p>' : '') . '
                 </div>
-                <p>If you have any issues accessing the portal, please contact us at <a href="mailto:isabel@vantageafricaleaders.com" style="color: #2B5470;">isabel@vantageafricaleaders.com</a> or call/WhatsApp <a href="' . htmlspecialchars($support_whatsapp) . '" style="color: #2B5470; font-weight: bold;">' . htmlspecialchars($support_phone) . '</a>.</p>
-                <p style="font-size: 12px; color: #6b5b47;">Policies:
+                                <p style="font-size: 12px; color: #6b5b47;">Policies:
                     <a href="https://vantageafricaleaders.com/policies.php#terms" style="color: #8B4513;">Terms</a> |
                     <a href="https://vantageafricaleaders.com/policies.php#refund" style="color: #8B4513;">Refund</a> |
                     <a href="https://vantageafricaleaders.com/policies.php#privacy" style="color: #8B4513;">Privacy</a>
@@ -173,8 +172,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
                 <div style="background-color: #fff3cd; padding: 15px; border: 1px solid #ffc107; margin: 15px 0; border-radius: 5px;">
                     <p style="margin: 0; font-weight: bold; color: #856404;">🔒 Please change your password after your first login for security.</p>
                 </div>
-                <p>If you have any issues accessing the portal, please contact us at <a href="mailto:isabel@vantageafricaleaders.com" style="color: #2B5470;">isabel@vantageafricaleaders.com</a> or call/WhatsApp <a href="' . htmlspecialchars($support_whatsapp) . '" style="color: #2B5470; font-weight: bold;">' . htmlspecialchars($support_phone) . '</a>.</p>
-                <p style="font-size: 12px; color: #6b5b47;">Policies:
+                                <p style="font-size: 12px; color: #6b5b47;">Policies:
                     <a href="https://vantageafricaleaders.com/policies.php#terms" style="color: #8B4513;">Terms</a> |
                     <a href="https://vantageafricaleaders.com/policies.php#refund" style="color: #8B4513;">Refund</a> |
                     <a href="https://vantageafricaleaders.com/policies.php#privacy" style="color: #8B4513;">Privacy</a>
