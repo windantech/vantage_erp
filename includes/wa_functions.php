@@ -898,6 +898,36 @@ function wa_conv_reengage_schema_ensure($conn) {
         ADD COLUMN IF NOT EXISTS `reengaged_at` DATETIME NULL DEFAULT NULL");
 }
 
+/**
+ * May a message flip an already-recorded mode?
+ *
+ * delivery_mode was last-write-wins, so a customer who said "in person" and then
+ * mentioned online in passing ("in-person instead of online", "is the online one
+ * cheaper?") was silently re-recorded as VIRTUAL and handed to the virtual rep.
+ * An in-person lead is the harder one to win back, so ONSITE is sticky: only a
+ * real change of mind moves it — a short direct answer ("online", "zoom please")
+ * or an explicit preference. Everything else keeps onsite.
+ *
+ * Nothing else is sticky: unknown -> anything, and onsite over virtual, still apply
+ * immediately.
+ */
+function wa_mode_switch_allowed($currentMode, $newMode, $text) {
+    if ($currentMode !== 'onsite' || $newMode !== 'virtual') { return true; }
+    $t = trim(wa_normalize((string)$text));
+    if ($t === '') { return false; }
+    // A message still carrying an in-person cue is never a switch to virtual, whatever
+    // else it says — "in-person instead of online" is a preference FOR onsite.
+    if (preg_match('/\b(on[\s-]?site|onsite|in[\s-]?person|physical|face[\s-]?to[\s-]?face|classroom|in[\s-]?class)\b/i', $t)) {
+        return false;
+    }
+    // A short, direct reply is the customer answering the question — take it.
+    if (count(array_filter(explode(' ', $t))) <= 4) { return true; }
+    // Otherwise require them to actually state the preference.
+    return (bool)preg_match(
+        '/\b(prefer|rather|instead|switch|change|go with|opt for|choose|chose|settle for|take the|do the|sign up for)\b/i',
+        $t);
+}
+
 /** Persist the customer's chosen delivery mode on their conversation. */
 function wa_conv_set_mode($conn, $convId, $mode) {
     $convId = (int)$convId;
@@ -967,7 +997,17 @@ function wa_route_inbound($conn, $waId, $text, $adId = null, $name = null) {
     // were holding get the virtual rep. Never override a chat a human has taken over.
     wa_conv_mode_schema_ensure($conn);
     $modeSaid = wa_detect_delivery_mode($text);
-    if ($modeSaid !== '' && $conv) { wa_conv_set_mode($conn, (int)$conv['id'], $modeSaid); }
+    if ($modeSaid !== '' && $conv) {
+        $curMode = (string)($conv['delivery_mode'] ?? 'unknown');
+        if (wa_mode_switch_allowed($curMode, $modeSaid, $text)) {
+            wa_conv_set_mode($conn, (int)$conv['id'], $modeSaid);
+        } else {
+            // Keep onsite; an incidental mention of online is not a change of mind.
+            $modeSaid = $curMode;
+            error_log('[wa-mode] kept onsite for contact ' . (int)$contactId
+                . ' (incidental virtual mention): ' . mb_substr(trim((string)$text), 0, 80));
+        }
+    }
     // VIRTUAL confirmed for a dual-mode topic we were holding -> now assign the virtual rep.
     // ONSITE is deliberately NOT auto-assigned: which onsite session (and its rep) depends on
     // the client's LOCATION, so we keep the chat general and let the AI ask where they are —
