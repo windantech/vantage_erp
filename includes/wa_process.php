@@ -158,14 +158,30 @@ switch ($action) {
             wa_flash('warning', 'That conversation is not for one of your courses.');
             wa_redirect('../wa_inbox.php');
         }
-        $tmpl = wa_setting_get($conn, 'reengage_template', '');
+        // The rep picks the template in the thread. Fall back to the configured
+        // default so an older form (or a link without a picker) still works.
+        $tmpl = trim((string)($_POST['template'] ?? ''));
+        $picked = ($tmpl !== '');
+        if (!$picked) { $tmpl = wa_setting_get($conn, 'reengage_template', ''); }
         if ($tmpl === '') {
-            wa_flash('warning', 'No re-engagement template configured yet (set the reengage_template setting to your approved template name).');
+            wa_flash('warning', 'Pick a template to re-engage with (or set the reengage_template setting for a default).');
             wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+        // Only ever send something Meta has approved.
+        if ($picked) {
+            $ok = false;
+            foreach (wa_templates_approved($conn) as $t) {
+                if ($t['name'] === $tmpl) { $ok = true; break; }
+            }
+            if (!$ok) {
+                wa_flash('warning', 'That template is not approved, so WhatsApp would reject it.');
+                wa_redirect('../wa_thread.php?id=' . $conv_id);
+            }
         }
         // Language: use the configured code, else auto-detect from the synced template
         // record, else 'en'. A wrong code causes WhatsApp 132001 "does not exist in <lang>".
-        $lang = trim((string)wa_setting_get($conn, 'reengage_template_lang', ''));
+        $lang = trim((string)($_POST['lang'] ?? ''));
+        if ($lang === '' && !$picked) { $lang = trim((string)wa_setting_get($conn, 'reengage_template_lang', '')); }
         if ($lang === '') {
             $lr = mysqli_query($conn, "SELECT language FROM wa_templates WHERE name = '"
                 . mysqli_real_escape_string($conn, $tmpl) . "' ORDER BY id DESC LIMIT 1");
@@ -199,10 +215,23 @@ switch ($action) {
             && preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string)$brow['body'], $mm) && $mm[1]) {
             $nVars = max(array_map('intval', $mm[1]));
         }
-        if ($nVars >= 3)      { $vals = [$custName, $staffName, $course]; }
-        elseif ($nVars === 2) { $vals = [$custName, $course]; }
-        elseif ($nVars === 1) { $vals = [$custName]; }
-        else                  { $vals = []; }
+        // Values the rep typed win. Anything they left blank falls back to the
+        // auto-filled default, so a half-filled form still sends something sensible
+        // and never a literal empty variable (WhatsApp rejects those).
+        $posted = $_POST['vars'] ?? [];
+        if (!is_array($posted)) { $posted = []; }
+        $auto = [$custName, $staffName, $course];
+        if ($nVars === 2)      { $auto = [$custName, $course]; }
+        elseif ($nVars === 1)  { $auto = [$custName]; }
+
+        $vals = [];
+        for ($i = 0; $i < $nVars; $i++) {
+            $v = isset($posted[$i]) ? trim((string)$posted[$i]) : '';
+            if ($v === '') { $v = $auto[$i] ?? $custName; }
+            // A blank or newline-only value is rejected by WhatsApp (132000).
+            $v = trim(preg_replace('/\s+/u', ' ', $v));
+            $vals[] = ($v !== '') ? $v : $custName;
+        }
         $params = [];
         foreach ($vals as $v) { $params[] = ['type' => 'text', 'text' => $v]; }
         $components = $params ? [['type' => 'body', 'parameters' => $params]] : [];

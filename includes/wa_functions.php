@@ -1408,6 +1408,48 @@ function wa_active_provider($conn) {
 // Templates + broadcast
 // =====================================================================
 
+/** Approved templates only, each with the number of {{n}} variables its body uses. */
+function wa_templates_approved($conn) {
+    $res = mysqli_query($conn, "SELECT name, language, category, body FROM wa_templates
+                                 WHERE status = 'approved' ORDER BY name, language");
+    $out = [];
+    if ($res) {
+        while ($r = mysqli_fetch_assoc($res)) {
+            $n = 0;
+            if (preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string)$r['body'], $mm) && $mm[1]) {
+                $n = max(array_map('intval', $mm[1]));
+            }
+            $r['vars'] = $n;
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Sensible starting values for a re-engagement template's variables, in the order
+ * WhatsApp numbers them. The rep can overwrite any of them before sending — these
+ * are a starting point, not a rule, which is the whole reason the picker exists.
+ */
+function wa_reengage_defaults($conn, $conv, $staffId) {
+    $cid = (int)($conv['contact_id'] ?? 0);
+    $name = wa_scalar_str($conn, "SELECT profile_name FROM wa_contacts WHERE id = $cid LIMIT 1");
+    $country = wa_scalar_str($conn, "SELECT country FROM wa_contacts WHERE id = $cid LIMIT 1");
+    $rep  = wa_scalar_str($conn,
+        "SELECT COALESCE(NULLIF(s.full_name,''), ru.fullname) FROM registered_users ru
+      LEFT JOIN staff s ON s.system_user_id = ru.id WHERE ru.id = " . (int)$staffId . " LIMIT 1");
+    $course = '';
+    if (($conv['ref_id'] ?? null) !== null && in_array($conv['ref_type'] ?? '', ['course', 'event', 'program'], true)) {
+        $course = trim((string)wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id']));
+    }
+    return [
+        'name'    => trim($name) !== '' ? trim($name) : 'there',
+        'rep'     => trim($rep)  !== '' ? trim($rep)  : 'the Vantage Africa team',
+        'course'  => $course !== '' ? $course : 'our programmes',
+        'country' => trim($country),
+    ];
+}
+
 function wa_templates_list($conn) {
     $res = mysqli_query($conn, "SELECT * FROM wa_templates ORDER BY name, language");
     $rows = [];

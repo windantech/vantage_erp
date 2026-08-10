@@ -268,20 +268,109 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         <div class="text-warning small">
                             <i class="bi bi-clock-history me-1"></i>24-hour window closed — free-form replies are blocked. Use an approved template to re-engage.
                         </div>
-                        <?php $reTmpl = wa_setting_get($conn, 'reengage_template', ''); ?>
-                        <?php if ($reTmpl !== ''): ?>
-                            <form method="post" action="includes/wa_process.php" class="mt-2"
-                                  onsubmit="return confirm('Send the re-engagement template to this customer?');">
+                        <?php
+                        // Pick ANY approved template and fill its variables — a re-engagement
+                        // lands differently depending on where the conversation stalled, so the
+                        // rep chooses rather than always firing one configured message.
+                        $reTemplates = wa_templates_approved($conn);
+                        $reDefault   = wa_setting_get($conn, 'reengage_template', '');
+                        $reFill      = wa_reengage_defaults($conn, $conv, $staff_id);
+                        ?>
+                        <?php if ($reTemplates): ?>
+                            <form method="post" action="includes/wa_process.php" class="mt-2" id="reForm"
+                                  onsubmit="return confirm('Send this template to the customer?');">
                                 <input type="hidden" name="action" value="reengage">
                                 <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
-                                <button type="submit" class="btn btn-sm btn-warning">
-                                    <i class="bi bi-arrow-repeat me-1"></i>Send re-engagement template
-                                </button>
+                                <input type="hidden" name="lang" id="reLang" value="">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label small text-muted mb-0">Re-engagement template</label>
+                                        <select name="template" id="reTemplate" class="form-select form-select-sm" required>
+                                            <option value="">— choose a template —</option>
+                                            <?php foreach ($reTemplates as $i => $t): ?>
+                                                <option value="<?php echo wa_e($t['name']); ?>" data-i="<?php echo (int)$i; ?>"
+                                                    <?php echo ($t['name'] === $reDefault) ? 'selected' : ''; ?>>
+                                                    <?php echo wa_e($t['name']); ?> (<?php echo wa_e($t['language']); ?><?php echo (int)$t['vars'] ? ', ' . (int)$t['vars'] . ' var' . ((int)$t['vars'] === 1 ? '' : 's') : ', no vars'; ?>)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <button type="submit" class="btn btn-sm btn-warning">
+                                            <i class="bi bi-arrow-repeat me-1"></i>Send re-engagement
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="rePreview" class="small text-muted border rounded bg-light p-2 mt-2 d-none"></div>
+                                <div id="reVars" class="mt-2"></div>
                             </form>
+                            <script>
+                            (function () {
+                                var TPLS = <?php echo json_encode(array_map(function ($t) {
+                                    return ['name' => $t['name'], 'lang' => $t['language'],
+                                            'vars' => (int)$t['vars'], 'body' => (string)$t['body']];
+                                }, $reTemplates), JSON_UNESCAPED_UNICODE); ?>;
+                                var FILL = <?php echo json_encode($reFill, JSON_UNESCAPED_UNICODE); ?>;
+                                // Order matches how the sender fills them: 3 vars = name, rep,
+                                // course; 2 = name, course; 1 = name.
+                                function defaultsFor(n) {
+                                    if (n >= 3) return [FILL.name, FILL.rep, FILL.course];
+                                    if (n === 2) return [FILL.name, FILL.course];
+                                    if (n === 1) return [FILL.name];
+                                    return [];
+                                }
+                                var sel = document.getElementById('reTemplate'),
+                                    box = document.getElementById('reVars'),
+                                    pre = document.getElementById('rePreview'),
+                                    lang = document.getElementById('reLang');
+                                var CHIPS = [['Name', 'name'], ['Rep', 'rep'], ['Course', 'course']]
+                                    .concat(FILL.country ? [['Country', 'country']] : []);
+                                function render() {
+                                    box.innerHTML = ''; pre.classList.add('d-none');
+                                    var opt = sel.options[sel.selectedIndex];
+                                    var t = opt && opt.getAttribute('data-i') !== null ? TPLS[+opt.getAttribute('data-i')] : null;
+                                    if (!t) { lang.value = ''; return; }
+                                    lang.value = t.lang;
+                                    if (t.body) { pre.textContent = t.body; pre.classList.remove('d-none'); }
+                                    if (!t.vars) { return; }
+                                    var d = defaultsFor(t.vars);
+                                    var help = document.createElement('div');
+                                    help.className = 'small text-muted mb-1';
+                                    help.textContent = 'Filled in for you — edit any of them before sending.';
+                                    box.appendChild(help);
+                                    for (var i = 1; i <= t.vars; i++) {
+                                        var w = document.createElement('div'); w.className = 'mb-2';
+                                        var l = document.createElement('label');
+                                        l.className = 'form-label small text-muted mb-0';
+                                        l.textContent = 'Variable {{' + i + '}}';
+                                        var inp = document.createElement('input');
+                                        inp.type = 'text'; inp.className = 'form-control form-control-sm';
+                                        inp.name = 'vars[]'; inp.value = d[i - 1] || '';
+                                        inp.placeholder = 'value for {{' + i + '}}';
+                                        var chips = document.createElement('div');
+                                        chips.className = 'mt-1 d-flex gap-1 flex-wrap';
+                                        CHIPS.forEach(function (c) {
+                                            var b = document.createElement('button');
+                                            b.type = 'button';
+                                            b.className = 'btn btn-sm btn-outline-secondary py-0 px-2';
+                                            b.textContent = c[0];
+                                            b.addEventListener('click', (function (target, key) {
+                                                return function () { target.value = FILL[key] || ''; target.focus(); };
+                                            })(inp, c[1]));
+                                            chips.appendChild(b);
+                                        });
+                                        w.appendChild(l); w.appendChild(inp); w.appendChild(chips);
+                                        box.appendChild(w);
+                                    }
+                                }
+                                sel.addEventListener('change', render);
+                                render();
+                            })();
+                            </script>
                         <?php else: ?>
                             <div class="small text-muted mt-1">
-                                <i class="bi bi-info-circle me-1"></i>To enable one-click re-engage here, get a template
-                                approved and set the <code>reengage_template</code> setting to its name.
+                                <i class="bi bi-info-circle me-1"></i>No approved templates yet. Get one approved in
+                                <a href="wa_templates.php">Templates</a> before you can re-engage a closed window.
                             </div>
                         <?php endif; ?>
                     <?php endif; ?>
