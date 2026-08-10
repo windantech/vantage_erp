@@ -76,14 +76,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .workspace{display:grid;gap:14px}
     .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
     .bde-app .panel,.bde-app .metric,.bde-app .action-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
-    /* Personal portfolio panel: a light-blue wash across the whole section with a
-       subtle concentric-circle motif; the white metric cards sit on top of it. */
-    .bde-app .portfolio-panel{background:var(--portfolio);position:relative;overflow:hidden}
-    .bde-app .portfolio-panel::after{content:"";position:absolute;top:-90px;right:-60px;width:280px;height:280px;pointer-events:none;
-      background:radial-gradient(circle, transparent 56%, color-mix(in srgb,var(--navy) 10%,transparent) 57% 61%, transparent 62%),
-                radial-gradient(circle, transparent 71%, color-mix(in srgb,var(--navy) 8%,transparent) 72% 76%, transparent 77%),
-                radial-gradient(circle, transparent 86%, color-mix(in srgb,var(--navy) 6%,transparent) 87% 91%, transparent 92%)}
-    .bde-app .portfolio-panel > *{position:relative;z-index:1}
+    /* Personal portfolio panel: a light wash across the whole section; the white
+       metric cards sit on top of it. */
+    .bde-app .portfolio-panel{background:var(--portfolio)}
     .bde-app .panel{padding:16px}
     .bde-app .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
     .bde-app .panel-head h3{font-size:15px;margin:0;color:var(--ink)}
@@ -94,12 +89,13 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .badge.red{color:var(--red);background:var(--redbg)}
     .bde-app .badge.blue{color:var(--blue);background:var(--bluebg)}
     .bde-app .metric-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .bde-app .metric{padding:15px 15px 14px;min-height:132px;position:relative;overflow:hidden;display:flex;flex-direction:column}
+    .bde-app .metric{padding:15px 15px 14px 18px;min-height:132px;position:relative;overflow:hidden;display:flex;flex-direction:column}
     .bde-app .metric::after{content:"";position:absolute;width:78px;height:78px;border-radius:50%;right:-34px;top:-34px;background:color-mix(in srgb,var(--orange) 10%,transparent)}
     .bde-app .metric .label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
     .bde-app .metric .value{font-size:23px;font-weight:850;margin:8px 0 4px;line-height:1.1;letter-spacing:-.02em}
     .bde-app .metric .note{font-size:11px;color:var(--muted)}
     .bde-app .metric .delta{font-size:11px;font-weight:750;margin-top:auto;padding-top:8px}
+    .bde-app .metric .delta.neutral{align-self:flex-start;margin-top:auto;padding:5px 10px;background:var(--surface2);border:1px solid var(--line);border-radius:9px;color:var(--muted);font-size:10px;letter-spacing:.03em}
     .bde-app .up{color:var(--green)} .bde-app .down{color:var(--red)} .bde-app .neutral{color:var(--amber)}
     .bde-app .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
     .bde-app .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
@@ -196,7 +192,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .panel{border-radius:18px}
     .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
     .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
-    .bde-app .metric::after{width:auto;height:3px;left:0;right:0;top:0;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--orange),var(--gold))}
+    .bde-app .metric::after{content:"";position:absolute;left:0;right:auto;top:0;bottom:0;width:4px;height:auto;border-radius:14px 0 0 14px;background:var(--orange)}
+    .bde-app .metric[data-delta="up"]::after{background:var(--green)}
+    .bde-app .metric[data-delta="down"]::after{background:var(--red)}
     .bde-app .tab{transition:color .15s ease,box-shadow .15s ease,background .15s ease}
     .bde-app .tab:hover{background:var(--surface2);color:var(--ink)}
     .bde-app .tab.active{box-shadow:0 8px 18px -8px color-mix(in srgb,var(--orange) 60%,transparent)}
@@ -764,7 +762,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
   function metricHTML(items){
     return `<div class="metric-grid">${items.map(([label,value,note,delta])=>`
-      <div class="metric">
+      <div class="metric" data-delta="${delta||"neutral"}">
         <div class="label">${esc(label)}</div>
         <div class="value">${esc(value)}</div>
         <div class="note">${esc(note)}</div>
