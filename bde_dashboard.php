@@ -28,6 +28,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
       --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
       --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
+      --portfolio:#e8f0fa;   /* light-blue wash behind the personal portfolio metrics */
       --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
       --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
       background:var(--bg); color:var(--ink);
@@ -39,14 +40,17 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       --line:#2b3a45; --navy:#7fb4d6; --navy2:#9ed0ea; --orange:#f2905a; --gold:#e0b25a; --teal:#54bfb6;
       --green:#5cc487; --amber:#e0b257; --red:#ec7a72; --blue:#71a6d8; --purple:#a595d6;
       --greenbg:#16301f; --amberbg:#2f2913; --redbg:#331d1f; --bluebg:#182b3b; --shadow:none;
+      --portfolio:#17293b;
     }
     .bde-app *{box-sizing:border-box}
     .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
     .bde-app button{cursor:pointer}
     .bde-app .bde-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
     .bde-app .brand{display:flex;align-items:center;gap:12px;min-width:260px}
-    .bde-app .mark{width:42px;height:42px;padding:5px;border-radius:12px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}
-    .bde-app .mark img{width:100%;height:100%;object-fit:contain;display:block}
+    .bde-app .mark{width:auto;height:44px;padding:0;background:none;border:none;display:grid;place-items:center}
+    .bde-app .mark img{height:44px;width:auto;object-fit:contain;display:block}
+    .bde-app.theme-dark .mark{background:#fff;padding:3px 7px;border-radius:10px}
+    .bde-app.theme-dark .mark img{height:38px}
     .bde-app .brand h1{font-size:17px;margin:0;line-height:1.15;color:var(--ink)}
     .bde-app .brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
     .bde-app .controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:end}
@@ -72,6 +76,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .workspace{display:grid;gap:14px}
     .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
     .bde-app .panel,.bde-app .metric,.bde-app .action-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+    /* Personal portfolio panel: a light-blue wash across the whole section with a
+       subtle concentric-circle motif; the white metric cards sit on top of it. */
+    .bde-app .portfolio-panel{background:var(--portfolio);position:relative;overflow:hidden}
+    .bde-app .portfolio-panel::after{content:"";position:absolute;top:-90px;right:-60px;width:280px;height:280px;pointer-events:none;
+      background:radial-gradient(circle, transparent 56%, color-mix(in srgb,var(--navy) 10%,transparent) 57% 61%, transparent 62%),
+                radial-gradient(circle, transparent 71%, color-mix(in srgb,var(--navy) 8%,transparent) 72% 76%, transparent 77%),
+                radial-gradient(circle, transparent 86%, color-mix(in srgb,var(--navy) 6%,transparent) 87% 91%, transparent 92%)}
+    .bde-app .portfolio-panel > *{position:relative;z-index:1}
     .bde-app .panel{padding:16px}
     .bde-app .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
     .bde-app .panel-head h3{font-size:15px;margin:0;color:var(--ink)}
@@ -94,7 +106,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .progress-wrap{margin-top:8px}
     .bde-app .progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px}
     .bde-app .track{height:10px;background:var(--surface2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
-    .bde-app .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--teal),var(--orange));width:0;transition:width .35s ease}
+    .bde-app .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));width:0;transition:width .35s ease}
     .bde-app .commission-road{position:relative;padding:14px 5px 4px;margin-top:4px}
     .bde-app .road{height:12px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
     .bde-app .road .fill{background:linear-gradient(90deg,var(--red),var(--amber),var(--green));max-width:100%}
@@ -145,7 +157,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .chart .area{fill:color-mix(in srgb,var(--orange) 13%,transparent)}
     .bde-app .chart .dot{fill:var(--surface);stroke:var(--orange);stroke-width:2}
     .bde-app .scenario{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:9px;align-items:end}
-    .bde-app .scenario .control label{font-size:9px}
+    .bde-app .scenario .control label{font-size:11.5px;letter-spacing:.06em}
     .bde-app .scenario input{width:100%;min-width:0}
     .bde-app .callout{background:var(--bluebg);border:1px solid color-mix(in srgb,var(--blue) 35%,var(--line));border-radius:13px;padding:12px;font-size:12px}
     .bde-app .callout strong{color:var(--blue)}
@@ -202,12 +214,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     /* ---- Ported header / identity / strip / tabs (approved preview) ---- */
     .bde-app .bde-topbar{gap:20px;flex-wrap:wrap;padding:16px 22px;border-radius:20px}
     .bde-app .brand{gap:13px;min-width:230px}
-    .bde-app .mark{width:46px;height:46px;border-radius:13px;font-family:var(--display);font-weight:800;letter-spacing:.5px;font-size:15px;box-shadow:0 8px 18px -8px rgba(18,58,92,.6)}
+    .bde-app .mark{width:auto;height:44px;box-shadow:none}
     .bde-app .brand h1{font-size:18px}
     .bde-app .brand p .sep{color:var(--gold);margin:0 3px}
     .bde-app .controls{align-items:center;gap:10px}
     .bde-app .identity,.bde-app .period select,.bde-app .icon-btn{height:48px}
-    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#574a8a,#3f3566);color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(58,44,94,.7)}
+    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#3b424e,#252b33);color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(20,26,33,.6)}
     .bde-app .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
     .bde-app .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15;color:#fff}
     .bde-app .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
@@ -869,7 +881,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     const orgContext=state.role==="BDE"?departments[state.department]:s;
     return `
       <section class="hero">
-        <div class="panel">
+        <div class="panel portfolio-panel">
           <div class="panel-head">
             <div><h3>${esc(s.name)} — ${esc(s.title)}</h3><p>${esc(s.level)} · ${esc(s.department)} · ${esc(document.getElementById("monthSelect").value)}</p></div>
             <span class="badge ${ps.status}">${ps.label} · pace ${pct(ps.pace)}</span>
