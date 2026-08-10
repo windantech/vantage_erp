@@ -230,7 +230,7 @@ if (!headers_sent()) {
     </li>
 <?php } ?>
 
-<?php if (in_array(55, $role) || in_array(777, $role)) { ?>
+<?php if (in_array(88, $role) || in_array(55, $role) || in_array(777, $role)) { ?>
     <!-- Corporate Trainings -->
     <li class="nav-item">
         <a class="nav-link" href="corporate_programs.php">

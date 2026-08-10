@@ -2,7 +2,7 @@
 require_once 'header.php';
 require_once 'includes/corporate_program_functions.php';
 
-if (!in_array(55, $role) && !in_array(777, $role)) {
+if (!in_array(88, $role) && !in_array(55, $role) && !in_array(777, $role)) {
     header('Location: ./');
     exit;
 }
