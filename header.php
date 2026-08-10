@@ -79,12 +79,12 @@ if (!headers_sent()) {
         </a>
     </li>
 
-    <!-- Nav Item - Performance (BDE dashboard).
-         Only rendered while ON the BDE dashboard route, so it stays hidden from
-         the shared sidebar on every other page. -->
-    <?php if (basename($_SERVER['SCRIPT_NAME']) === 'bde_dashboard.php') { ?>
+    <!-- Nav Item - Performance (role dashboards).
+         Only rendered while ON a performance-dashboard route, so it stays hidden
+         from the shared sidebar on every other page. Links to the current one. -->
+    <?php $perf_page = basename($_SERVER['SCRIPT_NAME']); if (in_array($perf_page, ['bde_dashboard.php', 'bdo_dashboard.php'], true)) { ?>
     <li class="nav-item active">
-        <a class="nav-link" href="bde_dashboard.php">
+        <a class="nav-link" href="<?php echo $perf_page; ?>">
             <i class="fas fa-fw fa-chart-line"></i>
             <span>Performance</span>
         </a>
