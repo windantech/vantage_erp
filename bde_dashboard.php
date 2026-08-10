@@ -115,7 +115,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .bde-app .driver{position:relative;overflow:hidden;background:color-mix(in srgb,var(--dacc,var(--brand)) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--dacc,var(--brand)) 22%,var(--line));border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
+    .bde-app .driver{position:relative;overflow:hidden;background:color-mix(in srgb,var(--dacc,var(--brand)) 10%,var(--surface));border:0;border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
     .bde-app .driver:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
     .bde-app .driver::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--dacc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     .bde-app .driver .dtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
