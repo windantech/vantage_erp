@@ -88,10 +88,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
-    .bde-app .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc,var(--jade))}
-    .bde-app .kpi .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
+    .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--brand);border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .bde-app .kpi .lab{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
     .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
-    .bde-app .kpi .delta{font-size:11px;font-weight:700;margin-top:10px} .bde-app .kpi .delta .dic{font-weight:900;font-size:14px;display:inline-block;vertical-align:-1px;margin-right:1px} .bde-app .delta.up{color:var(--jade)} .bde-app .delta.down{color:var(--coral)} .bde-app .delta.live{color:var(--brand)}
+    .bde-app .kpi .delta{font-size:11px;font-weight:700;margin-top:10px} .bde-app .kpi .delta .dic{font-weight:900;font-size:14px;display:inline-block;vertical-align:-1px;margin-right:1px} .bde-app .delta.up{color:var(--jade)} .bde-app .delta.down{color:var(--coral)} .bde-app .delta.flat{color:var(--brand)}
 
     .bde-app .prog .pl{font-size:13px;color:var(--muted);margin-top:2px} .bde-app .prog .pl b{color:var(--ink)}
     .bde-app .bar{height:14px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden;margin-top:14px;position:relative} .bde-app .bar .bf{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--coral),var(--amber) 55%,var(--jade));transition:width .6s cubic-bezier(.22,.61,.36,1)} .bde-app .bar .exp{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink2);opacity:.6}
@@ -250,14 +250,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       function kpiBlock(){
         const p=period();const att=B.actual/B.target;const daysLeft=Math.max(0,p.working-p.elapsed);const dailyNeed=daysLeft?Math.max(0,(B.target-B.actual)/daysLeft):0;const c=commission();
         const items=[
-          ["Monthly target",kMoney(B.target),"Approved personal target","live","var(--slate)"],
+          ["Monthly target",kMoney(B.target),"Approved personal target","flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" of target","up","var(--jade)"],
-          ["Volume achieved",nf.format(B.units),"of "+nf.format(B.unitTarget)+" target","live","var(--slate)"],
+          ["Volume achieved",nf.format(B.units),"of "+nf.format(B.unitTarget)+" target","flat","var(--slate)"],
           ["Qualified pipeline",kMoney(B.pipeline),(B.pipeline/B.target).toFixed(1)+"× target coverage","up","var(--slate)"],
-          ["Commission estimate",kMoney(c.current),"current eligible estimate","live","var(--gold)"],
-          ["Daily pace needed",kMoney(dailyNeed),daysLeft+" working days left","live","var(--amber)"]
+          ["Commission estimate",kMoney(c.current),"current eligible estimate","flat","var(--gold)"],
+          ["Daily pace needed",kMoney(dailyNeed),daysLeft+" working days left","flat","var(--amber)"]
         ];
-        const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',live:'<span class="dic">•</span> Live from CRM / Finance'};
+        const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
         return `<div class="kpis">${items.map(([l,v,m,d,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div><div class="delta ${d}">${dt[d]}</div></div>`).join("")}</div>`;
       }
 
