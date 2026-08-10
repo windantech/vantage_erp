@@ -1450,6 +1450,95 @@ function wa_reengage_defaults($conn, $conv, $staffId) {
     ];
 }
 
+/**
+ * Suggest LITERAL values for one chat's re-engagement template variables.
+ *
+ * Deliberately not wa_broadcast_suggest_vars(): that maps placeholders to tokens
+ * ({name}, {course}) because a broadcast substitutes per recipient. Here there is
+ * exactly one customer and a whole conversation to read, so the AI can propose the
+ * actual words — picking up where the chat stalled, which is the entire reason a
+ * rep re-engages in the first place.
+ *
+ * Falls back to the deterministic name/rep/course defaults whenever the AI is
+ * unavailable or answers with anything unusable, so the button never leaves the
+ * form worse than it found it.
+ */
+function wa_reengage_suggest_vars($conn, $convId, $tplName, $lang, $staffId) {
+    $convId = (int)$convId;
+    $conv = null;
+    $cr = mysqli_query($conn, "SELECT * FROM wa_conversations WHERE id = $convId LIMIT 1");
+    if ($cr) { $conv = mysqli_fetch_assoc($cr); }
+    if (!$conv) { return ['ok' => false, 'error' => 'no_conversation']; }
+
+    $tplName = trim((string)$tplName);
+    if ($tplName === '') { return ['ok' => false, 'error' => 'no_template']; }
+    $q = "SELECT body FROM wa_templates WHERE name = '" . mysqli_real_escape_string($conn, $tplName) . "'";
+    if (trim((string)$lang) !== '') { $q .= " AND language = '" . mysqli_real_escape_string($conn, $lang) . "'"; }
+    $body = wa_scalar_str($conn, $q . " ORDER BY id DESC LIMIT 1");
+    if ($body === '') { return ['ok' => false, 'error' => 'no_body']; }
+
+    preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $mm);
+    $nums = $mm[1] ? array_values(array_unique(array_map('intval', $mm[1]))) : [];
+    sort($nums);
+    if (!$nums) { return ['ok' => true, 'map' => (object)[]]; }
+
+    // Deterministic baseline — also the fallback if the AI is off or unhelpful.
+    $fill = wa_reengage_defaults($conn, $conv, $staffId);
+    $n = count($nums);
+    $base = ($n >= 3) ? [$fill['name'], $fill['rep'], $fill['course']]
+          : (($n === 2) ? [$fill['name'], $fill['course']] : [$fill['name']]);
+    $map = [];
+    foreach ($nums as $i => $num) { $map[(string)$num] = $base[$i] ?? $fill['name']; }
+
+    $provider = wa_active_provider($conn);
+    if (!wa_provider_ready($provider)) { return ['ok' => true, 'map' => $map, 'ai' => false]; }
+
+    // Recent conversation, oldest first, so the model sees how it stalled.
+    $lines = [];
+    foreach (array_slice(wa_thread($conn, (int)$conv['contact_id'], 40), -12) as $m) {
+        if (($m['type'] ?? '') === 'note') { continue; }
+        $t = trim(preg_replace('/\s+/u', ' ', (string)($m['body'] ?? '')));
+        if ($t === '') { continue; }
+        $lines[] = (($m['direction'] ?? '') === 'inbound' ? 'Customer: ' : 'Us: ') . mb_substr($t, 0, 220);
+    }
+
+    $topic = $fill['course'];
+    $ctx = "Customer name: {$fill['name']}\n"
+         . ($fill['country'] !== '' ? "Customer country (from their phone number): {$fill['country']}\n" : '')
+         . "Programme discussed: {$topic}\n"
+         . "Our staff member re-engaging them: {$fill['rep']}\n"
+         . 'Delivery mode they wanted: ' . (string)($conv['delivery_mode'] ?? 'unknown') . "\n"
+         . 'Where routing left it: ' . (string)($conv['last_route_reason'] ?? 'n/a') . "\n\n"
+         . "Recent conversation:\n" . (implode("\n", $lines) ?: '(no readable messages)');
+
+    $system = 'You fill in the variables of an approved WhatsApp re-engagement template for ONE customer '
+            . 'whose chat went quiet. Reply with ONLY a JSON object mapping each placeholder number to the '
+            . 'literal text to insert, e.g. {"1":"Jane","2":"Peter Otieno"}. Rules: each value is plain text '
+            . 'on a SINGLE line, no newlines, no emoji, under 60 characters, and must read naturally where the '
+            . 'placeholder sits in the template. Use the real names, programme and country from the context — '
+            . 'never invent dates, prices or promises, and never write a placeholder token like {name}.';
+    $user = "Template body:\n\"" . $body . "\"\n\nPlaceholder numbers: " . implode(', ', $nums)
+          . "\n\nContext:\n" . $ctx;
+
+    $ans = wa_ai_complete($provider, $system, [['role' => 'user', 'content' => $user]],
+                          ['json' => true, 'max_tokens' => 300]);
+    if (empty($ans['ok'])) { return ['ok' => true, 'map' => $map, 'ai' => false]; }
+
+    $data = wa_json_extract($ans['text'] ?? '');
+    if (!is_array($data)) { return ['ok' => true, 'map' => $map, 'ai' => false]; }
+
+    $used = false;
+    foreach ($nums as $num) {
+        $v = isset($data[(string)$num]) ? (string)$data[(string)$num] : '';
+        $v = trim(preg_replace('/\s+/u', ' ', $v));          // template params reject newlines
+        if ($v === '' || mb_strlen($v) > 60) { continue; }    // keep the deterministic default
+        if (preg_match('/\{\{?\s*\w+\s*\}?\}/', $v)) { continue; }  // it echoed a token, not a value
+        $map[(string)$num] = $v;
+        $used = true;
+    }
+    return ['ok' => true, 'map' => $map, 'ai' => $used];
+}
+
 function wa_templates_list($conn) {
     $res = mysqli_query($conn, "SELECT * FROM wa_templates ORDER BY name, language");
     $rows = [];

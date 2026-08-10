@@ -184,6 +184,21 @@ if ($action === 'broadcast_suggest_vars') {
     catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
 }
 
+// ---- Thread: AI-suggest literal values for a re-engagement template's variables ----
+// Any rep who may open the chat may use this, since it only reads that one chat.
+if ($action === 'reengage_suggest_vars') {
+    $cid  = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
+    $tpl  = (string)($_POST['template'] ?? $_GET['template'] ?? '');
+    $lang = (string)($_POST['lang'] ?? $_GET['lang'] ?? '');
+    $cr   = mysqli_query($conn, "SELECT * FROM wa_conversations WHERE id = $cid LIMIT 1");
+    $conv = $cr ? mysqli_fetch_assoc($cr) : null;
+    if (!$conv || !wa_user_can_see_conv($conn, $conv, $staff_id, $is_supervisor)) {
+        http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']);
+    }
+    try { wa_json_out(wa_reengage_suggest_vars($conn, $cid, $tpl, $lang, $staff_id)); }
+    catch (Throwable $e) { wa_json_out(['ok' => false, 'error' => $e->getMessage()]); }
+}
+
 // ---- Broadcast: upload a flier / header image, return its media id (supervisor only) ----
 if ($action === 'broadcast_upload_media') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }

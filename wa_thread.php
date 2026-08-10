@@ -311,6 +311,7 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                                             'vars' => (int)$t['vars'], 'body' => (string)$t['body']];
                                 }, $reTemplates), JSON_UNESCAPED_UNICODE); ?>;
                                 var FILL = <?php echo json_encode($reFill, JSON_UNESCAPED_UNICODE); ?>;
+                                var CONV_ID = <?php echo (int)$conv_id; ?>;
                                 // Order matches how the sender fills them: 3 vars = name, rep,
                                 // course; 2 = name, course; 1 = name.
                                 function defaultsFor(n) {
@@ -335,8 +336,17 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                                     if (!t.vars) { return; }
                                     var d = defaultsFor(t.vars);
                                     var help = document.createElement('div');
-                                    help.className = 'small text-muted mb-1';
-                                    help.textContent = 'Filled in for you — edit any of them before sending.';
+                                    help.className = 'small text-muted mb-1 d-flex align-items-center gap-2 flex-wrap';
+                                    help.appendChild(document.createTextNode('Filled in for you — edit any of them before sending.'));
+                                    var ai = document.createElement('button');
+                                    ai.type = 'button';
+                                    ai.className = 'btn btn-sm btn-outline-primary py-0 px-2';
+                                    ai.innerHTML = '<i class="bi bi-magic me-1"></i>Suggest with AI';
+                                    ai.addEventListener('click', function () { suggest(ai); });
+                                    help.appendChild(ai);
+                                    var note = document.createElement('span');
+                                    note.className = 'small'; note.id = 'reAiNote';
+                                    help.appendChild(note);
                                     box.appendChild(help);
                                     for (var i = 1; i <= t.vars; i++) {
                                         var w = document.createElement('div'); w.className = 'mb-2';
@@ -362,6 +372,46 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                                         w.appendChild(l); w.appendChild(inp); w.appendChild(chips);
                                         box.appendChild(w);
                                     }
+                                }
+                                // Ask the AI to read THIS conversation and propose literal values.
+                                // Only overwrites fields it returns a usable value for; anything else
+                                // keeps the deterministic default already in the box.
+                                function suggest(btn) {
+                                    var opt = sel.options[sel.selectedIndex];
+                                    var t = opt && opt.getAttribute('data-i') !== null ? TPLS[+opt.getAttribute('data-i')] : null;
+                                    if (!t || !t.vars) { return; }
+                                    var note = document.getElementById('reAiNote');
+                                    btn.disabled = true;
+                                    note.className = 'small text-muted';
+                                    note.textContent = 'Reading the conversation…';
+                                    fetch('includes/wa_api.php?action=reengage_suggest_vars'
+                                        + '&id=' + encodeURIComponent(CONV_ID)
+                                        + '&template=' + encodeURIComponent(t.name)
+                                        + '&lang=' + encodeURIComponent(t.lang)
+                                        + '&_=' + (new Date().getTime()))
+                                      .then(function (r) { return r.json(); })
+                                      .then(function (d) {
+                                          btn.disabled = false;
+                                          if (!d || !d.ok || !d.map) {
+                                              note.className = 'small text-danger';
+                                              note.textContent = 'AI could not suggest values — the defaults are still there.';
+                                              return;
+                                          }
+                                          var inputs = box.querySelectorAll('input[name="vars[]"]'), n = 0;
+                                          for (var i = 0; i < inputs.length; i++) {
+                                              var v = d.map[String(i + 1)];
+                                              if (v) { inputs[i].value = v; n++; }
+                                          }
+                                          note.className = d.ai ? 'small text-success' : 'small text-muted';
+                                          note.textContent = d.ai
+                                              ? ('Suggested ' + n + ' value(s) — review before sending.')
+                                              : 'AI is not configured; showing the standard values.';
+                                      })
+                                      .catch(function () {
+                                          btn.disabled = false;
+                                          note.className = 'small text-danger';
+                                          note.textContent = 'Could not reach the AI — the defaults are still there.';
+                                      });
                                 }
                                 sel.addEventListener('change', render);
                                 render();
