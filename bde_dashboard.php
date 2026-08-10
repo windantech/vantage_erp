@@ -115,9 +115,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .bde-app .driver{position:relative;overflow:hidden;background:color-mix(in srgb,var(--dacc,var(--brand)) 10%,var(--surface));border:0;border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
-    .bde-app .driver:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
-    .bde-app .driver::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--dacc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .bde-app .driver{position:relative;overflow:hidden;background:color-mix(in srgb,var(--dacc,var(--brand)) 10%,var(--surface));border:0;border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;box-shadow:var(--shadow-sm);transition:transform .15s,box-shadow .15s}
+    .bde-app .driver:hover{transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(16,40,64,.28)}
     .bde-app .driver .dtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
     .bde-app .driver .dicon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--surface);color:var(--dacc,var(--brand));box-shadow:0 1px 2px rgba(16,40,64,.06)}
     .bde-app .driver .dicon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
