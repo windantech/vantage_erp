@@ -19,8 +19,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app{
       --ground:#e9eef3; --surface:#ffffff; --surface2:#f3f6f9; --surface3:#e7edf2;
       --ink:#151d28; --ink2:#3b4756; --muted:#6a7886; --faint:#9aa8b5; --line:#dce4eb;
-      /* primary accent (was jade/green) — now blue */
-      --jade:#1f6fb0; --jade-deep:#15547f; --jade-soft:#e4eef7;
+      /* status accent = green; brand action accent = orange; theme base = blue */
+      --jade:#0e9e79; --jade-deep:#0a7a5e; --jade-soft:#e2f4ee;
+      --brand:#ec6e2d; --brand-deep:#c85a1e; --brand-soft:#fdece1;
       --gold:#c98a1c; --gold-soft:#fbf0d8; --gold-line:#eecf94; --amber:#c67e12; --amber-soft:#fbeed6;
       --coral:#d6472f; --coral-soft:#fbe4df; --slate:#4f6f9c; --slate-soft:#e8eef6; --violet:#6f5fbf; --violet-soft:#efeafb;
       --sidebar1:#14232f; --sidebar2:#0c141c;
@@ -29,11 +30,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       background:var(--ground);color:var(--ink);font-size:14px;
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       line-height:1.45;-webkit-font-smoothing:antialiased;
-      max-width:1400px;margin:0 auto;padding:16px 22px 40px;border-radius:18px;
+      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;
     }
     .bde-app.theme-dark{
       --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
-      --jade:#4d9fe0; --jade-deep:#69b4ec; --jade-soft:#132a3d;
+      --jade:#2ec39a; --jade-deep:#41d3ab; --jade-soft:#123027;
+      --brand:#f2905a; --brand-deep:#e07640; --brand-soft:#2c1c12;
       --gold:#e2b158; --gold-soft:#2c2413; --gold-line:#4a3d1d; --amber:#e0a343; --amber-soft:#2c2413;
       --coral:#f0715a; --coral-soft:#331a16; --slate:#7d9dcb; --slate-soft:#182533; --violet:#9f90e0; --violet-soft:#20203a; --sidebar1:#111b25; --sidebar2:#0a1017;
       --shadow:0 1px 2px rgba(0,0,0,.32),0 18px 36px rgba(0,0,0,.4); --shadow-sm:0 1px 2px rgba(0,0,0,.3),0 6px 16px rgba(0,0,0,.3);
@@ -45,31 +47,28 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
     .bde-app .bde-topbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px}
     .bde-app .brand{display:flex;align-items:center;gap:12px}
-    .bde-app .brand .mark{height:44px;display:grid;place-items:center}
-    .bde-app .brand .mark img{height:44px;width:auto;object-fit:contain;display:block}
-    .bde-app.theme-dark .brand .mark{background:#fff;padding:3px 8px;border-radius:11px}
-    .bde-app.theme-dark .brand .mark img{height:38px}
+    .bde-app .brand .mark{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(150deg,var(--brand),var(--gold));color:#fff;font-weight:800;font-size:16px;letter-spacing:-.5px;box-shadow:0 8px 18px rgba(236,110,45,.35)}
     .bde-app .brand h1{font-size:16px;margin:0;letter-spacing:-.01em} .bde-app .brand p{font-size:11.5px;color:var(--muted);margin:2px 0 0}
     .bde-app .controls{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .bde-app .control{display:grid;gap:4px}
     .bde-app .control label{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}
     .bde-app .control select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 28px 8px 11px;font-size:13px;font-weight:650;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 16px,calc(100% - 10px) 16px;background-size:5px 5px;background-repeat:no-repeat}
-    .bde-app .control select:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 3px var(--jade-soft)}
-    .bde-app .tbtn{border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;display:inline-flex;align-items:center;gap:7px;color:var(--ink)} .bde-app .tbtn:hover{border-color:var(--jade);color:var(--jade)}
-    .bde-app .tbtn.solid{background:var(--jade);color:#fff;border-color:var(--jade)} .bde-app .tbtn.solid:hover{background:var(--jade-deep);color:#fff}
+    .bde-app .control select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+    .bde-app .tbtn{border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;display:inline-flex;align-items:center;gap:7px;color:var(--ink)} .bde-app .tbtn:hover{border-color:var(--brand);color:var(--brand)}
+    .bde-app .tbtn.solid{background:var(--brand);color:#fff;border-color:var(--brand)} .bde-app .tbtn.solid:hover{background:var(--brand-deep);color:#fff}
     .bde-app .profile-chip{display:flex;align-items:center;gap:10px;padding:5px 13px 5px 5px;border:1px solid var(--line);border-radius:12px;background:var(--surface2)}
     .bde-app .profile-chip .a{width:34px;height:34px;border-radius:9px;background:linear-gradient(150deg,var(--slate),#33507a);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
     .bde-app .profile-chip b{font-size:13px;display:block;line-height:1.15} .bde-app .profile-chip span{font-size:11px;color:var(--muted)}
     .bde-app .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 2px}
     .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 15px;font-size:13px;font-weight:700;color:var(--muted);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;gap:8px;cursor:pointer;transition:color .15s,border-color .15s}
     .bde-app .tab svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-    .bde-app .tab:hover{color:var(--ink);border-color:var(--jade)}
-    .bde-app .tab.active{background:linear-gradient(120deg,var(--jade),var(--jade-deep));color:#fff;border-color:var(--jade);box-shadow:0 8px 18px rgba(31,111,176,.3)}
+    .bde-app .tab:hover{color:var(--ink);border-color:var(--brand)}
+    .bde-app .tab.active{background:linear-gradient(120deg,var(--brand),var(--brand-deep));color:#fff;border-color:var(--brand);box-shadow:0 8px 18px rgba(236,110,45,.3)}
     .bde-app #workspace{display:grid;gap:18px;margin-top:18px}
     .bde-app .section-tag{display:flex;align-items:center;gap:12px;margin:8px 2px 0}
     .bde-app .section-tag h3{margin:0;font-size:16px;letter-spacing:-.01em} .bde-app .section-tag>span{font-size:12.5px;color:var(--muted)} .bde-app .section-tag .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
 
-    .bde-app .strategy{border-radius:var(--radius);background:linear-gradient(120deg,var(--sidebar1),#1c3a52 70%,var(--jade-deep));color:#fff;padding:20px 22px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.7fr);gap:18px;align-items:center;box-shadow:var(--shadow)}
+    .bde-app .strategy{border-radius:var(--radius);background:linear-gradient(120deg,var(--sidebar1),#1c3a52 70%,#2a5f88);color:#fff;padding:20px 22px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.7fr);gap:18px;align-items:center;box-shadow:var(--shadow)}
     .bde-app .strategy .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#9fd0ea;font-weight:800}
     .bde-app .strategy h2{font-size:20px;margin:6px 0 6px;letter-spacing:-.01em;line-height:1.25;color:#fff} .bde-app .strategy p{margin:0;font-size:12.5px;color:rgba(255,255,255,.82);line-height:1.5}
     .bde-app .strategy .focus{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:13px;padding:13px 15px} .bde-app .strategy .focus b{display:block;color:#ffd9a8;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px} .bde-app .strategy .focus span{font-size:12.5px;color:rgba(255,255,255,.9);line-height:1.5}
@@ -111,7 +110,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
     .bde-app .list{display:grid;gap:9px}
     .bde-app .row{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
-    .bde-app .row .pd{width:9px;height:9px;border-radius:50%;margin-top:5px} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+    .bde-app .row .pd{width:6px;height:6px;border-radius:50%;margin-top:7px} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
     .bde-app .row .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
@@ -120,8 +119,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .live{font-size:9px;font-weight:800;color:var(--jade);background:var(--jade-soft);padding:2px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.05em}
 
     .bde-app .funnel{display:grid;gap:10px} .bde-app .fr{display:grid;grid-template-columns:170px 1fr 52px;gap:11px;align-items:center} .bde-app .fr label{font-size:12px;font-weight:650}
-    .bde-app .fbar{height:26px;background:var(--surface3);border:1px solid var(--line);border-radius:8px;overflow:hidden} .bde-app .fbar div{height:100%;background:linear-gradient(90deg,var(--slate),color-mix(in srgb,var(--jade) 70%,var(--slate)));display:flex;align-items:center;padding-left:10px;color:#fff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;transition:width .5s ease} .bde-app .fr .cv{font-size:11px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-    .bde-app .src{display:grid;grid-template-columns:1fr 90px auto;gap:11px;align-items:center;padding:7px 0} .bde-app .src label{font-size:12px;font-weight:600} .bde-app .src .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .src .sb div{height:100%;background:var(--jade)} .bde-app .src b{font-size:12px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+    .bde-app .fbar{height:26px;background:var(--surface3);border:1px solid var(--line);border-radius:8px;overflow:hidden} .bde-app .fbar div{height:100%;background:linear-gradient(90deg,var(--slate),#3a6ea5);display:flex;align-items:center;padding-left:10px;color:#fff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;transition:width .5s ease} .bde-app .fr .cv{font-size:11px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+    .bde-app .src{display:grid;grid-template-columns:1fr 90px auto;gap:11px;align-items:center;padding:7px 0} .bde-app .src label{font-size:12px;font-weight:600} .bde-app .src .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .src .sb div{height:100%;background:var(--slate)} .bde-app .src b{font-size:12px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
 
     .bde-app .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
     .bde-app table{width:100%;border-collapse:collapse;min-width:720px;background:var(--surface)} .bde-app th,.bde-app td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
@@ -138,11 +137,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
     .bde-app .timeline{display:grid;gap:2px} .bde-app .time-row{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)} .bde-app .time-row:last-child{border-bottom:0} .bde-app .time-row time{font-size:12px;font-weight:850;color:var(--jade)} .bde-app .time-row div{font-size:12.5px;color:var(--ink2)}
     .bde-app .principles{display:grid;gap:11px} .bde-app .principle{border-left:3px solid var(--jade);background:var(--surface2);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:13px 15px} .bde-app .principle b{font-size:12.5px} .bde-app .principle p{font-size:11.5px;color:var(--muted);margin:4px 0 0;line-height:1.5}
-    .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;background:linear-gradient(90deg,var(--slate),var(--jade))} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
+    .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;background:linear-gradient(90deg,var(--slate),#3a6ea5)} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
 
     .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
     .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
-    .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 3px var(--jade-soft)}
+    .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
     .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
     .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
 
@@ -157,7 +156,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
     <div class="bde-app" id="bdeApp">
       <header class="bde-topbar">
-        <div class="brand"><div class="mark"><img src="assets/img/logo.png" alt="Vantage Africa"></div><div><h1>BDE Command Centre</h1><p>Vantage Africa · Austin Abere · Digital Solutions</p></div></div>
+        <div class="brand"><div class="mark">VA</div><div><h1>BDE Command Centre</h1><p>Vantage Africa · Austin Abere · Digital Solutions</p></div></div>
         <div class="controls">
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
@@ -314,7 +313,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s])=>`<div class="driver"><div class="dt"><b>${esc(l)}</b><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function teamTable(){
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map(t=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a">${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(t.pipeline)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px;max-width:280px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(t.pipeline)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px;max-width:280px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- views ---------- */
