@@ -5,7 +5,8 @@ require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 
-// WhatsApp users (role 44) may view; editing stays supervisor-only (enforced in includes/wa_process.php).
+// WhatsApp users (role 44) may view AND edit the knowledge base (wa_process.php and
+// includes/wa_api.php both allow role 44). Supervisor-only actions live elsewhere.
 if (!in_array(WA_ROLE, $role)) {
     echo '<div class="container-fluid mt-5 pt-4"><div class="alert alert-danger">Access denied.</div></div>';
     require_once 'footer.php';

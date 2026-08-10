@@ -23,7 +23,10 @@ $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // ---- Generate a KB draft from the website (supervisor only) ----
 if ($action === 'kb_generate') {
-    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    // Knowledge Base module — full parity for WhatsApp staff (role 44), matching the
+    // form-based twin in wa_process.php. The role-44 gate at the top of this file
+    // still applies. Previously supervisor-only here, so the page let a rep in and
+    // then 403'd every save: "Could not save — try again."
     @set_time_limit(200);
     $rt  = in_array($_POST['ref_type'] ?? $_GET['ref_type'] ?? '', ['event','program'], true) ? ($_POST['ref_type'] ?? $_GET['ref_type']) : 'course';
     $rid = (int)($_POST['ref_id'] ?? $_GET['ref_id'] ?? 0);
@@ -35,7 +38,10 @@ if ($action === 'kb_generate') {
 
 // ---- Knowledge: dry-run the AI against a course/event's KB (supervisor only) ----
 if ($action === 'kb_test') {
-    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    // Knowledge Base module — full parity for WhatsApp staff (role 44), matching the
+    // form-based twin in wa_process.php. The role-44 gate at the top of this file
+    // still applies. Previously supervisor-only here, so the page let a rep in and
+    // then 403'd every save: "Could not save — try again."
     @set_time_limit(200);
     $rt = in_array($_POST['ref_type'] ?? '', ['event','program'], true) ? $_POST['ref_type'] : 'course';
     $rid = (int)($_POST['ref_id'] ?? 0);
@@ -46,12 +52,18 @@ if ($action === 'kb_test') {
 
 // ---- Knowledge: persist the KB body (supervisor only) ----
 if ($action === 'kb_save') {
-    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    // Knowledge Base module — full parity for WhatsApp staff (role 44), matching the
+    // form-based twin in wa_process.php. The role-44 gate at the top of this file
+    // still applies. Previously supervisor-only here, so the page let a rep in and
+    // then 403'd every save: "Could not save — try again."
     @set_time_limit(200);   // saving reprocesses body_ai via the AI — needs headroom
     $rt  = in_array($_POST['ref_type'] ?? '', ['event','program'], true) ? $_POST['ref_type'] : 'course';
     $rid = (int)($_POST['ref_id'] ?? 0);
     if ($rid <= 0) { wa_json_out(['ok' => false, 'error' => 'no_ref']); }
     wa_knowledge_set($conn, $rt, $rid, (string)($_POST['body'] ?? ''));
+    // Same audit row the form-based save writes — this is the path the Save button
+    // actually uses, so without it every real KB edit went unrecorded.
+    wa_kb_audit_log($conn, $rt, $rid, $staff_id, strlen((string)($_POST['body'] ?? '')));
     wa_json_out(['ok' => true]);
 }
 
@@ -66,14 +78,20 @@ if ($action === 'kb_command') {
 
 // ---- Knowledge: scan the shared course-outline PDF for its schedule (supervisor only) ----
 if ($action === 'outline_import') {
-    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    // Knowledge Base module — full parity for WhatsApp staff (role 44), matching the
+    // form-based twin in wa_process.php. The role-44 gate at the top of this file
+    // still applies. Previously supervisor-only here, so the page let a rep in and
+    // then 403'd every save: "Could not save — try again."
     @set_time_limit(200);
     wa_json_out(wa_outline_import($conn));
 }
 
 // ---- Knowledge: build an event's KB from its details + a programme (supervisor only) ----
 if ($action === 'event_build') {
-    if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
+    // Knowledge Base module — full parity for WhatsApp staff (role 44), matching the
+    // form-based twin in wa_process.php. The role-44 gate at the top of this file
+    // still applies. Previously supervisor-only here, so the page let a rep in and
+    // then 403'd every save: "Could not save — try again."
     @set_time_limit(200);
     wa_json_out(wa_event_kb_build(
         $conn,
