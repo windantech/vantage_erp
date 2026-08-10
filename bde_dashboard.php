@@ -115,11 +115,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .bde-app .driver{position:relative;overflow:hidden;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
+    .bde-app .driver{position:relative;overflow:hidden;background:color-mix(in srgb,var(--dacc,var(--brand)) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--dacc,var(--brand)) 22%,var(--line));border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
     .bde-app .driver:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
     .bde-app .driver::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--dacc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     .bde-app .driver .dtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-    .bde-app .driver .dicon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:color-mix(in srgb,var(--dacc,var(--brand)) 15%,var(--surface));color:var(--dacc,var(--brand))}
+    .bde-app .driver .dicon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--surface);color:var(--dacc,var(--brand));box-shadow:0 1px 2px rgba(16,40,64,.06)}
     .bde-app .driver .dicon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .driver .n{font-size:23px;font-weight:850;margin:1px 0;letter-spacing:-.02em;color:var(--ink)} .bde-app .driver b{font-size:12px;color:var(--ink)} .bde-app .driver small{color:var(--muted);font-size:10.5px;margin-top:1px}
     .bde-app .live{font-size:9px;font-weight:800;color:var(--jade);background:var(--jade-soft);padding:2px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.05em}
