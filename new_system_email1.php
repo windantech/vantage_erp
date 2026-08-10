@@ -13,7 +13,7 @@ require_once 'header.php';
         // International events: current/future or undated, and NOT academic.
         $events = [];
         $event_result = $conn->query("SELECT event_id, event_title FROM Event
-                    WHERE (location IS NULL OR LOWER(location) NOT LIKE '%academic#%')
+                    WHERE (location IS NULL OR (LOWER(location) NOT LIKE '%academic#%' AND LOWER(location) NOT LIKE '%corporate#%'))
                       AND (DATE(`end_on`) >= CURDATE() OR DATE(`start_on`) >= CURDATE() OR `end_on` IS NULL OR `start_on` IS NULL)
                     ORDER BY event_title ASC");
         if ($event_result) {
@@ -29,6 +29,16 @@ require_once 'header.php';
                     ORDER BY event_title ASC");
         if ($acad_result) {
             while ($row = $acad_result->fetch_assoc()) { $acad_events[] = $row; }
+        }
+
+        // Corporate trainings — Events flagged by a 'corporate#' marker in
+        // Event.location. Evergreen like academic; template saved against event_id.
+        $corp_events = [];
+        $corp_result = $conn->query("SELECT event_id, event_title FROM Event
+                    WHERE LOWER(location) LIKE '%corporate#%'
+                    ORDER BY event_title ASC");
+        if ($corp_result) {
+            while ($row = $corp_result->fetch_assoc()) { $corp_events[] = $row; }
         }
         ?>
         <div class="container-fluid mt-5 pt-5">
@@ -66,6 +76,7 @@ require_once 'header.php';
                                                     <option value="virtual">Virtual Courses</option>
                                                     <option value="international">International Events</option>
                                                     <option value="academic">Academic Programmes</option>
+                                                    <option value="corporate">Corporate Trainings</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -115,6 +126,20 @@ require_once 'header.php';
                                                     <?php foreach ($acad_events as $aev): ?>
                                                     <option value="<?php echo htmlspecialchars($aev['event_title']); ?>" data-id="<?php echo $aev['event_id']; ?>">
                                                         <?php echo htmlspecialchars($aev['event_title']); ?>
+                                                    </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-xl-6 col-md-6 p-1 d-none" id="corporate_container">
+                                            <div class="input-group mb-3 position-relative">
+                                                <span class="input-group-text rounded-0 bg_main" style="min-width: 9rem;">Select Training</span>
+                                                <select name="corporate_opt" id="corporate_opt" class="form-control rounded-0 w-100">
+                                                    <option value="" hidden>---Select Corporate Training---</option>
+                                                    <?php foreach ($corp_events as $cev): ?>
+                                                    <option value="<?php echo htmlspecialchars($cev['event_title']); ?>" data-id="<?php echo $cev['event_id']; ?>">
+                                                        <?php echo htmlspecialchars($cev['event_title']); ?>
                                                     </option>
                                                     <?php endforeach; ?>
                                                 </select>
@@ -651,6 +676,7 @@ require_once 'header.php';
     if (localStorage.getItem("course_opt"))    $("#course_opt").val(localStorage.getItem("course_opt"));
     if (localStorage.getItem("event_opt"))     $("#event_opt").val(localStorage.getItem("event_opt"));
     if (localStorage.getItem("academic_opt"))  $("#academic_opt").val(localStorage.getItem("academic_opt"));
+    if (localStorage.getItem("corporate_opt")) $("#corporate_opt").val(localStorage.getItem("corporate_opt"));
     if (localStorage.getItem("email_opt"))     $("#email_opt").val(localStorage.getItem("email_opt"));
     if (localStorage.getItem("temp_opt"))      $("#temp_opt").val(localStorage.getItem("temp_opt"));
 
@@ -659,10 +685,11 @@ require_once 'header.php';
     $("#email_type").change(function () { handleEmailTypeChange($(this).val()); });
 
     function handleEmailTypeChange(selectedType) {
-        $("#course_container, #event_container, #academic_container").addClass("d-none");
+        $("#course_container, #event_container, #academic_container, #corporate_container").addClass("d-none");
         if (selectedType === "virtual")            $("#course_container").removeClass("d-none");
         else if (selectedType === "international")  $("#event_container").removeClass("d-none");
         else if (selectedType === "academic")      $("#academic_container").removeClass("d-none");
+        else if (selectedType === "corporate")     $("#corporate_container").removeClass("d-none");
     }
 
     function updateComposeHeader() {
@@ -674,6 +701,8 @@ require_once 'header.php';
             $("#compose_header").html("Compose Email (" + localStorage.getItem("event_opt") + " - Email " + emailOpt + ")");
         } else if (emailType === "academic" && localStorage.getItem("academic_opt") && emailOpt) {
             $("#compose_header").html("Compose Email (" + localStorage.getItem("academic_opt") + " - Email " + emailOpt + ")");
+        } else if (emailType === "corporate" && localStorage.getItem("corporate_opt") && emailOpt) {
+            $("#compose_header").html("Compose Email (" + localStorage.getItem("corporate_opt") + " - Email " + emailOpt + ")");
         }
     }
 
@@ -703,6 +732,8 @@ require_once 'header.php';
             courseEventValid = selNotEmptyEvent($("#event_opt"));
         } else if (emailType === "academic") {
             courseEventValid = selNotEmptyEvent($("#academic_opt"));
+        } else if (emailType === "corporate") {
+            courseEventValid = selNotEmptyEvent($("#corporate_opt"));
         }
 
         if (isNotEmpty($("#email_subject")) && courseEventValid &&
@@ -731,6 +762,14 @@ require_once 'header.php';
                 localStorage.setItem("event_opt", $("#academic_opt").val());
                 localStorage.setItem("event_id", $("#academic_opt option:selected").data("id") || "");
                 localStorage.setItem("event_name", $("#academic_opt").val());
+                localStorage.setItem("course_opt", "");
+            } else if (emailType === "corporate") {
+                // Corporate trainings are Event rows too — save against event_id so
+                // the corporate registration lookup matches by the same key.
+                localStorage.setItem("corporate_opt", $("#corporate_opt").val());
+                localStorage.setItem("event_opt", $("#corporate_opt").val());
+                localStorage.setItem("event_id", $("#corporate_opt option:selected").data("id") || "");
+                localStorage.setItem("event_name", $("#corporate_opt").val());
                 localStorage.setItem("course_opt", "");
             }
 

@@ -59,6 +59,11 @@ if ($er) { while ($r = $er->fetch_assoc()) $events[] = $r; }
 $academic_events = [];
 $aer = $conn->query("SELECT event_id, event_title FROM Event WHERE location LIKE 'academic#%' AND status = 1 ORDER BY event_title ASC");
 if ($aer) { while ($r = $aer->fetch_assoc()) $academic_events[] = $r; }
+
+// Corporate trainings = Events whose location is a corporate marker (corporate#<id>).
+$corporate_events = [];
+$cer = $conn->query("SELECT event_id, event_title FROM Event WHERE location LIKE 'corporate#%' AND status = 1 ORDER BY event_title ASC");
+if ($cer) { while ($r = $cer->fetch_assoc()) $corporate_events[] = $r; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -104,6 +109,7 @@ if ($aer) { while ($r = $aer->fetch_assoc()) $academic_events[] = $r; }
                             <option value="virtual" <?php echo $saved_email_type=='virtual'?'selected':''; ?>>Virtual Courses</option>
                             <option value="international" <?php echo $saved_email_type=='international'?'selected':''; ?>>International Events</option>
                             <option value="academic" <?php echo $saved_email_type=='academic'?'selected':''; ?>>Academic Programmes</option>
+                            <option value="corporate" <?php echo $saved_email_type=='corporate'?'selected':''; ?>>Corporate Trainings</option>
                         </select>
                     </div>
                 </div>
@@ -151,6 +157,20 @@ if ($aer) { while ($r = $aer->fetch_assoc()) $academic_events[] = $r; }
                             <?php foreach ($academic_events as $ae): ?>
                             <option value="<?php echo htmlspecialchars($ae['event_title']); ?>" data-id="<?php echo $ae['event_id']; ?>" <?php echo ($saved_event_id==$ae['event_id'])?'selected':''; ?>>
                                 <?php echo htmlspecialchars($ae['event_title']); ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-md-6 p-1 <?php echo $saved_email_type!='corporate'?'d-none':''; ?>" id="upd_corporate_container">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text rounded-0 bg_main">Select Training</span>
+                        <select id="upd_corporate_opt" class="form-control rounded-0">
+                            <option value="" hidden>---Select Corporate Training---</option>
+                            <?php foreach ($corporate_events as $ce): ?>
+                            <option value="<?php echo htmlspecialchars($ce['event_title']); ?>" data-id="<?php echo $ce['event_id']; ?>" <?php echo ($saved_event_id==$ce['event_id'])?'selected':''; ?>>
+                                <?php echo htmlspecialchars($ce['event_title']); ?>
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -263,6 +283,7 @@ $(function () {
         $("#upd_course_container").toggleClass("d-none",   t !== "virtual");
         $("#upd_event_container").toggleClass("d-none",    t !== "international");
         $("#upd_academic_container").toggleClass("d-none", t !== "academic");
+        $("#upd_corporate_container").toggleClass("d-none", t !== "corporate");
     });
 
     // Simple required-field check
@@ -279,6 +300,7 @@ $(function () {
         var ok = need($("#upd_email_subject")) & need($("#upd_email_opt"));
         if (type === "virtual")        ok = ok & need($("#upd_course_opt"));
         else if (type === "academic")  ok = ok & need($("#upd_academic_opt"));
+        else if (type === "corporate") ok = ok & need($("#upd_corporate_opt"));
         else                            ok = ok & need($("#upd_event_opt"));
         if (!ok) return;
 
@@ -353,6 +375,10 @@ $(function () {
             data.upd_course_opt = $("#upd_academic_opt").val();          // programme name
             data.upd_event_name = $("#upd_academic_opt").val();
             data.upd_event_id   = $("#upd_academic_opt option:selected").data("id") || "";
+        } else if (data.upd_email_type === "corporate") {
+            data.upd_course_opt = $("#upd_corporate_opt").val();          // training name
+            data.upd_event_name = $("#upd_corporate_opt").val();
+            data.upd_event_id   = $("#upd_corporate_opt option:selected").data("id") || "";
         } else {
             data.upd_event_opt  = $("#upd_event_opt").val();
             data.upd_event_name = $("#upd_event_opt").val();

@@ -15,8 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Ensure the email_type enum can store 'academic' (one-time widen so academic
     // programme templates save with the right type). Cheap check; ALTER runs once.
     $col = $conn->query("SHOW COLUMNS FROM system_emails1 LIKE 'email_type'");
-    if ($col && ($cr = $col->fetch_assoc()) && stripos($cr['Type'], "'academic'") === false) {
-        $conn->query("ALTER TABLE system_emails1 MODIFY email_type ENUM('virtual','international','academic') NOT NULL DEFAULT 'virtual'");
+    if ($col && ($cr = $col->fetch_assoc()) && stripos($cr['Type'], "'corporate'") === false) {
+        $conn->query("ALTER TABLE system_emails1 MODIFY email_type ENUM('virtual','international','academic','corporate') NOT NULL DEFAULT 'virtual'");
     }
 
     // Remove \r\n (carriage return and newline) from email_body

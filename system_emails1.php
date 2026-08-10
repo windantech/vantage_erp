@@ -6,9 +6,10 @@ $f_type   = isset($_GET['f_type'])   ? trim($_GET['f_type'])   : 'all';     // a
 $f_course = isset($_GET['f_course']) ? trim($_GET['f_course']) : '';        // course_id
 $f_event  = isset($_GET['f_event'])  ? trim($_GET['f_event'])  : '';        // event_id (international)
 $f_acad   = isset($_GET['f_acad'])   ? trim($_GET['f_acad'])   : '';        // event_id (academic)
+$f_corp   = isset($_GET['f_corp'])   ? trim($_GET['f_corp'])   : '';        // event_id (corporate)
 
 // Normalise
-if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
+if (!in_array($f_type, ['all', 'virtual', 'international', 'academic', 'corporate'], true)) {
     $f_type = 'all';
 }
 ?>
@@ -23,13 +24,14 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
         $course_options = []; // course_id => course name
         $event_options  = []; // event_id  => event title (international)
         $acad_options   = []; // event_id  => programme title (academic)
+        $corp_options   = []; // event_id  => training title (corporate)
 
         $opt_q = $conn->query("SELECT DISTINCT se.email_type, se.event_id,
                     c.course AS course_name,
                     e.event_title AS event_name
                     FROM system_emails1 se
                     LEFT JOIN course c ON se.event_id = c.course_id AND (se.email_type = 'virtual' OR se.email_type IS NULL OR se.email_type = '')
-                    LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic')");
+                    LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic','corporate')");
         if ($opt_q) {
             while ($o = $opt_q->fetch_assoc()) {
                 $etype = (!empty($o['email_type'])) ? $o['email_type'] : 'virtual';
@@ -39,6 +41,8 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
                     if (!empty($o['event_name'])) $event_options[$eid] = $o['event_name'];
                 } elseif ($etype === 'academic') {
                     if (!empty($o['event_name'])) $acad_options[$eid] = $o['event_name'];
+                } elseif ($etype === 'corporate') {
+                    if (!empty($o['event_name'])) $corp_options[$eid] = $o['event_name'];
                 } else {
                     if (!empty($o['course_name'])) $course_options[$eid] = $o['course_name'];
                 }
@@ -47,6 +51,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
         asort($course_options);
         asort($event_options);
         asort($acad_options);
+        asort($corp_options);
 
         // ---- Full active course & event lists for the Duplicate picker ----
         $all_courses = [];
@@ -81,6 +86,11 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
             if ($f_acad !== '') {
                 $where[] = "se.event_id = '" . $conn->real_escape_string($f_acad) . "'";
             }
+        } elseif ($f_type === 'corporate') {
+            $where[] = "se.email_type = 'corporate'";
+            if ($f_corp !== '') {
+                $where[] = "se.event_id = '" . $conn->real_escape_string($f_corp) . "'";
+            }
         }
         $where_sql = !empty($where) ? (' WHERE ' . implode(' AND ', $where)) : '';
 
@@ -90,7 +100,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
             FROM system_emails1 se 
             LEFT JOIN registered_users ru ON se.updated_by = ru.id 
             LEFT JOIN course c ON se.event_id = c.course_id AND (se.email_type = 'virtual' OR se.email_type IS NULL OR se.email_type = '')
-            LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic')
+            LEFT JOIN Event e ON se.event_id = e.event_id AND se.email_type IN ('international','academic','corporate')
             $where_sql
             ORDER BY se.id DESC") or die($conn->error);
 
@@ -101,7 +111,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
             $email_type = isset($sm_data['email_type']) && !empty($sm_data['email_type'])
                 ? $sm_data['email_type'] : 'virtual';
 
-            $is_event = ($email_type === 'international' || $email_type === 'academic');
+            $is_event = ($email_type === 'international' || $email_type === 'academic' || $email_type === 'corporate');
             if ($is_event) {
                 $dedup_key = 'evt|' . trim((string)$sm_data['event_id']) . '|' . trim((string)$sm_data['email_opt']);
             } else {
@@ -150,6 +160,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
                                 <option value="virtual" <?php echo $f_type === 'virtual' ? 'selected' : ''; ?>>Virtual Courses</option>
                                 <option value="international" <?php echo $f_type === 'international' ? 'selected' : ''; ?>>International Events</option>
                                 <option value="academic" <?php echo $f_type === 'academic' ? 'selected' : ''; ?>>Academic Programmes</option>
+                                <option value="corporate" <?php echo $f_type === 'corporate' ? 'selected' : ''; ?>>Corporate Trainings</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -181,6 +192,17 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
                                 <?php foreach ($acad_options as $aid => $aname): ?>
                                 <option value="<?php echo htmlspecialchars($aid); ?>" <?php echo ($f_acad !== '' && $f_acad == $aid) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($aname); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1">Training</label>
+                            <select name="f_corp" id="filterCorp" class="form-control rounded-0" <?php echo $f_type === 'corporate' ? '' : 'disabled'; ?>>
+                                <option value="">All Trainings</option>
+                                <?php foreach ($corp_options as $cid => $cname): ?>
+                                <option value="<?php echo htmlspecialchars($cid); ?>" <?php echo ($f_corp !== '' && $f_corp == $cid) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($cname); ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
@@ -218,7 +240,9 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
                                         ? '<span class="badge bg-danger">International</span>'
                                         : ($email_type == 'academic'
                                             ? '<span class="badge" style="background:#6d1f2b;color:#fff;">Academic</span>'
-                                            : '<span class="badge bg-primary">Virtual</span>');
+                                            : ($email_type == 'corporate'
+                                                ? '<span class="badge" style="background:#123a5c;color:#fff;">Corporate</span>'
+                                                : '<span class="badge bg-primary">Virtual</span>'));
 
                                     $email_no = trim((string)$sm_data['email_opt']);
                                     $email_no_badge = ($email_no !== '')
@@ -325,6 +349,7 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
     var courseSel = document.getElementById('filterCourse');
     var eventSel  = document.getElementById('filterEvent');
     var acadSel   = document.getElementById('filterAcad');
+    var corpSel   = document.getElementById('filterCorp');
     var resetBtn  = document.getElementById('resetFilter');
 
     // Enable/disable the relevant second dropdown as the type changes
@@ -334,9 +359,11 @@ if (!in_array($f_type, ['all', 'virtual', 'international', 'academic'], true)) {
         courseSel.disabled = true; courseSel.value = '';
         eventSel.disabled  = true; eventSel.value  = '';
         if (acadSel) { acadSel.disabled = true; acadSel.value = ''; }
+        if (corpSel) { corpSel.disabled = true; corpSel.value = ''; }
         if (t === 'virtual')                  courseSel.disabled = false;
         else if (t === 'international')        eventSel.disabled  = false;
         else if (t === 'academic' && acadSel) acadSel.disabled   = false;
+        else if (t === 'corporate' && corpSel) corpSel.disabled  = false;
     });
 
     // Reset clears filters and reloads the unfiltered list
