@@ -3,14 +3,10 @@
 // Private BDE performance dashboard — phase 1 (illustrative / dummy data).
 //
 // Uses the SAME chrome as the enquiry dashboard: the root header.php (its left
-// nav), top_nav.php and footer.php. The prototype's own design system is scoped
-// under a single `.bde-app` container so it neither leaks into nor is overridden
-// by the admin Bootstrap styles — that way the BDE views and the enquiry
-// dashboard can eventually live together in one dashboard without an iframe.
-//
-// Locked to a single BDE context (BDE / Virtual / Dorcas Mukami Murithi); the
-// Role/Department/Employee selectors are display-only for now. Reached by direct
-// URL only; not linked in the shared nav yet.
+// nav), top_nav.php and footer.php. The dashboard's own design system (ported
+// from the v11 prototype, recoloured to a blue theme) is scoped under a single
+// `.bde-app` container so it neither leaks into nor is overridden by the admin
+// Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 ?>
@@ -19,1270 +15,442 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     <?php require_once 'top_nav.php'; ?>
 
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
-    /* Prototype styles, all scoped under .bde-app so they coexist with the
-       admin Bootstrap chrome without global body, wildcard or badge clashes.
-       Palette: brand-true light (navy structure + orange/gold accent, blue = info). */
+    /* ===== BDE dashboard — all scoped under .bde-app (blue theme) ===== */
     .bde-app{
-      --bg:#eef2f6; --surface:#ffffff; --surface2:#f4f7fa; --ink:#132433; --muted:#647688;
-      --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
-      --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
-      --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
-      --portfolio:#e8f0fa;   /* light-blue wash behind the personal portfolio metrics */
-      --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
-      --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-      background:var(--bg); color:var(--ink);
-      font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
-      line-height:1.45; max-width:1700px; margin:0 auto; padding:14px; border-radius:14px;
+      --ground:#e9eef3; --surface:#ffffff; --surface2:#f3f6f9; --surface3:#e7edf2;
+      --ink:#151d28; --ink2:#3b4756; --muted:#6a7886; --faint:#9aa8b5; --line:#dce4eb;
+      /* primary accent (was jade/green) — now blue */
+      --jade:#1f6fb0; --jade-deep:#15547f; --jade-soft:#e4eef7;
+      --gold:#c98a1c; --gold-soft:#fbf0d8; --gold-line:#eecf94; --amber:#c67e12; --amber-soft:#fbeed6;
+      --coral:#d6472f; --coral-soft:#fbe4df; --slate:#4f6f9c; --slate-soft:#e8eef6; --violet:#6f5fbf; --violet-soft:#efeafb;
+      --sidebar1:#14232f; --sidebar2:#0c141c;
+      --shadow:0 1px 2px rgba(21,29,40,.05),0 14px 30px rgba(21,29,40,.09); --shadow-sm:0 1px 2px rgba(21,29,40,.06),0 4px 12px rgba(21,29,40,.05);
+      --radius:16px; --radius-sm:11px;
+      background:var(--ground);color:var(--ink);font-size:14px;
+      font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      line-height:1.45;-webkit-font-smoothing:antialiased;
+      max-width:1400px;margin:0 auto;padding:16px 22px 40px;border-radius:18px;
     }
     .bde-app.theme-dark{
-      --bg:#0f1c26; --surface:#16232e; --surface2:#1d2c38; --ink:#eef4f6; --muted:#9aa8b2;
-      --line:#2b3a45; --navy:#7fb4d6; --navy2:#9ed0ea; --orange:#f2905a; --gold:#e0b25a; --teal:#54bfb6;
-      --green:#5cc487; --amber:#e0b257; --red:#ec7a72; --blue:#71a6d8; --purple:#a595d6;
-      --greenbg:#16301f; --amberbg:#2f2913; --redbg:#331d1f; --bluebg:#182b3b; --shadow:none;
-      --portfolio:#17293b;
+      --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
+      --jade:#4d9fe0; --jade-deep:#69b4ec; --jade-soft:#132a3d;
+      --gold:#e2b158; --gold-soft:#2c2413; --gold-line:#4a3d1d; --amber:#e0a343; --amber-soft:#2c2413;
+      --coral:#f0715a; --coral-soft:#331a16; --slate:#7d9dcb; --slate-soft:#182533; --violet:#9f90e0; --violet-soft:#20203a; --sidebar1:#111b25; --sidebar2:#0a1017;
+      --shadow:0 1px 2px rgba(0,0,0,.32),0 18px 36px rgba(0,0,0,.4); --shadow-sm:0 1px 2px rgba(0,0,0,.3),0 6px 16px rgba(0,0,0,.3);
     }
+    .bde-app .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
     .bde-app *{box-sizing:border-box}
-    .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
-    .bde-app button{cursor:pointer}
-    .bde-app .bde-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
-    .bde-app .brand{display:flex;align-items:center;gap:12px;min-width:260px}
-    .bde-app .mark{width:auto;height:44px;padding:0;background:none;border:none;display:grid;place-items:center}
-    .bde-app .mark img{height:44px;width:auto;object-fit:contain;display:block}
-    .bde-app.theme-dark .mark{background:#fff;padding:3px 7px;border-radius:10px}
-    .bde-app.theme-dark .mark img{height:38px}
-    .bde-app .brand h1{font-size:17px;margin:0;line-height:1.15;color:var(--ink)}
-    .bde-app .brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
-    .bde-app .controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:end}
+    .bde-app button,.bde-app input,.bde-app select,.bde-app textarea{font:inherit;color:inherit}
+    .bde-app button{cursor:pointer} .bde-app [hidden]{display:none!important}
+
+    .bde-app .bde-topbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px}
+    .bde-app .brand{display:flex;align-items:center;gap:12px}
+    .bde-app .brand .mark{height:44px;display:grid;place-items:center}
+    .bde-app .brand .mark img{height:44px;width:auto;object-fit:contain;display:block}
+    .bde-app.theme-dark .brand .mark{background:#fff;padding:3px 8px;border-radius:11px}
+    .bde-app.theme-dark .brand .mark img{height:38px}
+    .bde-app .brand h1{font-size:16px;margin:0;letter-spacing:-.01em} .bde-app .brand p{font-size:11.5px;color:var(--muted);margin:2px 0 0}
+    .bde-app .controls{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .bde-app .control{display:grid;gap:4px}
-    .bde-app .control label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}
-    .bde-app select,.bde-app .input,.bde-app textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;outline:none}
-    .bde-app select:focus,.bde-app .input:focus,.bde-app textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px color-mix(in srgb,var(--orange) 18%,transparent)}
-    .bde-app .icon-btn,.bde-app .primary-btn,.bde-app .ghost-btn{border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--surface2);font-weight:750}
-    .bde-app .primary-btn{background:var(--navy);color:#fff;border-color:var(--navy)}
-    .bde-app .ghost-btn:hover,.bde-app .icon-btn:hover{border-color:var(--orange)}
-    .bde-app .readonly-field{background:var(--surface2);border:1px dashed var(--line);border-radius:10px;padding:9px 10px;font-weight:750;min-width:150px;white-space:nowrap}
-    .bde-app .readonly-field small{display:block;font-size:9px;color:var(--muted);font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-top:1px}
-    .bde-app .strategy-strip{margin-top:14px;border-radius:16px;background:linear-gradient(110deg,var(--navy2),var(--navy));color:#fff;padding:16px 18px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(250px,.8fr);gap:16px;align-items:center}
-    .bde-app .strategy-strip .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;opacity:.75;font-weight:800}
-    .bde-app .strategy-strip h2{font-size:20px;margin:3px 0 3px;color:#fff}
-    .bde-app .strategy-strip p{margin:0;opacity:.86;font-size:13px;max-width:95ch}
-    .bde-app .strategy-focus{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 13px}
-    .bde-app .strategy-focus b{display:block;color:#ffd6bf;margin-bottom:2px}
-    .bde-app .tabs{display:flex;gap:4px;flex-wrap:wrap;margin:16px 0;background:var(--surface);border:1px solid var(--line);padding:6px;border-radius:16px;box-shadow:var(--shadow)}
-    .bde-app .tab{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--muted);border-radius:11px;padding:10px 14px;font-weight:700;font-size:12.5px}
-    .bde-app .tab i{font-size:15px;line-height:0}
-    .bde-app .tab.active{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
-    .bde-app .workspace{display:grid;gap:14px}
-    .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px}
-    .bde-app .panel,.bde-app .metric,.bde-app .action-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
-    /* Personal portfolio panel: a light wash across the whole section; the white
-       metric cards sit on top of it. */
-    .bde-app .portfolio-panel{background:var(--portfolio)}
-    .bde-app .panel{padding:16px}
-    .bde-app .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
-    .bde-app .panel-head h3{font-size:15px;margin:0;color:var(--ink)}
-    .bde-app .panel-head p{font-size:12px;color:var(--muted);margin:3px 0 0}
-    .bde-app .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:850;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
-    .bde-app .badge.green{color:var(--green);background:var(--greenbg)}
-    .bde-app .badge.amber{color:var(--amber);background:var(--amberbg)}
-    .bde-app .badge.red{color:var(--red);background:var(--redbg)}
-    .bde-app .badge.blue{color:var(--blue);background:var(--bluebg)}
-    .bde-app .metric-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .bde-app .metric{padding:15px 15px 14px 18px;min-height:132px;position:relative;overflow:hidden;display:flex;flex-direction:column}
-    .bde-app .metric::after{content:"";position:absolute;width:78px;height:78px;border-radius:50%;right:-34px;top:-34px;background:color-mix(in srgb,var(--orange) 10%,transparent)}
-    .bde-app .metric .label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
-    .bde-app .metric .value{font-size:23px;font-weight:850;margin:8px 0 4px;line-height:1.1;letter-spacing:-.02em}
-    .bde-app .metric .note{font-size:11px;color:var(--muted)}
-    .bde-app .metric .delta{font-size:11px;font-weight:750;margin-top:auto;padding-top:8px}
-    .bde-app .metric .delta.neutral{align-self:flex-start;margin-top:auto;padding:5px 10px;background:var(--surface2);border:1px solid var(--line);border-radius:9px;color:var(--muted);font-size:10px;letter-spacing:.03em}
-    .bde-app .up{color:var(--green)} .bde-app .down{color:var(--red)} .bde-app .neutral{color:var(--amber)}
-    .bde-app .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    .bde-app .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-    .bde-app .progress-wrap{margin-top:8px}
-    .bde-app .progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px}
-    .bde-app .track{height:10px;background:var(--surface2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
-    .bde-app .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));width:0;transition:width .35s ease}
-    .bde-app .commission-road{position:relative;padding:14px 5px 4px;margin-top:4px}
-    .bde-app .road{height:12px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
-    .bde-app .road .fill{background:linear-gradient(90deg,var(--red),var(--amber),var(--green));max-width:100%}
-    .bde-app .marker{position:absolute;top:7px;transform:translateX(-50%);text-align:center}
-    .bde-app .marker::before{content:"";display:block;width:2px;height:20px;background:var(--muted);margin:auto;opacity:.55}
-    .bde-app .marker span{font-size:9px;color:var(--muted);font-weight:800}
-    .bde-app .marker.m80{left:66.67%}.bde-app .marker.m100{left:83.33%}.bde-app .marker.m120{left:100%}
-    .bde-app .commission-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:22px}
-    .bde-app .mini{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:10px}
-    .bde-app .mini b{font-size:16px;display:block;margin-top:3px}
-    .bde-app .mini span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:800}
-    .bde-app .list{display:grid;gap:8px}
-    .bde-app .action-card{padding:11px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;box-shadow:none}
-    .bde-app .priority-dot{width:10px;height:10px;border-radius:50%;margin-top:5px}
-    .bde-app .priority-dot.red{background:var(--red)}.bde-app .priority-dot.amber{background:var(--amber)}.bde-app .priority-dot.green{background:var(--green)}.bde-app .priority-dot.blue{background:var(--blue)}
-    .bde-app .action-card b{font-size:12.5px}
-    .bde-app .action-card p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
-    .bde-app .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap}
-    .bde-app .driver-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
-    .bde-app .driver{border:1px solid var(--line);border-radius:12px;background:var(--surface2);padding:11px}
-    .bde-app .driver .top{display:flex;justify-content:space-between;gap:6px;align-items:center}
-    .bde-app .driver b{font-size:12px}
-    .bde-app .driver .num{font-size:18px;font-weight:850;margin:8px 0 2px}
-    .bde-app .driver small{color:var(--muted)}
-    .bde-app .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px}
-    .bde-app table{width:100%;border-collapse:collapse;min-width:760px;background:var(--surface)}
-    .bde-app th,.bde-app td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line);font-size:11.5px;vertical-align:middle;color:var(--ink)}
-    .bde-app th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);background:var(--surface2);position:sticky;top:0}
-    .bde-app tr:last-child td{border-bottom:0}
-    .bde-app .person{display:flex;align-items:center;gap:9px}
-    .bde-app .avatar{width:30px;height:30px;border-radius:9px;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:850}
-    .bde-app .person b{display:block;font-size:11.5px}
-    .bde-app .person span{font-size:10px;color:var(--muted)}
-    .bde-app .score{font-weight:850}
-    .bde-app .funnel{display:grid;gap:9px}
-    .bde-app .funnel-row{display:grid;grid-template-columns:145px 1fr 65px;gap:10px;align-items:center}
-    .bde-app .funnel-row label{font-size:11.5px;font-weight:700}
-    .bde-app .funnel-bar{height:24px;background:var(--surface2);border:1px solid var(--line);border-radius:7px;overflow:hidden}
-    .bde-app .funnel-bar div{height:100%;background:linear-gradient(90deg,var(--navy),var(--teal));display:flex;align-items:center;padding-left:8px;color:#fff;font-size:10px;font-weight:800}
-    .bde-app .funnel-row .conversion{font-size:10px;color:var(--muted);text-align:right}
-    .bde-app .source-row{display:grid;grid-template-columns:130px 1fr 70px;gap:9px;align-items:center;margin:8px 0}
-    .bde-app .source-row .bar{height:9px;border-radius:99px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
-    .bde-app .source-row .bar div{height:100%;background:var(--orange)}
-    .bde-app .chart{width:100%;height:190px;display:block}
-    .bde-app .chart text{fill:var(--muted);font-size:10px}
-    .bde-app .chart .grid{stroke:var(--line);stroke-width:1}
-    .bde-app .chart .line{fill:none;stroke:var(--orange);stroke-width:3}
-    .bde-app .chart .area{fill:color-mix(in srgb,var(--orange) 13%,transparent)}
-    .bde-app .chart .dot{fill:var(--surface);stroke:var(--orange);stroke-width:2}
-    .bde-app .scenario{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:9px;align-items:end}
-    .bde-app .scenario .control label{font-size:11.5px;letter-spacing:.06em}
-    .bde-app .scenario input{width:100%;min-width:0}
-    .bde-app .callout{background:var(--bluebg);border:1px solid color-mix(in srgb,var(--blue) 35%,var(--line));border-radius:13px;padding:12px;font-size:12px}
-    .bde-app .callout strong{color:var(--blue)}
-    .bde-app .principles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-    .bde-app .principle{border-left:4px solid var(--orange);background:var(--surface2);border-radius:8px;padding:11px}
-    .bde-app .principle b{font-size:12px}
-    .bde-app .principle p{font-size:11px;color:var(--muted);margin:4px 0 0}
-    .bde-app .timeline{display:grid;gap:8px}
-    .bde-app .time-row{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
-    .bde-app .time-row:last-child{border-bottom:0}
-    .bde-app .time-row time{font-size:11px;font-weight:850;color:var(--orange)}
-    .bde-app .time-row div{font-size:11.5px}
-    .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-    .bde-app .field{display:grid;gap:4px}
-    .bde-app .field label{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800}
-    .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
-    .bde-app textarea{min-height:78px;resize:vertical}
-    .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-    .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;min-height:130px}
-    .bde-app .checklist{display:grid;gap:7px}
-    .bde-app .check{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:9px;background:var(--surface2)}
-    .bde-app .check .symbol{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:900}
-    .bde-app .check.pass .symbol{background:var(--greenbg);color:var(--green)}
-    .bde-app .check.fail .symbol{background:var(--redbg);color:var(--red)}
-    .bde-app .check b{font-size:11.5px}.bde-app .check span{font-size:10px;color:var(--muted)}
-    .bde-app .dev-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-    .bde-app code{background:var(--surface2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
-    .bde-app .footer-note{font-size:11px;color:var(--muted);text-align:center;padding:18px 8px 5px}
-    .bde-app .hidden{display:none!important}
+    .bde-app .control label{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}
+    .bde-app .control select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 28px 8px 11px;font-size:13px;font-weight:650;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 16px,calc(100% - 10px) 16px;background-size:5px 5px;background-repeat:no-repeat}
+    .bde-app .control select:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 3px var(--jade-soft)}
+    .bde-app .tbtn{border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;display:inline-flex;align-items:center;gap:7px;color:var(--ink)} .bde-app .tbtn:hover{border-color:var(--jade);color:var(--jade)}
+    .bde-app .tbtn.solid{background:var(--jade);color:#fff;border-color:var(--jade)} .bde-app .tbtn.solid:hover{background:var(--jade-deep);color:#fff}
+    .bde-app .profile-chip{display:flex;align-items:center;gap:10px;padding:5px 13px 5px 5px;border:1px solid var(--line);border-radius:12px;background:var(--surface2)}
+    .bde-app .profile-chip .a{width:34px;height:34px;border-radius:9px;background:linear-gradient(150deg,var(--slate),#33507a);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
+    .bde-app .profile-chip b{font-size:13px;display:block;line-height:1.15} .bde-app .profile-chip span{font-size:11px;color:var(--muted)}
+    .bde-app .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 2px}
+    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 15px;font-size:13px;font-weight:700;color:var(--muted);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;gap:8px;cursor:pointer;transition:color .15s,border-color .15s}
+    .bde-app .tab svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+    .bde-app .tab:hover{color:var(--ink);border-color:var(--jade)}
+    .bde-app .tab.active{background:linear-gradient(120deg,var(--jade),var(--jade-deep));color:#fff;border-color:var(--jade);box-shadow:0 8px 18px rgba(31,111,176,.3)}
+    .bde-app #workspace{display:grid;gap:18px;margin-top:18px}
+    .bde-app .section-tag{display:flex;align-items:center;gap:12px;margin:8px 2px 0}
+    .bde-app .section-tag h3{margin:0;font-size:16px;letter-spacing:-.01em} .bde-app .section-tag>span{font-size:12.5px;color:var(--muted)} .bde-app .section-tag .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
 
-    /* ---- Visual refresh: brand-true, light ---- */
-    .bde-app .brand h1,.bde-app .strategy-strip h2,.bde-app .panel-head h3,
-    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num{font-family:var(--display);letter-spacing:-.015em}
-    .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num,.bde-app .score,.bde-app td{font-variant-numeric:tabular-nums}
-    .bde-app .bde-topbar{border-radius:20px}
-    .bde-app .panel{border-radius:18px}
-    .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
-    .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
-    .bde-app .metric::after{content:"";position:absolute;left:0;right:auto;top:0;bottom:0;width:4px;height:auto;border-radius:14px 0 0 14px;background:var(--orange)}
-    .bde-app .metric[data-delta="up"]::after{background:var(--green)}
-    .bde-app .metric[data-delta="down"]::after{background:var(--red)}
-    .bde-app .tab{transition:color .15s ease,box-shadow .15s ease,background .15s ease}
-    .bde-app .tab:hover{background:var(--surface2);color:var(--ink)}
-    .bde-app .tab.active{box-shadow:0 8px 18px -8px color-mix(in srgb,var(--orange) 60%,transparent)}
-    .bde-app .tab.active:hover{background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff}
-    .bde-app .primary-btn{box-shadow:0 8px 18px -8px rgba(23,58,84,.5)}
-    .bde-app .avatar{background:linear-gradient(135deg,var(--navy),color-mix(in srgb,var(--navy) 55%,var(--orange)))}
-    .bde-app .strategy-strip{position:relative;overflow:hidden;box-shadow:0 20px 44px -22px rgba(15,39,57,.55)}
-    .bde-app .strategy-strip::before{display:none}
-    .bde-app .strategy-strip>*{position:relative;z-index:1}
-    @media (prefers-reduced-motion: reduce){
-      .bde-app .metric,.bde-app .tab{transition:none}
-      .bde-app .metric:hover{transform:none}
-    }
+    .bde-app .strategy{border-radius:var(--radius);background:linear-gradient(120deg,var(--sidebar1),#1c3a52 70%,var(--jade-deep));color:#fff;padding:20px 22px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.7fr);gap:18px;align-items:center;box-shadow:var(--shadow)}
+    .bde-app .strategy .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#9fd0ea;font-weight:800}
+    .bde-app .strategy h2{font-size:20px;margin:6px 0 6px;letter-spacing:-.01em;line-height:1.25;color:#fff} .bde-app .strategy p{margin:0;font-size:12.5px;color:rgba(255,255,255,.82);line-height:1.5}
+    .bde-app .strategy .focus{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:13px;padding:13px 15px} .bde-app .strategy .focus b{display:block;color:#ffd9a8;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px} .bde-app .strategy .focus span{font-size:12.5px;color:rgba(255,255,255,.9);line-height:1.5}
 
-    /* ---- Ported header / identity / strip / tabs (approved preview) ---- */
-    .bde-app .bde-topbar{gap:20px;flex-wrap:wrap;padding:16px 22px;border-radius:20px}
-    .bde-app .brand{gap:13px;min-width:230px}
-    .bde-app .mark{width:auto;height:44px;box-shadow:none}
-    .bde-app .brand h1{font-size:18px}
-    .bde-app .brand p .sep{color:var(--gold);margin:0 3px}
-    .bde-app .controls{align-items:center;gap:10px}
-    .bde-app .identity,.bde-app .period select,.bde-app .icon-btn{height:48px}
-    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#3b424e,#252b33);color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(20,26,33,.6)}
-    .bde-app .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
-    .bde-app .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15;color:#fff}
-    .bde-app .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
-    .bde-app .identity .who span i{color:var(--gold);font-style:normal}
-    .bde-app .period{display:flex;align-items:center}
-    .bde-app .period select{appearance:none;-webkit-appearance:none;border-radius:12px;padding:0 34px 0 14px;font-weight:650;font-size:13px;
-      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23647688' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-      background-repeat:no-repeat;background-position:right 12px center}
-    .bde-app .icon-btn{display:inline-flex;align-items:center;gap:7px;border-radius:11px;padding:0 13px;font-weight:650;font-size:13px}
-    .bde-app .icon-btn:hover{border-color:var(--orange);color:var(--orange)}
-    .bde-app .strategy-strip{margin-top:16px;border-radius:20px;background:var(--navy);grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;padding:22px 26px;align-items:stretch}
-    .bde-app .strategy-strip .eyebrow{display:inline-flex;align-items:center;gap:8px;opacity:1;color:var(--gold);font-size:10.5px;letter-spacing:.18em;margin-bottom:12px}
-    .bde-app .strategy-strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
-    .bde-app .strategy-strip h2{font-size:23px;line-height:1.28;margin:0 0 12px}
-    .bde-app .strategy-strip p{opacity:1;color:#cddae6;font-size:13px;line-height:1.6;max-width:none}
-    .bde-app .strategy-focus{align-self:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:15px;padding:16px 17px}
-    .bde-app .strategy-focus b{display:flex;align-items:center;gap:8px;color:#fff;font-size:14px;margin-bottom:9px}
-    .bde-app .strategy-focus b i{color:var(--gold)}
-    .bde-app .strategy-focus span{font-size:13.5px;line-height:1.6;color:#d9e4ee}
-    .bde-app .tabs{gap:8px;margin:18px 0;background:transparent;border:0;padding:0;box-shadow:none}
-    .bde-app .tab{border:1px solid var(--line);background:var(--surface);border-radius:13px;padding:11px 15px;box-shadow:0 1px 2px rgba(16,40,64,.04);transition:.16s}
-    .bde-app .tab:hover{color:var(--ink);border-color:#c9d5e0;background:var(--surface);box-shadow:0 6px 14px -8px rgba(16,40,64,.28);transform:translateY(-1px)}
-    .bde-app .tab.active{border-color:transparent;background:linear-gradient(135deg,var(--orange),var(--gold));color:#fff;box-shadow:0 10px 20px -8px rgba(236,110,45,.55)}
-    .bde-app .tab.active:hover{transform:translateY(-1px)}
+    .bde-app .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px} .bde-app .card.tight{padding:14px}
+    .bde-app .card h4{margin:0;font-size:15px;letter-spacing:-.01em;color:var(--ink)} .bde-app .card .sub{font-size:12px;color:var(--muted);margin:2px 0 0}
+    .bde-app .chead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:15px}
+    .bde-app .chip{font-size:11px;font-weight:800;letter-spacing:.04em;padding:5px 11px;border-radius:999px;white-space:nowrap;align-self:center}
+    .bde-app .chip.jade{color:var(--jade);background:var(--jade-soft)} .bde-app .chip.gold{color:var(--gold);background:var(--gold-soft)} .bde-app .chip.slate{color:var(--slate);background:var(--slate-soft)} .bde-app .chip.amber{color:var(--amber);background:var(--amber-soft)} .bde-app .chip.coral{color:var(--coral);background:var(--coral-soft)}
+    .bde-app .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px} .bde-app .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px}
+    .bde-app .pace-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-weight:750;font-size:12px;border:1px solid} .bde-app .pace-pill .dot{width:8px;height:8px;border-radius:50%}
+    .bde-app .pg{color:var(--jade);background:var(--jade-soft);border-color:color-mix(in srgb,var(--jade) 30%,transparent)} .bde-app .pg .dot{background:var(--jade)}
+    .bde-app .pa{color:var(--amber);background:var(--amber-soft);border-color:color-mix(in srgb,var(--amber) 32%,transparent)} .bde-app .pa .dot{background:var(--amber)}
+    .bde-app .pr{color:var(--coral);background:var(--coral-soft);border-color:color-mix(in srgb,var(--coral) 32%,transparent)} .bde-app .pr .dot{background:var(--coral)}
 
-    @media(max-width:1250px){
-      .bde-app .metric-grid{grid-template-columns:repeat(3,1fr)}
-      .bde-app .driver-grid{grid-template-columns:repeat(3,1fr)}
-      .bde-app .scenario{grid-template-columns:repeat(3,1fr)}
+    .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
+    .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+    .bde-app .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc,var(--jade))}
+    .bde-app .kpi .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
+    .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
+    .bde-app .kpi .delta{font-size:11px;font-weight:700;margin-top:10px} .bde-app .delta.up{color:var(--jade)} .bde-app .delta.down{color:var(--coral)} .bde-app .delta.live{color:var(--faint)}
+
+    .bde-app .prog .pl{font-size:13px;color:var(--muted);margin-top:2px} .bde-app .prog .pl b{color:var(--ink)}
+    .bde-app .bar{height:14px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden;margin-top:14px;position:relative} .bde-app .bar .bf{height:100%;border-radius:99px;transition:width .6s cubic-bezier(.22,.61,.36,1)} .bde-app .bar .exp{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink2);opacity:.6}
+    .bde-app .mini3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:15px}
+    .bde-app .cm{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px} .bde-app .cm span{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800} .bde-app .cm b{display:block;font-size:18px;font-weight:850;margin-top:5px;letter-spacing:-.02em} .bde-app .cm.gold b{color:var(--gold)}
+    .bde-app .motiv{margin-top:15px;border-radius:var(--radius-sm);padding:14px;font-size:13px;line-height:1.5} .bde-app .motiv b{font-weight:800}
+    .bde-app .motiv.green{background:var(--jade-soft);color:var(--ink2);border:1px solid color-mix(in srgb,var(--jade) 25%,var(--line))} .bde-app .motiv.green b{color:var(--jade-deep)}
+    .bde-app .motiv.amber{background:var(--amber-soft);color:var(--ink2);border:1px solid var(--gold-line)} .bde-app .motiv.amber b{color:var(--amber)}
+    .bde-app .motiv.red{background:var(--coral-soft);color:var(--ink2);border:1px solid color-mix(in srgb,var(--coral) 30%,var(--line))} .bde-app .motiv.red b{color:var(--coral)}
+
+    .bde-app .chart{width:100%;height:200px;display:block} .bde-app .chart text{fill:var(--muted);font-size:10.5px} .bde-app .chart .grid{stroke:var(--line);stroke-width:1} .bde-app .chart .tline{stroke:var(--jade);stroke-dasharray:5 5;stroke-width:1.5} .bde-app .chart .area{fill:color-mix(in srgb,var(--jade) 14%,transparent)} .bde-app .chart .line{fill:none;stroke:var(--jade);stroke-width:3} .bde-app .chart .dot{fill:var(--surface);stroke:var(--jade);stroke-width:2}
+
+    .bde-app .road-wrap{position:relative;margin:12px 4px 32px} .bde-app .road{height:16px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .road .rf{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--coral),var(--amber) 55%,var(--jade));transition:width .6s cubic-bezier(.22,.61,.36,1)}
+    .bde-app .rmark{position:absolute;top:-2px;transform:translateX(-50%);text-align:center} .bde-app .rmark i{display:block;width:2px;height:22px;background:var(--faint);margin:0 auto;border-radius:2px} .bde-app .rmark span{font-size:10px;font-weight:800;color:var(--muted);margin-top:2px;display:block}
+    .bde-app .nextstep{margin-top:12px;background:var(--jade-soft);border:1px solid color-mix(in srgb,var(--jade) 25%,var(--line));border-radius:var(--radius-sm);padding:13px;font-size:12.5px;color:var(--ink2);line-height:1.5} .bde-app .nextstep b{color:var(--jade-deep)}
+
+    .bde-app .list{display:grid;gap:9px}
+    .bde-app .row{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
+    .bde-app .row .pd{width:9px;height:9px;border-radius:50%;margin-top:5px} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+    .bde-app .row .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
+    .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
+
+    .bde-app .drivers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+    .bde-app .driver{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px} .bde-app .driver .dt{display:flex;justify-content:space-between;align-items:center;gap:6px} .bde-app .driver b{font-size:12px} .bde-app .driver .n{font-size:20px;font-weight:850;margin:9px 0 2px;letter-spacing:-.02em} .bde-app .driver small{color:var(--muted);font-size:10.5px}
+    .bde-app .live{font-size:9px;font-weight:800;color:var(--jade);background:var(--jade-soft);padding:2px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.05em}
+
+    .bde-app .funnel{display:grid;gap:10px} .bde-app .fr{display:grid;grid-template-columns:170px 1fr 52px;gap:11px;align-items:center} .bde-app .fr label{font-size:12px;font-weight:650}
+    .bde-app .fbar{height:26px;background:var(--surface3);border:1px solid var(--line);border-radius:8px;overflow:hidden} .bde-app .fbar div{height:100%;background:linear-gradient(90deg,var(--slate),color-mix(in srgb,var(--jade) 70%,var(--slate)));display:flex;align-items:center;padding-left:10px;color:#fff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;transition:width .5s ease} .bde-app .fr .cv{font-size:11px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+    .bde-app .src{display:grid;grid-template-columns:1fr 90px auto;gap:11px;align-items:center;padding:7px 0} .bde-app .src label{font-size:12px;font-weight:600} .bde-app .src .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .src .sb div{height:100%;background:var(--jade)} .bde-app .src b{font-size:12px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+
+    .bde-app .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
+    .bde-app table{width:100%;border-collapse:collapse;min-width:720px;background:var(--surface)} .bde-app th,.bde-app td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+    .bde-app th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface2);font-weight:800} .bde-app tr:last-child td{border-bottom:0}
+    .bde-app .prow{display:flex;align-items:center;gap:10px} .bde-app .prow .a{width:30px;height:30px;border-radius:8px;background:var(--slate);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:850} .bde-app .prow b{display:block;font-size:12.5px}.bde-app .prow span{font-size:10.5px;color:var(--muted)}
+    .bde-app tr.me td{background:linear-gradient(90deg,var(--jade-soft),transparent)} .bde-app tr.me .a{background:linear-gradient(150deg,var(--jade),var(--jade-deep))}
+    .bde-app .mini-track{height:7px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--line);min-width:70px;display:inline-block;vertical-align:middle} .bde-app .mini-track div{height:100%;border-radius:99px}
+    .bde-app .sbadge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px} .bde-app .sbadge .dot{width:7px;height:7px;border-radius:50%}
+    .bde-app .sg{color:var(--jade);background:var(--jade-soft)} .bde-app .sg .dot{background:var(--jade)} .bde-app .sa{color:var(--amber);background:var(--amber-soft)} .bde-app .sa .dot{background:var(--amber)} .bde-app .sr{color:var(--coral);background:var(--coral-soft)} .bde-app .sr .dot{background:var(--coral)}
+
+    .bde-app .check{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px} .bde-app .check .sym{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:900} .bde-app .check.ok .sym{background:var(--jade-soft);color:var(--jade)} .bde-app .check.no .sym{background:var(--coral-soft);color:var(--coral)} .bde-app .check b{font-size:12.5px} .bde-app .check small{font-size:10.5px;color:var(--muted);display:block;margin-top:1px} .bde-app .check .cv{font-size:13px;font-weight:850;font-variant-numeric:tabular-nums}
+    .bde-app .audit{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;padding:11px 0;border-bottom:1px solid var(--line)} .bde-app .audit:last-child{border-bottom:0} .bde-app .audit .k{width:9px;height:9px;border-radius:50%;background:var(--slate);margin-top:5px} .bde-app .audit b{font-size:12.5px} .bde-app .audit p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+    .bde-app .steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px} .bde-app .stepbox{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px} .bde-app .stepbox span{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800} .bde-app .stepbox b{display:block;font-size:15px;margin:6px 0 4px} .bde-app .stepbox .st{font-size:11.5px;font-weight:700}
+
+    .bde-app .timeline{display:grid;gap:2px} .bde-app .time-row{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)} .bde-app .time-row:last-child{border-bottom:0} .bde-app .time-row time{font-size:12px;font-weight:850;color:var(--jade)} .bde-app .time-row div{font-size:12.5px;color:var(--ink2)}
+    .bde-app .principles{display:grid;gap:11px} .bde-app .principle{border-left:3px solid var(--jade);background:var(--surface2);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:13px 15px} .bde-app .principle b{font-size:12.5px} .bde-app .principle p{font-size:11.5px;color:var(--muted);margin:4px 0 0;line-height:1.5}
+    .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;background:linear-gradient(90deg,var(--slate),var(--jade))} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
+
+    .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
+    .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
+    .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 3px var(--jade-soft)}
+    .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+    .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
+
+    .bde-app .bde-foot{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6} .bde-app .bde-foot code{background:var(--surface2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
+
+    @media(max-width:1000px){
+      .bde-app .hero,.bde-app .grid-2,.bde-app .grid-3,.bde-app .strategy{grid-template-columns:1fr} .bde-app .kpis{grid-template-columns:1fr 1fr} .bde-app .drivers{grid-template-columns:repeat(2,1fr)} .bde-app .form-grid{grid-template-columns:repeat(2,1fr)} .bde-app .field.span4{grid-column:span 2}
     }
-    @media(max-width:900px){
-      .bde-app .bde-topbar,.bde-app .hero,.bde-app .strategy-strip{grid-template-columns:1fr;display:grid}
-      .bde-app .controls{justify-content:start}
-      .bde-app .grid-2,.bde-app .grid-3,.bde-app .dev-grid{grid-template-columns:1fr}
-      .bde-app .principles{grid-template-columns:1fr}
-      .bde-app .driver-grid{grid-template-columns:repeat(2,1fr)}
-      .bde-app .form-grid{grid-template-columns:repeat(2,1fr)}
-      .bde-app .field.span4{grid-column:span 2}
-      .bde-app .brand{min-width:0}
-    }
-    @media(max-width:560px){
-      .bde-app{padding:9px}
-      .bde-app .metric-grid{grid-template-columns:repeat(2,1fr)}
-      .bde-app .driver-grid,.bde-app .scenario{grid-template-columns:1fr}
-      .bde-app .commission-grid{grid-template-columns:1fr}
-      .bde-app .form-grid{grid-template-columns:1fr}
-      .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1}
-      .bde-app .funnel-row{grid-template-columns:100px 1fr 48px}
-    }
-    @media print{
-      .bde-app .bde-topbar{position:static}.bde-app .tabs,.bde-app .controls .print-hide,.bde-app .scenario{display:none!important}
-      .bde-app .panel,.bde-app .metric,.bde-app .action-card{box-shadow:none;break-inside:avoid}
-    }
+    @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
+    @media(prefers-reduced-motion:reduce){.bde-app *{transition:none!important}}
     </style>
 
-    <div class="container-fluid mt-5 pt-4 pb-4 px-3 px-md-4">
     <div class="bde-app" id="bdeApp">
       <header class="bde-topbar">
-        <div class="brand">
-          <div class="mark"><img src="assets/img/logo.png" alt="Vantage Africa"></div>
-          <div>
-            <h1>BDE Command Centre</h1>
-            <p>Strategy <span class="sep">&rsaquo;</span> execution <span class="sep">&rsaquo;</span> revenue <span class="sep">&rsaquo;</span> commission <span class="sep">&rsaquo;</span> growth</p>
-          </div>
-        </div>
+        <div class="brand"><div class="mark"><img src="assets/img/logo.png" alt="Vantage Africa"></div><div><h1>BDE Command Centre</h1><p>Vantage Africa · Austin Abere · Digital Solutions</p></div></div>
         <div class="controls">
-          <div class="identity" title="Read-only &mdash; set by your record">
-            <div class="ava">DM</div>
-            <div class="who">
-              <b>Dorcas Mukami Murithi</b>
-              <span>BDE / Coordinator <i>&middot;</i> Virtual</span>
-            </div>
-          </div>
-          <div class="period">
-            <select id="monthSelect" aria-label="Period">
-              <option>September 2026</option>
-              <option>October 2026</option>
-              <option>November 2026</option>
-            </select>
-          </div>
-          <button class="icon-btn print-hide" id="themeBtn" type="button"><i class="bi bi-moon-stars"></i> <span id="themeLbl">Dark mode</span></button>
-          <button class="icon-btn print-hide" id="printBtn" type="button"><i class="bi bi-printer"></i> Print</button>
+          <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
+          <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
+          <div class="profile-chip"><span class="a">AA</span><div><b>Austin Abere</b><span>BDE · Digital Solutions</span></div></div>
         </div>
       </header>
-
-      <section class="strategy-strip">
-        <div>
-          <div class="eyebrow" id="strategyEyebrow">Your performance mandate</div>
-          <h2 id="strategyTitle"></h2>
-          <p id="strategyText"></p>
-        </div>
-        <div class="strategy-focus">
-          <b><i class="bi bi-flag-fill"></i> Today's strategic focus</b>
-          <span id="todayFocus"></span>
-        </div>
-      </section>
-
       <nav class="tabs" aria-label="Dashboard sections">
-        <button class="tab active" data-view="overview"><i class="bi bi-speedometer2"></i><span>Command Centre</span></button>
-        <button class="tab" data-view="pipeline"><i class="bi bi-funnel-fill"></i><span>Pipeline &amp; Conversion</span></button>
-        <button class="tab" data-view="commission"><i class="bi bi-cash-coin"></i><span>Commission Journey</span></button>
-        <button class="tab" data-view="report"><i class="bi bi-clipboard-data"></i><span>Embedded Reporting</span></button>
-        <button class="tab" data-view="strategy"><i class="bi bi-bullseye"></i><span>Strategy &amp; Scorecard</span></button>
-        <button class="tab" data-view="developer"><i class="bi bi-diagram-3-fill"></i><span>Developer Map</span></button>
+        <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
+        <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
+        <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
+        <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
+        <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy</button>
       </nav>
-
-      <main id="workspace" class="workspace"></main>
-
-      <div class="footer-note">Interactive prototype with illustrative data. Production figures must come from versioned targets, CRM transactions and Finance-cleared payments.</div>
+      <main id="workspace"></main>
+      <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
     </div>
-    </div>
+
+    <script>
+    (() => {
+      "use strict";
+      const root=document.getElementById("bdeApp");
+      const B={
+        name:"Austin Abere", initials:"AA", title:"BDE — Eval360", dept:"Digital Solutions", deptLeader:"Alein Kawinzi Kagunza",
+        target:2150000, actual:1370000, pipeline:8900000, collection:.95, crm:98, units:84, unitTarget:100, corporateClients:1, maintenance:100000, forecast:2300000,
+        mandate:"Turn Eval360 and 360 Appraisal into visible, trusted and fast-growing recurring-revenue solutions.",
+        mandateText:"Growth requires product mastery, direct organization engagement, aggressive demonstrations, RFP intelligence, digital demand generation, reliable self-onboarding, strong adoption and proactive maintenance and renewals.",
+        focus:"Move qualified organizations into demos and paid onboarding while protecting product readiness and recurring revenue.",
+        drivers:[["Qualified organizations",74,"Active pipeline"],["Demos completed",21,"This month"],["RFPs assessed",18,"100% within 24h"],["Active paid users",412,"Across products"],["Renewals visible","100%","Within 60 days"]],
+        funnel:[["Organizations identified",240],["Decision-makers reached",138],["Discovery",74],["Demo",45],["Proposal / pilot",26],["Paid onboarding",9]],
+        sources:[["Direct organization outreach",32],["Digital campaigns",26],["RFP / procurement",18],["Professional platforms",14],["Cross-SBU referrals",10]],
+        priorities:[
+          ["Regional NGO Consortium","Demo scheduled","KES 900K","Prepare tailored Eval360 demo","Tomorrow"],
+          ["Manufacturing Group","Proposal","420 staff","Confirm procurement route","Today"],
+          ["Government Planning Unit","RFP qualified","KES 4.2M","Complete bid / no-bid review","Today"],
+          ["SME Founder Network","Campaign","180 staff potential","Schedule group briefing","Friday"]
+        ],
+        dailyRhythm:[
+          ["8:00–8:30","Review enquiries, RFP alerts, demos, onboarding issues, product defects and renewals."],
+          ["8:30–9:00","Set decision-maker, demo, proposal, content, onboarding and revenue targets."],
+          ["9:00–11:00","Call priority organizations, champions, procurement and payment contacts."],
+          ["11:00–1:00","Discovery, RFP qualification, demo preparation and tailored value assets."],
+          ["2:00–4:00","Run demos, executive briefings, proposals, pilots and onboarding support."],
+          ["4:00–5:15","Follow up decisions, fix friction, update CRM and prepare next-day accounts."]
+        ],
+        principles:[
+          ["Sell outcomes, not screens","Connect the product to institutional performance, reporting, decisions, development and accountability."],
+          ["Every serious account reaches a tailored demo","A demo without discovery, decision-makers and a next step is only activity."],
+          ["Onboarding friction is a revenue risk","Self-service and automated journeys must be tested repeatedly and corrected quickly."]
+        ],
+        team:[
+          {name:"Austin Abere",title:"BDE — Eval360",target:2150000,actual:1370000,pipeline:8900000,collection:.95,units:84,me:true,notes:"Corporate setup pipeline strong; individual users need 16 more."},
+          {name:"Ruth Ngari",title:"BDE — 360 Appraisal",target:1200000,actual:1020000,pipeline:5700000,collection:.92,units:510,notes:"30 paid staff to reach the 80% commission threshold."}
+        ]
+      };
+      const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
+      const state={p:2,view:"command"};
+
+      const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
+      const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
+      const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
+      const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+      const el=id=>document.getElementById(id);
+      const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+      const period=()=>periods[state.p];
+
+      function pace(){const p=period();const expected=B.target*(p.elapsed/p.working);const ratio=expected?B.actual/expected:0;const status=ratio>=1?"green":ratio>=.85?"amber":"red";return {expected,ratio,status,label:status==="green"?"On pace":status==="amber"?"At risk":"Behind pace"};}
+      const scol=s=>s==="green"?"var(--jade)":s==="amber"?"var(--amber)":"var(--coral)";
+      function commission(){
+        const s=B;const iRate=s.units>=150?.10:s.units>=125?.075:s.units>=100?.05:0;
+        const iUnlocked=iRate>0&&s.actual>=350000&&s.corporateClients>=1;
+        const cUnlocked=s.corporateClients>=2&&s.units>=80&&s.actual>=280000;
+        const individual=iUnlocked?Math.min(s.actual,600000)*iRate:0;
+        const setup=cUnlocked?s.corporateClients*900000*.03:0;
+        const maint=cUnlocked?(s.maintenance||0)*.025:0;
+        const bonus=(s.units>=100&&s.actual>=350000&&s.corporateClients>=2)?25000:0;
+        const current=individual+setup+maint+bonus;
+        const atTarget=350000*.05+2*900000*.03+100000*.025+25000;
+        const gates=[
+          ["100 active paying users",s.units>=100,s.units+" users"],
+          ["KES 350,000 individual collections",s.actual>=350000,kMoney(s.actual)],
+          ["2 fully paid corporate setups",s.corporateClients>=2,s.corporateClients+" client"+(s.corporateClients===1?"":"s")],
+          ["Maintenance current (90%+)",s.collection>=.9,pct(s.collection,0)]
+        ];
+        const unlock=bonus?"Balanced performance bonus unlocked":(cUnlocked||iUnlocked)?"One stream unlocked — complete the balance":"Meet the individual and corporate support thresholds to unlock.";
+        return {current,atTarget,gates,unlock};
+      }
+
+      /* ---------- shared blocks ---------- */
+      function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Personal performance mandate</div><h2>${esc(B.mandate)}</h2><p>${esc(B.mandateText)}</p></div><div class="focus"><b>Today's strategic focus</b><span>${esc(B.focus)}</span></div></section>`;}
+
+      function kpiBlock(){
+        const p=period();const att=B.actual/B.target;const daysLeft=Math.max(0,p.working-p.elapsed);const dailyNeed=daysLeft?Math.max(0,(B.target-B.actual)/daysLeft):0;const c=commission();
+        const items=[
+          ["Monthly target",kMoney(B.target),"Approved personal target","live","var(--slate)"],
+          ["Cleared revenue",kMoney(B.actual),pct(att)+" of target","up","var(--jade)"],
+          ["Volume achieved",nf.format(B.units),"of "+nf.format(B.unitTarget)+" target","live","var(--slate)"],
+          ["Qualified pipeline",kMoney(B.pipeline),(B.pipeline/B.target).toFixed(1)+"× target coverage","up","var(--slate)"],
+          ["Commission estimate",kMoney(c.current),"current eligible estimate","live","var(--gold)"],
+          ["Daily pace needed",kMoney(dailyNeed),daysLeft+" working days left","live","var(--amber)"]
+        ];
+        const dt={up:"↑ Positive movement",down:"↓ Below pace",live:"• Live from CRM / Finance"};
+        return `<div class="kpis">${items.map(([l,v,m,d,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div><div class="delta ${d}">${dt[d]}</div></div>`).join("")}</div>`;
+      }
+
+      function progressCard(){
+        const p=period();const att=B.actual/B.target;const ps=pace();const daysLeft=Math.max(0,p.working-p.elapsed);
+        const motiv=ps.status==="green"?"<b>Keep going:</b> You're at or above required pace. Protect collections, quality and stretch opportunities.":ps.status==="amber"?"<b>Close the gap:</b> You're near pace. Focus on the opportunities nearest to payment and remove today's biggest blocker.":"<b>Recover now:</b> The current pace will miss target. Start a quantified recovery plan today — not at month end.";
+        return `<div class="card prog">
+          <div class="chead"><h4>Progress to target</h4><span class="chip ${ps.status==="green"?"jade":ps.status==="amber"?"amber":"coral"} num">${pct(att)}</span></div>
+          <div class="pl">Cleared revenue · <b class="num">${kMoney(B.actual)} / ${kMoney(B.target)}</b></div>
+          <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%;background:${scol(ps.status)}"></div><div class="exp" style="left:${clamp((p.elapsed/p.working)*100,0,100)}%"></div></div>
+          <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b></div></div>
+          <div class="motiv ${ps.status}">${motiv}</div>
+        </div>`;
+      }
+
+      function trendSVG(){
+        const target=B.target,actual=B.actual,forecast=B.forecast;const p=period();const frac=p.elapsed/p.working;const N=9;
+        const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);pts.push(x<=frac?actual*(x/Math.max(.01,frac)):actual+(forecast-actual)*((x-frac)/Math.max(.01,1-frac)));}
+        const max=Math.max(target,forecast,...pts)*1.1;const w=560,h=200,pd=30;
+        const P=pts.map((v,i)=>[pd+i*(w-2*pd)/(N-1),h-pd-v/max*(h-2*pd)]);
+        const line=P.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
+        const area=`M${P[0][0]},${h-pd} `+P.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${P[N-1][0]},${h-pd} Z`;
+        const ty=h-pd-target/max*(h-2*pd);const tx=pd+frac*(w-2*pd);
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
+          ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
+          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
+          <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
+          <path class="area" d="${area}"/><path class="line" d="${line}"/>${P.map(q=>`<circle class="dot" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5"/>`).join("")}
+          <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
+      }
+
+      function commissionMini(){
+        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;
+        return `<div class="card">
+          <div class="chead"><h4>Commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Eligible":"Not yet unlocked"}</span></div>
+          <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
+          <div class="mini3"><div class="cm gold"><span>Estimate now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Extra available</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
+          <div class="nextstep"><b>Next step:</b> ${esc(c.unlock)}</div>
+        </div>`;
+      }
+
+      function actionsCard(){
+        const list=[
+          ["red","Call payment-ready prospects","Complete all overdue payment promises and record the outcome.","Before 10:30"],
+          ["red","Progress demos and onboarding","Confirm discovery, decision-makers, demo objective, proposal and onboarding issue status.","Today"],
+          ["amber","Move priority opportunities","Every hot or institutional lead must have a dated commercial next step.","Today"],
+          ["blue","Protect CRM evidence","Update calls, meetings, objections, proposal status and payment evidence.","Before report"],
+          ["green","Create tomorrow's advantage","Prepare the top five prospects, decision-makers or account exceptions for the next day.","4:45 PM"]
+        ];
+        return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="row"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
+      }
+      function driversCard(){
+        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s])=>`<div class="driver"><div class="dt"><b>${esc(l)}</b><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><small>${esc(s)}</small></div>`).join("")}</div></div>`;
+      }
+      function teamTable(){
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map(t=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a">${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(t.pipeline)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px;max-width:280px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+      }
+
+      /* ---------- views ---------- */
+      function vCommand(){
+        const ps=pace();
+        return `${strategyStrip()}
+          <section class="hero">
+            <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
+            ${progressCard()}
+          </section>
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
+            ${commissionMini()}
+          </section>
+          <section class="grid-2">${actionsCard()}${driversCard()}</section>
+          <div class="section-tag"><h3>Your department context</h3><span>Every figure drills into the underlying leads, payments and evidence</span><div class="rule"></div></div>
+          ${teamTable()}`;
+      }
+
+      function vPipeline(){
+        const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
+        const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
+        const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
+        const cross=["Training client → Eval360 / 360 opportunity","Corporate demo → multi-department rollout","Academic employer → staff appraisal cohort","Alumnus → institutional sponsorship"];
+        return `
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
+          </section>
+          <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>`<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="due" style="align-self:auto">${esc(r[4])}</span></td></tr>`).join("")}</tbody></table></div></div>
+          <section class="grid-3">
+            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4></div><div class="list">${stale.map(([x,c])=>`<div class="row"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="due" style="align-self:center">Open</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4></div><div class="list">${quality.map(x=>`<div class="row"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="due" style="align-self:center">Review</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4></div><div class="list">${cross.map(x=>`<div class="row"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="due" style="align-self:center">Route</span></div>`).join("")}</div></div>
+          </section>`;
+      }
+
+      function vCommission(){
+        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;const met=c.gates.filter(g=>g[1]).length;
+        const audit=[["Rule version","COMM-2026-09-v1","Effective-dated and locked after month close"],["Revenue source","Finance-cleared payments","Invoices and promises excluded"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Hold-back","Balance / support gate","Displayed separately from payable amount"],["Reversals","Refunds and credit notes","Recalculate and preserve audit history"]];
+        return `
+          <section class="hero">
+            <div class="card">
+              <div class="chead"><h4>Your transparent commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Current estimate":"Locked"}</span></div>
+              <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
+              <div class="mini3"><div class="cm gold"><span>Estimated now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Additional earning</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
+              <div class="nextstep"><b>How it's earned:</b> individual-tier commission, 3% corporate setup, 2.5% maintenance and a KES 25,000 balanced bonus when both individual and corporate targets are met.</div>
+            </div>
+            <div class="card"><div class="chead"><h4>Next earning milestone</h4></div>
+              <div style="font-size:30px;font-weight:850;letter-spacing:-.03em;margin:6px 0 4px" class="num">${kMoney(Math.max(0,B.target-B.actual))}</div>
+              <div style="color:var(--muted);font-size:12.5px">remaining to the full revenue target</div>
+              <div class="nextstep"><b>Recommended push:</b> ${esc(c.unlock)} Concentrate on verified opportunities nearest to payment rather than adding unqualified activity.</div>
+            </div>
+          </section>
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===c.gates.length?"jade":"gold"}">${met} / ${c.gates.length} met</span></div><div class="list">${c.gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>
+          </section>
+          <div class="card"><div class="chead"><h4>Three-month consistency journey</h4><span class="chip slate">Month 2 of 3</span></div>
+            <div class="steps3"><div class="stepbox"><span>Month 1</span><b>Target achieved</b><div class="st" style="color:var(--jade)">✓ Verified</div></div><div class="stepbox"><span>Month 2</span><b>${att>=1?"On track":"Recovery required"}</b><div class="st" style="color:${att>=1?"var(--jade)":"var(--amber)"}">${pct(att)} current attainment</div></div><div class="stepbox"><span>Month 3</span><b>Future period</b><div class="st" style="color:var(--muted)">Consistency reward pending</div></div></div>
+          </div>`;
+      }
+
+      function vReport(){
+        const p=period();
+        const fields=[
+          ["Daily revenue target","number",Math.round(B.target/p.working)],
+          ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
+          ["New enquiries / accounts","number",38],
+          ["Qualified leads","number",19],
+          ["Calls / meaningful conversations","number",14],
+          ["Demos / sessions run","number",3],
+          ["Proposals / payment links sent","number",7],
+          ["Payments / activations today","number",5],
+          ["Top opportunities and next actions","textarea","1. Priority organization — decision call tomorrow\n2. Payment promise — follow up 10:00 AM\n3. Demo prospect — send tailored agenda"],
+          ["Marketing / automation / product observation","textarea","Best source, weakest source, an AI issue, a broken link, onboarding friction or a message that converted."],
+          ["What worked and what prevented conversion","textarea","Record evidence and learning, not general narration."],
+          ["Support required and tomorrow's plan","textarea","Named support owner, deadline, top five prospects and tomorrow's target."]
+        ];
+        return `
+          <div class="card"><div class="chead"><h4>BDE daily execution report</h4><span class="chip jade">Auto-prefilled</span></div>
+            <div class="form-grid" id="reportForm">${fields.map((f)=>`<div class="field ${f[1]==="textarea"?"span2":""}"><label>${esc(f[0])}</label>${f[1]==="textarea"?`<textarea data-label="${esc(f[0])}">${esc(f[2])}</textarea>`:`<input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}">`}</div>`).join("")}</div>
+            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">Download</button><button class="tbtn" id="clrReport" type="button">Clear narrative</button></div>
+          </div>
+          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Select "Generate report summary" to compile the dashboard data and your explanations.</div></div>
+          <section class="grid-3">
+            ${[["Automatic evidence","Revenue, payments, activity logs, opportunities, meetings, proposals and CRM completeness are system-calculated."],["Required human judgement","You explain why performance moved, what is blocked, what was learned and which support or decision is required."],["Manager workflow","Your supervisor reviews, comments, approves or returns the report and converts commitments into tracked actions."]].map(([a,b])=>`<div class="card"><h4>${esc(a)}</h4><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5">${esc(b)}</p></div>`).join("")}
+          </section>`;
+      }
+
+      function vStrategy(){
+        const score=[["Revenue / qualifying volume",35],["Pipeline and conversion",20],["CRM and forecast quality",15],["Strategic execution",10],["Marketing / channel learning",10],["Client experience and reporting",10]];
+        return `
+          <div class="card"><div class="chead"><h4>Role mandate</h4><span class="chip jade">Personal execution</span></div><div class="motiv green"><b>${esc(B.mandate)}</b><br>${esc(B.mandateText)}</div></div>
+          <div class="card"><div class="chead"><h4>Non-negotiable operating principles</h4></div><div class="principles">${B.principles.map(([a,b])=>`<div class="principle"><b>${esc(a)}</b><p>${esc(b)}</p></div>`).join("")}</div></div>
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Daily operating rhythm</h4></div><div class="timeline">${B.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Performance scorecard</h4></div><div class="scorecard">${score.map(([n,w])=>`<div class="scr"><label>${esc(n)}</label><div class="sb"><div style="width:${w/35*100}%"></div></div><b>${w}%</b></div>`).join("")}</div></div>
+          </section>
+          <section class="grid-3">
+            <div class="card"><div class="chead"><h4>Green response</h4><span class="chip jade">At / above pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Protect quality, collections and client experience; pursue stretch opportunities and share winning practices.</p></div>
+            <div class="card"><div class="chead"><h4>Amber response</h4><span class="chip amber">Near pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Agree corrective action within 24 hours, intensify senior support and concentrate on the nearest commercial next steps.</p></div>
+            <div class="card"><div class="chead"><h4>Red response</h4><span class="chip coral">Below pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Create a quantified recovery plan, monitor daily and escalate decisions or resources before the gap becomes irreversible.</p></div>
+          </section>`;
+      }
+
+      function render(){
+        const v=state.view;
+        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        if(v==="report")bindReport();
+      }
+      function bindReport(){
+        el("genReport").addEventListener("click",genReport);
+        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDE_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
+        el("clrReport").addEventListener("click",()=>root.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
+      }
+      function genReport(){
+        const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
+        root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
+        const att=B.actual/B.target;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
+        lines.push("Qualified pipeline: "+kMoney(B.pipeline)+". Collection: "+pct(B.collection,0)+".");
+        lines.push("Commission estimate: "+kMoney(commission().current)+".");
+        lines.push("All figures subject to CRM evidence and Finance verification.");
+        el("reportPreview").textContent=lines.join("\n");
+      }
+
+      el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
+      el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
+      root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
+      el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
+
+      render();
+    })();
+    </script>
   </div>
 </section>
-
-<script>
-(() => {
-  "use strict";
-
-  const bdeApp = document.getElementById("bdeApp");
-
-  const departments = {
-    "Virtual": {
-      leader:"Francisca Ing'aa", leaderTitle:"BDO – Virtual Department",
-      target:11504875, actual:7920000, forecast:11850000, pipeline:21100000, collection:0.87,
-      strategyTitle:"Convert every enquiry into a managed next step and every free session into a payment opportunity.",
-      strategyText:"The Virtual Department wins through fast response, relationship building, strong free-session attendance, human calls for hot leads, accurate automation, payment guidance and disciplined CRM follow-up.",
-      focus:"Call every hot lead and payment promise first; then protect free-session attendance and same-day CRM updates.",
-      drivers:[
-        ["New enquiries",1260,"Monthly flow"],
-        ["Hot leads",184,"Human follow-up"],
-        ["Free-session attendance",318,"Qualified attendees"],
-        ["First payments",286,"Finance verified"],
-        ["CRM completeness",93,"% complete"]
-      ],
-      funnel:[["Enquiries",1260],["Qualified",760],["Free-session registered",510],["Attended",318],["Payment commitment",302],["First payment",286]],
-      sources:[["Meta ads",38],["WhatsApp",24],["Database",16],["Referrals",13],["Website / AI",9]],
-      team:[
-        {name:"Purity Gatwiri",title:"BDE – Leadership Programmes",target:2200000,actual:1620000,pipeline:4600000,collection:.88,crm:96,trend:12,commissionKind:"virtual",units:58,unitTarget:72,notes:"Strengthen SMC and SLDP attendee conversion."},
-        {name:"Maryanne Nafula Owour",title:"Sales – Leadership",target:1300000,actual:940000,pipeline:2400000,collection:.84,crm:91,trend:6,commissionKind:"virtual",units:39,unitTarget:50,notes:"Prioritize Friday payment promises."},
-        {name:"Lucky Anindo",title:"BDE – Project-Based Courses",target:2200000,actual:1760000,pipeline:3900000,collection:.90,crm:95,trend:15,commissionKind:"virtual",units:64,unitTarget:75,notes:"On pace; add stretch target."},
-        {name:"Dorcas Mukami Murithi",title:"Sales – Project Courses",target:1300000,actual:810000,pipeline:2050000,collection:.81,crm:89,trend:-4,commissionKind:"virtual",units:34,unitTarget:50,notes:"Needs a 7-day recovery plan."},
-        {name:"Rachael Wambui Mwongela",title:"BDE – Data Analysis",target:2200000,actual:1850000,pipeline:4100000,collection:.91,crm:97,trend:11,commissionKind:"virtual",units:70,unitTarget:78,notes:"Protect collection and follow-up."},
-        {name:"Joy Kendi",title:"Sales – Data Analysis",target:2104875,actual:700000,pipeline:2000000,collection:.79,crm:86,trend:-8,commissionKind:"virtual",units:27,unitTarget:70,notes:"Immediate call and campaign-quality intervention."}
-      ],
-      dailyRhythm:[
-        ["8:00–8:30","Review new enquiries, overnight AI conversations, payment commitments and overdue follow-ups."],
-        ["8:30–9:00","Receive daily first-payment, call, CRM and free-session targets."],
-        ["9:00–10:30","Call hot leads and payment commitments before generic follow-up."],
-        ["10:30–1:00","Qualify enquiries, invite and confirm free-session attendance."],
-        ["2:00–4:45","Warm follow-up, objection handling, payment guidance and closing."],
-        ["4:45–5:15","Complete CRM, report results and prepare next-day priority list."]
-      ],
-      principles:[
-        ["Every enquiry has an owner","No enquiry should remain unattended or outside the CRM."],
-        ["Human calls for high intent","Hot, institutional and payment-ready leads cannot remain in automation only."],
-        ["Payment is the result","Interest and attendance are pipeline indicators; cleared first payments are achieved performance."]
-      ]
-    },
-    "Corporate": {
-      leader:"Edwin Otieno", leaderTitle:"BDO – Corporate Department",
-      target:10000000, actual:6250000, forecast:10400000, pipeline:31800000, collection:0.90,
-      strategyTitle:"Create institutional demand, reach decision-makers and move every account toward a commercial commitment.",
-      strategyText:"Corporate growth comes from a Top-200 account system, Top-50 priorities, discovery meetings, tailored proposals, RFP discipline, open-programme innovation, cross-SBU conversion, collections and excellent delivery.",
-      focus:"Advance the highest-value accounts into discovery, proposal, negotiation or deposit; no important account may sit without a dated next action.",
-      drivers:[
-        ["Top-200 captured",172,"Organizations"],
-        ["Top-50 active",41,"Priority accounts"],
-        ["Discovery meetings",19,"This month"],
-        ["Proposals live",23,"KES 18.4M"],
-        ["Open programmes",3,"Validated launches"]
-      ],
-      funnel:[["Target accounts",200],["Decision-makers reached",126],["Discovery held",58],["Qualified opportunity",39],["Proposal sent",23],["Negotiation / approval",12],["Won / deposit",7]],
-      sources:[["Outbound accounts",31],["Cross-SBU referrals",22],["RFPs",18],["Alumni / referrals",17],["Open programmes",12]],
-      team:[
-        {name:"Josiah Kamau Mwangi",title:"BDE – Lead Generation",target:2000000,actual:1750000,pipeline:6800000,collection:.94,crm:98,trend:18,commissionKind:"corporate",units:17,unitTarget:20,notes:"High pipeline quality; accelerate two negotiations."},
-        {name:"Hannah Wanjiku",title:"BDE – Proposal Development",target:2000000,actual:1410000,pipeline:5300000,collection:.89,crm:95,trend:9,commissionKind:"corporate",units:13,unitTarget:20,notes:"Prioritize proposal follow-up and decision dates."},
-        {name:"Regina Juma",title:"BDE – Reports & Client Success",target:2000000,actual:930000,pipeline:3100000,collection:.85,crm:91,trend:-3,commissionKind:"corporate",units:8,unitTarget:20,notes:"Activate renewals, referrals and completed-assignment upsells."}
-      ],
-      dailyRhythm:[
-        ["8:00–8:30","Review target accounts, overdue follow-ups, proposals, RFPs, collections and open-programme leads."],
-        ["8:30–9:00","Receive exact revenue, meeting, proposal and follow-up outcomes for the day."],
-        ["9:00–10:30","Call decision-makers and high-value opportunities."],
-        ["10:30–1:00","Research accounts, map buying groups and prepare tailored commercial assets."],
-        ["2:00–4:30","Discovery, proposals, negotiation, partner/alumni and cross-SBU engagement."],
-        ["4:30–5:15","Update CRM, confirm every next action and submit the daily report."]
-      ],
-      principles:[
-        ["Begin with the business problem","Do not begin with a brochure or fee; begin with priorities, risks and desired results."],
-        ["Every meeting ends with a next step","Record the person, output and date; 'we shall get back to you' is not progress."],
-        ["Every proposal is actively managed","Receipt, review status, objections, decision timing and payment route must be known."]
-      ]
-    },
-    "International": {
-      leader:"Erick Kwemoi Ndiema", leaderTitle:"BDO – International Programmes",
-      target:24000000, actual:13650000, forecast:25100000, pipeline:45200000, collection:0.91,
-      strategyTitle:"Build organization-sponsored country pipelines first, then use automation, calls, free training, alumni and local marketers to close the remaining gap.",
-      strategyText:"Each country is a mini business unit. M&E and Data Analysis require independent pipelines, organization targets, local marketers, free-session plans, payment routes, forecasts and recovery actions.",
-      focus:"Move organization sponsorships and payment commitments in every country; do not allow strong countries to hide weak ones.",
-      drivers:[
-        ["Countries scheduled",6,"September"],
-        ["Paid participants",273,"of 480"],
-        ["Org-sponsored",119,"Participants"],
-        ["Countries at 80%+",3,"Need 4 to unlock"],
-        ["Collection rate",91,"% cleared"]
-      ],
-      funnel:[["Historical / new leads",2800],["Qualified",1210],["Free-session attendees",720],["Committed",465],["Fully paid",273]],
-      sources:[["Organizations",44],["Individual digital",21],["Alumni / VAMEPA",15],["Local marketers",13],["Free-session referrals",7]],
-      countries:[
-        {name:"Botswana",me:35,data:34,org:21,revenue:3450000},
-        {name:"Namibia",me:33,data:32,org:18,revenue:3250000},
-        {name:"Sierra Leone",me:30,data:28,org:16,revenue:2900000},
-        {name:"The Gambia",me:25,data:22,org:14,revenue:2350000},
-        {name:"Lesotho",me:18,data:20,org:12,revenue:1900000},
-        {name:"Eswatini",me:15,data:11,org:8,revenue:1300000}
-      ],
-      team:[
-        {name:"Kevin Mutura",title:"Coordinator – M&E",target:12000000,actual:7800000,pipeline:23100000,collection:.92,crm:96,trend:10,commissionKind:"international",units:156,unitTarget:240,notes:"Three countries qualify; one additional country needed for unlock.",countryCounts:[35,33,30,25,18,15]},
-        {name:"John Maina Mwangi",title:"Coordinator – Data Analysis",target:12000000,actual:5850000,pipeline:22100000,collection:.90,crm:94,trend:7,commissionKind:"international",units:117,unitTarget:240,notes:"Two countries qualify; intensify Gambia and Sierra Leone.",countryCounts:[34,32,28,22,20,11]}
-      ],
-      dailyRhythm:[
-        ["8:00–8:30","Review country/course dashboard, organization opportunities, representatives and payment promises."],
-        ["8:30–9:00","Set exact organization, call, participant, collection and country-recovery targets."],
-        ["9:00–11:00","Call institutions, nominees, alumni, hot leads and promised payments."],
-        ["11:00–1:00","Run organization proposals, free-session invitations and local-marketer coordination."],
-        ["2:00–4:30","Country follow-up, payment support, micro-messaging and weak-country recovery."],
-        ["4:30–5:15","Update country CRM, Finance status, forecast and next-day priorities."]
-      ],
-      principles:[
-        ["Organizations make scale possible","Several sponsored staff from one institution can move a country rapidly toward quorum."],
-        ["Every country is visible","Country, course, source, owner, next action, paid, committed and weighted pipeline must be current."],
-        ["Automation expands reach; humans close","Calls are compulsory for institutional, hot and payment-ready prospects."]
-      ]
-    },
-    "Digital Solutions": {
-      leader:"Alein Kawinzi Kagunza", leaderTitle:"BDO – Digital Solutions",
-      target:4850000, actual:2790000, forecast:4990000, pipeline:14600000, collection:0.93,
-      strategyTitle:"Turn Eval360 and 360 Appraisal into visible, trusted and fast-growing recurring-revenue solutions.",
-      strategyText:"Growth requires product mastery, direct organization engagement, aggressive demonstrations, RFP intelligence, digital demand generation, reliable self-onboarding, strong adoption and proactive maintenance and renewals.",
-      focus:"Move qualified organizations into demos and paid onboarding while protecting product readiness and recurring revenue.",
-      drivers:[
-        ["Qualified organizations",74,"Active pipeline"],
-        ["Demos completed",21,"This month"],
-        ["RFPs assessed",18,"100% within 24h"],
-        ["Active paid users",412,"Across products"],
-        ["Renewals visible",100,"% within 60 days"]
-      ],
-      funnel:[["Organizations identified",240],["Decision-makers reached",138],["Discovery",74],["Demo",45],["Proposal / pilot",26],["Paid onboarding",9]],
-      sources:[["Direct organization outreach",32],["Digital campaigns",26],["RFP / procurement",18],["Professional platforms",14],["Cross-SBU referrals",10]],
-      team:[
-        {name:"Austin Abere",title:"BDE – Eval360",target:2150000,actual:1370000,pipeline:8900000,collection:.95,crm:98,trend:16,commissionKind:"eval360",units:84,unitTarget:100,corporateClients:1,maintenance:100000,notes:"Corporate setup pipeline strong; individual users need 16 more."},
-        {name:"Ruth Ngari",title:"BDE – 360 Appraisal",target:1200000,actual:1020000,pipeline:5700000,collection:.92,crm:96,trend:22,commissionKind:"appraisal360",units:510,unitTarget:600,renewals:220000,notes:"30 paid staff to reach the 80% commission threshold."}
-      ],
-      dailyRhythm:[
-        ["8:00–8:30","Review enquiries, RFP alerts, demos, onboarding issues, product defects and renewals."],
-        ["8:30–9:00","Set decision-maker, demo, proposal, content, onboarding and revenue targets."],
-        ["9:00–11:00","Call priority organizations, champions, procurement and payment contacts."],
-        ["11:00–1:00","Discovery, RFP qualification, demo preparation and tailored value assets."],
-        ["2:00–4:00","Run demos, executive briefings, proposals, pilots and onboarding support."],
-        ["4:00–5:15","Follow up decisions, fix friction, update CRM and prepare next-day accounts."]
-      ],
-      principles:[
-        ["Sell outcomes, not screens","Connect the product to institutional performance, reporting, decisions, development and accountability."],
-        ["Every serious account reaches a tailored demo","A demo without discovery, decision-makers and a next step is only activity."],
-        ["Onboarding friction is a revenue risk","Self-service and automated journeys must be tested repeatedly and corrected quickly."]
-      ]
-    },
-    "Academic": {
-      leader:"Hellen Letting", leaderTitle:"BDO – Academic Department",
-      target:2400000, actual:1460000, forecast:2520000, pipeline:4600000, collection:0.96,
-      strategyTitle:"Build the conversion machine first, then increase traffic and scale toward one million African learners.",
-      strategyText:"The department owns system readiness, a self-service customer journey, digital lead quality, paid conversion, learner activation, institutional distribution, customer feedback and preparation for learner-created-course SaaS.",
-      focus:"Fix any customer-journey friction immediately, protect paid conversion and activation, and expand university, college and employer channels.",
-      drivers:[
-        ["Fully paid learners",122,"of 200"],
-        ["Activation rate",91,"% within 24h"],
-        ["Checkout conversion",18.4,"%"],
-        ["Critical defects",0,"Launch blockers"],
-        ["Institutional pipeline",840,"Potential learners"]
-      ],
-      funnel:[["Landing-page visitors",7200],["Registrations",1320],["Checkout starts",610],["Fully paid",122],["Activated",111],["Weekly active",88]],
-      sources:[["Paid digital",42],["Colleges / universities",23],["Database",14],["Employers",12],["Referrals",9]],
-      team:[
-        {name:"Florence Jemutai",title:"BDE – Professional Qualifications",target:1200000,actual:820000,pipeline:2500000,collection:.97,crm:98,trend:13,commissionKind:"academic",units:68,unitTarget:100,notes:"Improve checkout conversion and college presentations."},
-        {name:"Rita Nazi",title:"BDE – Other Courses & Platform Growth",target:1200000,actual:640000,pipeline:2100000,collection:.95,crm:96,trend:8,commissionKind:"academic",units:54,unitTarget:100,notes:"Increase platform-level demand and institutional demos."}
-      ],
-      dailyRhythm:[
-        ["8:00–8:30","Review registrations, payments, activation, automation, support tickets and system issues."],
-        ["8:30–9:00","Set learner, revenue, campaign, institution and product-improvement outcomes."],
-        ["9:00–10:00","Run the full customer-journey test and log evidence."],
-        ["10:00–11:30","Review funnel leakage, abandoned journeys and high-value exceptions."],
-        ["11:30–1:00","Institutional outreach, presentations, partnerships and demonstrations."],
-        ["2:00–5:15","Content, experiments, issue closure, learner feedback, CRM and daily report."]
-      ],
-      principles:[
-        ["Readiness before scale","Do not send paid traffic into a broken payment, onboarding, content or AI journey."],
-        ["Conversion is the marketing test","Reach and enquiries matter, but fully paid and activated learners are the commercial result."],
-        ["Every friction point has an owner","A problem must enter the issue log, be assigned, corrected, retested and closed."]
-      ]
-    }
-  };
-
-  const leaders = {
-    BDM:{name:"Michael Obworo Mongere",title:"Business Development Manager",personalTarget:5000000,personalActual:3720000,personalPipeline:17400000},
-    CEO:{name:"Dr. Benson Kiarie",title:"Founder & CEO"}
-  };
-
-  // Locked to a single BDE context for phase 1 (display-only selectors above).
-  const state = {
-    role:"BDE", department:"Virtual", user:"Dorcas Mukami Murithi", view:"overview",
-    workingDays:22, elapsedDays:13, overrides:{}, theme:"light"
-  };
-
-  const fmt = new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
-  const money = v => "KES " + fmt.format(Math.round(v || 0));
-  const shortMoney = v => {
-    const a=Math.abs(v||0);
-    if(a>=1e9)return "KES "+(v/1e9).toFixed(1)+"B";
-    if(a>=1e6)return "KES "+(v/1e6).toFixed(2)+"M";
-    if(a>=1e3)return "KES "+(v/1e3).toFixed(0)+"K";
-    return money(v);
-  };
-  const pct = v => ((v||0)*100).toFixed(v>=1?0:1)+"%";
-  const esc = s => String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
-  const initials = name => name.split(/\s+/).map(x=>x[0]).slice(0,2).join("").toUpperCase();
-  const deepClone = obj => JSON.parse(JSON.stringify(obj));
-
-  function companyData(){
-    const list=Object.entries(departments).map(([name,d])=>({name,...d}));
-    return {
-      target:list.reduce((a,d)=>a+d.target,0),
-      actual:list.reduce((a,d)=>a+d.actual,0),
-      forecast:list.reduce((a,d)=>a+d.forecast,0),
-      pipeline:list.reduce((a,d)=>a+d.pipeline,0),
-      collection:list.reduce((a,d)=>a+d.collection*d.actual,0)/Math.max(1,list.reduce((a,d)=>a+d.actual,0)),
-      departments:list
-    };
-  }
-
-  function scopeKey(){return [state.role,state.department,state.user].join("|")}
-  function getOverride(){return state.overrides[scopeKey()]||{}}
-  function currentStaff(){
-    const d=departments[state.department];
-    return d.team.find(x=>x.name===state.user)||d.team[0];
-  }
-  function baseScope(){
-    if(state.role==="BDE"){
-      const s=deepClone(currentStaff());
-      s.name=s.name;s.title=s.title;s.department=state.department;s.level="Personal portfolio";
-      s.strategyTitle=departments[state.department].strategyTitle;s.strategyText=departments[state.department].strategyText;s.focus=departments[state.department].focus;
-      return s;
-    }
-    if(state.role==="BDO"){
-      const d=deepClone(departments[state.department]);
-      d.name=d.leader;d.title=d.leaderTitle;d.department=state.department;d.level="Department command centre";
-      d.strategyTitle=departments[state.department].strategyTitle;d.strategyText=departments[state.department].strategyText;d.focus=departments[state.department].focus;
-      return d;
-    }
-    const c=companyData();
-    if(state.role==="BDM"){
-      return {...c,name:leaders.BDM.name,title:leaders.BDM.title,department:"All five SBUs",level:"Commercial leadership",strategyTitle:"Make growth systematic across all five SBUs while remaining a direct strategic revenue producer.",strategyText:"The BDM must control consolidated revenue, qualified pipeline, proposals, strategic accounts, marketing-to-sales conversion, collections, CRM discipline, HOD performance and early recovery action.",focus:"Move blocked high-value accounts, correct weak SBUs and ensure every HOD has an evidence-based forecast and recovery action.",personalTarget:leaders.BDM.personalTarget,personalActual:leaders.BDM.personalActual,personalPipeline:leaders.BDM.personalPipeline};
-    }
-    return {...c,name:leaders.CEO.name,title:leaders.CEO.title,department:"Vantage Africa",level:"Enterprise leadership",strategyTitle:"See the entire organization clearly and intervene where leadership, resources or decisions will change the result.",strategyText:"The CEO dashboard consolidates revenue, forecasts, staff performance, strategic accounts, commissions, collections, product readiness and the few decisions requiring executive attention.",focus:"Protect organization-wide revenue, resolve the biggest bottleneck and support the opportunities with the greatest strategic value."};
-  }
-  function getScope(){
-    const s=baseScope(),o=getOverride();
-    ["target","actual","pipeline","collection","forecast"].forEach(k=>{if(o[k]!==undefined)s[k]=o[k]});
-    return s;
-  }
-
-  function paceStatus(actual,target){
-    const expected=target*(state.elapsedDays/state.workingDays);
-    const pace=expected?actual/expected:0;
-    return {pace,expected,status:pace>=1?"green":pace>=.85?"amber":"red",label:pace>=1?"On pace":pace>=.85?"At risk":"Needs intervention"};
-  }
-
-  function commissionForBDE(s){
-    const att=s.target?s.actual/s.target:0;
-    if(s.commissionKind==="virtual"){
-      const eligible=att>=.8&&s.collection>=.8;
-      return {current:eligible?s.actual*.05:0,atTarget:s.target*.05,unlock:eligible?"Commission currently unlocked":"Reach 80% of target and 80% fee collection",gates:[
-        ["Portfolio target at 80%+",att>=.8,pct(att)],
-        ["Fee collection at 80%+",s.collection>=.8,pct(s.collection)],
-        ["CRM and qualifying client evidence",s.crm>=90,s.crm+"%"]
-      ],rule:"5% of eligible fees actually collected once the portfolio and collection gates are satisfied."};
-    }
-    if(s.commissionKind==="academic"){
-      const rate=att>=1?.04:att>=.8?.03:0;
-      return {current:s.actual*rate,atTarget:s.target*.04,unlock:rate?"Current band: "+(rate*100)+"%":"Reach 80 fully paid clients and KES 960,000",gates:[
-        ["Fully paid client threshold",s.units>=80,s.units+" / 80 minimum"],
-        ["Revenue threshold",s.actual>=960000,shortMoney(s.actual)],
-        ["Finance-cleared fees",s.collection>=.95,pct(s.collection)]
-      ],rule:"3% at 80–99 fully paid clients and KES 960,000+; 4% at 100+ clients and KES 1.2M+."};
-    }
-    if(s.commissionKind==="appraisal360"){
-      const rate=(s.units>=600&&s.actual>=1200000)?.04:(s.units>=480&&s.actual>=960000)?.03:0;
-      const renewal=rate?s.renewals*.01:0;
-      return {current:s.actual*rate+renewal,atTarget:1200000*.04+(s.renewals||0)*.01,unlock:rate?"New-business band unlocked":"Need "+Math.max(0,480-s.units)+" more paid staff to reach 80%",gates:[
-        ["480 paid staff minimum",s.units>=480,s.units+" paid staff"],
-        ["KES 960,000 minimum",s.actual>=960000,shortMoney(s.actual)],
-        ["Renewal gate tied to new acquisition",rate>0,shortMoney(s.renewals||0)+" renewal base"]
-      ],rule:"3% at 480–599 paid staff; 4% at 600+ paid staff; 1% on eligible renewals when current new business reaches 80%."};
-    }
-    if(s.commissionKind==="eval360"){
-      const individualRate=s.units>=150?.10:s.units>=125?.075:s.units>=100?.05:0;
-      const individualUnlocked=individualRate>0&&s.actual>=350000&&s.corporateClients>=1;
-      const corporateUnlocked=s.corporateClients>=2&&s.units>=80&&s.actual>=280000;
-      const individual=individualUnlocked?Math.min(s.actual,600000)*individualRate:0;
-      const setup=corporateUnlocked?s.corporateClients*900000*.03:0;
-      const maintenance=corporateUnlocked?(s.maintenance||0)*.025:0;
-      const bonus=(s.units>=100&&s.actual>=350000&&s.corporateClients>=2)?25000:0;
-      return {current:individual+setup+maintenance+bonus,atTarget:350000*.05+2*900000*.03+100000*.025+25000,unlock:bonus?"Balanced performance bonus unlocked":corporateUnlocked||individualUnlocked?"One stream unlocked; complete the balance":"Meet the individual and corporate support thresholds",gates:[
-        ["100 active paying users",s.units>=100,s.units+" users"],
-        ["At least KES 350,000 individual collections",s.actual>=350000,shortMoney(s.actual)],
-        ["2 fully paid corporate setups",s.corporateClients>=2,(s.corporateClients||0)+" clients"],
-        ["Maintenance current",s.collection>=.9,pct(s.collection)]
-      ],rule:"Individual tier commission, 3% corporate setup, 2.5% maintenance and KES 25,000 balanced bonus when both full targets are achieved."};
-    }
-    if(s.commissionKind==="international"){
-      const counts=s.countryCounts||[];
-      const qualifying=counts.filter(x=>x>=32).length;
-      const unlocked=qualifying>=4&&s.collection>=.95;
-      const current=unlocked?counts.reduce((a,n)=>a+(n>=41?n*1000:n>=32?n*500:0),0):0;
-      const atTarget=6*40*500;
-      return {current,atTarget,unlock:unlocked?"Country commission unlocked":`Need ${Math.max(0,4-qualifying)} more country/countries at 32+ and 95% collection`,gates:[
-        ["Minimum 4 of 6 countries at 80%+",qualifying>=4,qualifying+" qualifying"],
-        ["Country threshold is 32 participants",qualifying>=4,counts.join(", ")],
-        ["Portfolio fee collection at 95%+",s.collection>=.95,pct(s.collection)]
-      ],rule:"KES 500 per student for countries with 32–40; KES 1,000 per student at 41+, only after the qualifying-country and 95% collection gates."};
-    }
-    const rate=att>=1?.03:att>=.8?.02:0;
-    return {current:s.actual*rate,atTarget:s.target*.03,unlock:rate?"Configured Corporate commission band reached":"Reach the approved 80% threshold",gates:[
-      ["Revenue threshold",att>=.8,pct(att)],
-      ["Cleared collections",s.collection>=.9,pct(s.collection)],
-      ["Acquisition ownership and CRM evidence",s.crm>=95,s.crm+"%"]
-    ],rule:"Illustrative Corporate rule in this prototype. Production must read the approved, versioned Corporate Commission Rule Master."};
-  }
-
-  function commissionForScope(s){
-    if(state.role==="BDE")return commissionForBDE(s);
-    if(state.role==="BDO"){
-      const att=s.target?s.actual/s.target:0;
-      let current=0,atTarget=0,rule="",gates=[];
-      if(state.department==="International"){
-        const qualifying=s.countries.filter(c=>(c.me>=32||c.data>=32)&&c.org>=5).length;
-        const bonus=att>=1?50000:att>=.9?30000:att>=.8?15000:0;
-        current=bonus;atTarget=50000;rule="Organization sponsorship commission plus departmental leadership bonus; 30% can remain held until course and departmental gates are satisfied.";
-        gates=[["At least 4 countries with 5+ sponsored participants",qualifying>=4,qualifying+" countries"],["Department reaches 80%+",att>=.8,pct(att)],["Both courses meet country quorum",s.countries.filter(c=>c.me>=32).length>=4&&s.countries.filter(c=>c.data>=32).length>=4,"M&E / Data balance"]];
-      }else if(state.department==="Digital Solutions"){
-        current=att>=1?40000:att>=.8?20000:0;atTarget=40000;rule="Leadership bonus is unlocked only when the HOD achieves the personal balance rules, both BDEs reach 80% and the department reaches the required band.";
-        gates=[["Department reaches 80%+",att>=.8,pct(att)],["Both product lines contribute",s.team.every(x=>x.actual/x.target>=.8),s.team.map(x=>Math.round(x.actual/x.target*100)+"%").join(" / ")],["Collections verified",s.collection>=.9,pct(s.collection)]];
-      }else if(state.department==="Academic"){
-        const rate=att>=1?.025:att>=.8?.015:0;current=s.actual*rate;atTarget=s.target*.025;rule="1.5% at 80–99.99% and 2.5% at 100%+, subject to fully paid learners and revenue gates.";
-        gates=[["160 learners and KES 1.92M minimum",s.actual>=1920000,shortMoney(s.actual)],["Both BDE portfolios visible",true,"2 portfolios"],["Finance-cleared revenue",s.collection>=.95,pct(s.collection)]];
-      }else{
-        current=att>=1?60000:att>=.8?30000:0;atTarget=60000;rule="Illustrative leadership amount. Production must read the approved HOD commission and hold-back rule for the selected department.";
-        gates=[["Department reaches 80%+",att>=.8,pct(att)],["Balanced BDE performance",s.team.filter(x=>x.actual/x.target>=.8).length>=Math.ceil(s.team.length*.67),s.team.filter(x=>x.actual/x.target>=.8).length+" of "+s.team.length],["Collections and CRM complete",s.collection>=.9,pct(s.collection)]];
-      }
-      return {current,atTarget,unlock:current?"Leadership band currently visible":"Leadership gate not yet unlocked",gates,rule};
-    }
-    if(state.role==="BDM"){
-      const orgAtt=s.actual/s.target,personal=s.personalActual;
-      const personalComm=personal>=7500000?150000:personal>=6000000?120000:personal>=5000000?90000:personal>=4000000?60000:0;
-      const sbus80=s.departments.filter(d=>d.actual/d.target>=.8).length;
-      const leadership=orgAtt>=1.1?125000:orgAtt>=1?100000:orgAtt>=.9?75000:orgAtt>=.8?50000:0;
-      const gated=sbus80>=4&&s.collection>=.9&&s.departments.every(d=>d.actual/d.target>=.5);
-      return {current:gated?personalComm+leadership:personalComm*.7,atTarget:90000+100000,unlock:gated?"Organization leadership gate unlocked":"Complete balanced-SBU and 90% collection gates",gates:[
-        ["Organization reaches 80%+",orgAtt>=.8,pct(orgAtt)],
-        ["At least 4 of 5 SBUs at 80%+",sbus80>=4,sbus80+" of 5"],
-        ["No SBU below 50%",s.departments.every(d=>d.actual/d.target>=.5),s.departments.filter(d=>d.actual/d.target<.5).length+" below"],
-        ["Organization collection at 90%+",s.collection>=.9,pct(s.collection)],
-        ["Personal strategic sales",personal>=4000000,shortMoney(personal)]
-      ],rule:"Personal strategic acquisition commission plus organization-wide leadership commission, with a 30% leadership hold-back and balanced-SBU gates."};
-    }
-    const exposure=Object.values(departments).flatMap(d=>d.team).reduce((sum,x)=>sum+commissionForBDE(x).current,0);
-    return {current:exposure,atTarget:exposure*1.65,unlock:"CEO sees exposure, payable amount and unresolved gates; approval remains with Finance and authorized management.",gates:[
-      ["Finance-cleared revenue source",true,"Required"],
-      ["No double counting",true,"Transaction-level ownership"],
-      ["Rule version stored",true,"Effective-dated"],
-      ["Approval and audit trail",true,"Required"]
-    ],rule:"The CEO view does not calculate a personal commission. It shows enterprise commission exposure, estimated payable amounts, hold-backs and unresolved exceptions."};
-  }
-
-  function roleMandate(){
-    if(state.role==="BDE")return "Personal execution dashboard";
-    if(state.role==="BDO")return "Department leadership dashboard";
-    if(state.role==="BDM")return "Five-SBU commercial command dashboard";
-    return "Enterprise intervention dashboard";
-  }
-
-  function updateStrategy(){
-    const s=getScope();
-    document.getElementById("strategyEyebrow").textContent=roleMandate();
-    document.getElementById("strategyTitle").textContent=s.strategyTitle;
-    document.getElementById("strategyText").textContent=s.strategyText;
-    document.getElementById("todayFocus").textContent=s.focus;
-  }
-
-  function roleMetrics(s){
-    const ps=paceStatus(s.actual,s.target);
-    const comm=commissionForScope(s);
-    if(state.role==="BDE"){
-      const units=s.units||0,targetUnits=s.unitTarget||0;
-      return [
-        ["Monthly target",shortMoney(s.target),"Approved personal target","neutral"],
-        ["Cleared revenue",shortMoney(s.actual),pct(s.actual/s.target)+" of target","up"],
-        ["Volume achieved",fmt.format(units),targetUnits?`of ${fmt.format(targetUnits)} target`:"Qualifying units","neutral"],
-        ["Qualified pipeline",shortMoney(s.pipeline),(s.pipeline/s.target).toFixed(1)+"× target coverage","up"],
-        ["Commission estimate",shortMoney(comm.current),"Current eligible estimate","neutral"],
-        ["Daily pace needed",shortMoney(Math.max(0,(s.target-s.actual)/(state.workingDays-state.elapsedDays))),`${state.workingDays-state.elapsedDays} working days left`,"neutral"]
-      ];
-    }
-    if(state.role==="BDO"){
-      return [
-        ["Department target",shortMoney(s.target),"Approved SBU target","neutral"],
-        ["Cleared revenue",shortMoney(s.actual),pct(s.actual/s.target)+" attainment","up"],
-        ["Month-end forecast",shortMoney(s.forecast),pct(s.forecast/s.target)+" projected","neutral"],
-        ["Qualified pipeline",shortMoney(s.pipeline),(s.pipeline/s.target).toFixed(1)+"× target coverage","up"],
-        ["Team at 80%+",s.team.filter(x=>x.actual/x.target>=.8).length+" / "+s.team.length,"Balanced performance","neutral"],
-        ["Leadership incentive",shortMoney(comm.current),comm.unlock,"neutral"]
-      ];
-    }
-    if(state.role==="BDM"){
-      const sbus=s.departments.filter(d=>d.actual/d.target>=.8).length;
-      return [
-        ["Organization target",shortMoney(s.target),"All five SBUs","neutral"],
-        ["Cleared revenue",shortMoney(s.actual),pct(s.actual/s.target)+" attainment","up"],
-        ["Month-end forecast",shortMoney(s.forecast),pct(s.forecast/s.target)+" projected","neutral"],
-        ["BDM personal sales",shortMoney(s.personalActual),pct(s.personalActual/s.personalTarget)+" of KES 5M","neutral"],
-        ["SBUs at 80%+",sbus+" / 5","Balanced-SBU gate","neutral"],
-        ["Commission estimate",shortMoney(comm.current),"Personal + leadership","neutral"]
-      ];
-    }
-    return [
-      ["Organization target",shortMoney(s.target),"Approved five-SBU plan","neutral"],
-      ["Cleared revenue",shortMoney(s.actual),pct(s.actual/s.target)+" attainment","up"],
-      ["Month-end forecast",shortMoney(s.forecast),pct(s.forecast/s.target)+" projected","neutral"],
-      ["Qualified pipeline",shortMoney(s.pipeline),(s.pipeline/s.target).toFixed(1)+"× target","up"],
-      ["Collection rate",pct(s.collection),"Finance-cleared receipts","neutral"],
-      ["Commission exposure",shortMoney(comm.current),"Current estimated exposure","neutral"]
-    ];
-  }
-
-  function metricHTML(items){
-    return `<div class="metric-grid">${items.map(([label,value,note,delta])=>`
-      <div class="metric" data-delta="${delta||"neutral"}">
-        <div class="label">${esc(label)}</div>
-        <div class="value">${esc(value)}</div>
-        <div class="note">${esc(note)}</div>
-        <div class="delta ${delta||"neutral"}">${delta==="up"?"↑ Positive movement":delta==="down"?"↓ Below pace":"• Live from CRM / Finance"}</div>
-      </div>`).join("")}</div>`;
-  }
-
-  function scenarioHTML(s){
-    return `<section class="panel">
-      <div class="panel-head"><div><h3>Interactive scenario controls</h3><p>Change the illustrative figures to see the dashboard, pacing and commission journey respond.</p></div><span class="badge blue">Demo controls</span></div>
-      <div class="scenario">
-        <div class="control"><label>Target revenue</label><input class="input scenario-input" data-key="target" type="number" value="${Math.round(s.target)}"></div>
-        <div class="control"><label>Cleared revenue</label><input class="input scenario-input" data-key="actual" type="number" value="${Math.round(s.actual)}"></div>
-        <div class="control"><label>Qualified pipeline</label><input class="input scenario-input" data-key="pipeline" type="number" value="${Math.round(s.pipeline)}"></div>
-        <div class="control"><label>Collection rate %</label><input class="input scenario-input" data-key="collection" type="number" min="0" max="100" step="1" value="${Math.round(s.collection*100)}"></div>
-        <div class="control"><label>Forecast revenue</label><input class="input scenario-input" data-key="forecast" type="number" value="${Math.round(s.forecast||s.actual)}"></div>
-        <button class="ghost-btn" id="resetScenario" type="button">Reset</button>
-      </div>
-    </section>`;
-  }
-
-  function trendSVG(s){
-    const target=s.target||1,actual=s.actual||0,forecast=s.forecast||actual;
-    const monthly=[.12,.24,.36,.46,.58,.68,.78,.88,1].map((x,i)=>i<6?actual*(x/.68):actual+(forecast-actual)*((i-5)/3));
-    const max=Math.max(target,forecast,...monthly)*1.08;
-    const w=620,h=190,p=28;
-    const pts=monthly.map((v,i)=>[p+i*(w-2*p)/(monthly.length-1),h-p-v/max*(h-2*p)]);
-    const line=pts.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
-    const area=`M${pts[0][0]},${h-p} ${pts.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")} L${pts.at(-1)[0]},${h-p} Z`;
-    const targetY=h-p-target/max*(h-2*p);
-    return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
-      ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${p}" y1="${p+t*(h-2*p)}" x2="${w-p}" y2="${p+t*(h-2*p)}"/>`).join("")}
-      <line x1="${p}" y1="${targetY}" x2="${w-p}" y2="${targetY}" stroke="var(--green)" stroke-dasharray="5 5"/>
-      <text x="${w-p}" y="${targetY-5}" text-anchor="end">Target ${shortMoney(target)}</text>
-      <path class="area" d="${area}"/><path class="line" d="${line}"/>
-      ${pts.map(q=>`<circle class="dot" cx="${q[0]}" cy="${q[1]}" r="4"/>`).join("")}
-      <text x="${p}" y="${h-5}">Start</text><text x="${w/2}" y="${h-5}" text-anchor="middle">Today</text><text x="${w-p}" y="${h-5}" text-anchor="end">Month end</text>
-    </svg>`;
-  }
-
-  function actionItems(s){
-    if(state.role==="BDE"){
-      const generic=[
-        ["red","Call payment-ready prospects","Complete all overdue payment promises and record the outcome.","Before 10:30"],
-        ["amber","Move priority opportunities","Every hot or institutional lead must have a dated commercial next step.","Today"],
-        ["blue","Protect CRM evidence","Update calls, meetings, objections, proposal status and payment evidence.","Before report"],
-        ["green","Create tomorrow's advantage","Prepare the top five prospects, decision-makers or learner exceptions for the next day.","4:45 PM"]
-      ];
-      if(state.department==="Academic")generic.splice(1,0,["red","Run customer-journey test","Verify landing page, checkout, payment, activation, content access and AI support.","9:00 AM"]);
-      if(state.department==="Digital Solutions")generic.splice(1,0,["red","Progress demos and onboarding","Confirm discovery, decision-makers, demo objective, proposal and onboarding issue status.","Today"]);
-      if(state.department==="International")generic.splice(1,0,["red","Close country and organization gaps","Prioritize countries below 32 and organizations able to sponsor several participants.","Today"]);
-      return generic;
-    }
-    if(state.role==="BDO"){
-      return [
-        ["red","Review all red portfolios","Assign a named recovery action, owner and review time for every red BDE, product, course or country.","8:30 AM"],
-        ["amber","Control the top opportunities","Review the top five opportunities per BDE and personally support high-value or stalled accounts.","Before noon"],
-        ["blue","Check lead flow and CRM quality","Compare actual lead volume, quality, next actions and collection commitments with required pace.","3:30 PM"],
-        ["green","Coach and recognize","Document one coaching action for weak performance and one recognition action for strong performance.","Today"]
-      ];
-    }
-    if(state.role==="BDM"){
-      return [
-        ["red","Recover the weakest SBU","Require a quantified seven-day recovery forecast and named opportunity list.","Today"],
-        ["amber","Unblock strategic accounts","Use executive access, pricing, partnerships or internal coordination to move high-value deals.","Today"],
-        ["blue","Audit HOD forecasts","Every SBU forecast must be supported by stage, value, probability, owner and next action.","Before weekly review"],
-        ["green","Protect balanced performance","Strong results in one SBU must not hide serious underperformance elsewhere.","Ongoing"]
-      ];
-    }
-    return [
-      ["red","Resolve the largest organization gap","Direct the responsible leader to present the exact gap, causes, recovery plan and decision required.","Today"],
-      ["amber","Intervene in strategic opportunities","Prioritize accounts where CEO access can materially improve trust, speed or deal value.","As scheduled"],
-      ["blue","Protect cash and recurring revenue","Review collections, renewals, maintenance, major overdue balances and commission exposure.","Daily"],
-      ["green","Recognize and multiply what works","Use top performers and winning channels to strengthen weaker teams and markets.","Weekly"]
-    ];
-  }
-
-  function actionHTML(s){
-    return `<div class="list">${actionItems(s).map(([c,b,p,d])=>`<div class="action-card"><span class="priority-dot ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div>`;
-  }
-
-  function driverHTML(d){
-    return `<div class="driver-grid">${d.drivers.map(([l,n,s])=>`<div class="driver"><div class="top"><b>${esc(l)}</b><span class="badge blue">Live</span></div><div class="num">${typeof n==="number"?fmt.format(n):esc(n)}</div><small>${esc(s)}</small></div>`).join("")}</div>`;
-  }
-
-  function teamTable(d){
-    return `<div class="table-wrap"><table><thead><tr><th>Employee / portfolio</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Pipeline</th><th>CRM</th><th>Trend</th><th>Status / leadership action</th></tr></thead><tbody>
-      ${d.team.map(x=>{
-        const a=x.actual/x.target,ps=paceStatus(x.actual,x.target),c=commissionForBDE(x);
-        return `<tr>
-          <td><div class="person"><span class="avatar">${initials(x.name)}</span><div><b>${esc(x.name)}</b><span>${esc(x.title)}</span></div></div></td>
-          <td>${shortMoney(x.target)}</td><td>${shortMoney(x.actual)}</td>
-          <td><span class="score">${pct(a)}</span><div class="progress-wrap"><div class="track"><div class="fill" style="width:${Math.min(100,a*100)}%"></div></div></div></td>
-          <td>${shortMoney(x.pipeline)}</td><td>${x.crm}%</td><td class="${x.trend>=0?"up":"down"}">${x.trend>=0?"↑":"↓"} ${Math.abs(x.trend)}%</td>
-          <td><span class="badge ${ps.status}">${ps.label}</span><div style="font-size:10px;color:var(--muted);margin-top:5px">${esc(x.notes)} · Comm. ${shortMoney(c.current)}</div></td>
-        </tr>`}).join("")}
-      </tbody></table></div>`;
-  }
-
-  function sbuTable(c){
-    return `<div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared revenue</th><th>Attainment</th><th>Forecast</th><th>Pipeline</th><th>Collection</th><th>Leadership response</th></tr></thead><tbody>
-      ${c.departments.map(d=>{
-        const a=d.actual/d.target,ps=paceStatus(d.actual,d.target);
-        return `<tr><td><b>${esc(d.name)}</b><div style="font-size:10px;color:var(--muted)">${esc(d.leader)}</div></td>
-        <td>${shortMoney(d.target)}</td><td>${shortMoney(d.actual)}</td><td><span class="score">${pct(a)}</span></td>
-        <td>${shortMoney(d.forecast)}</td><td>${shortMoney(d.pipeline)}</td><td>${pct(d.collection)}</td>
-        <td><span class="badge ${ps.status}">${ps.label}</span><div style="font-size:10px;color:var(--muted);margin-top:4px">${ps.status==="red"?"Recovery plan and daily monitoring":ps.status==="amber"?"Corrective action within 24 hours":"Protect quality and pursue stretch"}</div></td></tr>`;
-      }).join("")}
-      </tbody></table></div>`;
-  }
-
-  function overview(){
-    const s=getScope(),ps=paceStatus(s.actual,s.target),comm=commissionForScope(s),att=s.actual/s.target;
-    const orgContext=state.role==="BDE"?departments[state.department]:s;
-    return `
-      <section class="hero">
-        <div class="panel portfolio-panel">
-          <div class="panel-head">
-            <div><h3>${esc(s.name)} — ${esc(s.title)}</h3><p>${esc(s.level)} · ${esc(s.department)} · ${esc(document.getElementById("monthSelect").value)}</p></div>
-            <span class="badge ${ps.status}">${ps.label} · pace ${pct(ps.pace)}</span>
-          </div>
-          ${metricHTML(roleMetrics(s))}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h3>Progress to target</h3><p>Attainment, expected pace and remaining working days.</p></div><span class="badge ${att>=1?"green":att>=.8?"amber":"red"}">${pct(att)}</span></div>
-          <div class="progress-label"><span>Cleared revenue</span><b>${shortMoney(s.actual)} / ${shortMoney(s.target)}</b></div>
-          <div class="track"><div class="fill" style="width:${Math.min(100,att*100)}%"></div></div>
-          <div class="commission-grid">
-            <div class="mini"><span>Expected by today</span><b>${shortMoney(ps.expected)}</b></div>
-            <div class="mini"><span>Remaining gap</span><b>${shortMoney(Math.max(0,s.target-s.actual))}</b></div>
-            <div class="mini"><span>Days left</span><b>${state.workingDays-state.elapsedDays}</b></div>
-          </div>
-          <div class="callout" style="margin-top:11px"><strong>Keep going:</strong> ${ps.status==="green"?"You are at or above required pace. Protect collections, quality and stretch opportunities.":ps.status==="amber"?"You are close to pace. Focus on the opportunities nearest to payment and remove the biggest conversion blocker today.":"The current pace will miss target. Activate a quantified recovery plan now, not at month end."}</div>
-        </div>
-      </section>
-
-      ${scenarioHTML(s)}
-
-      <section class="grid-2">
-        <div class="panel">
-          <div class="panel-head"><div><h3>Revenue pace and month-end forecast</h3><p>The forecast should change whenever stage, probability, payment date or cleared revenue changes.</p></div><span class="badge blue">${shortMoney(s.forecast||s.actual)} forecast</span></div>
-          ${trendSVG(s)}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h3>Commission journey</h3><p>Transparent estimate, unlock conditions and the next earning band.</p></div><span class="badge ${comm.current>0?"green":"amber"}">${comm.current>0?"Eligible estimate":"Not yet unlocked"}</span></div>
-          <div class="commission-road">
-            <div class="road"><div class="fill" style="width:${Math.min(100,att/1.2*100)}%"></div></div>
-            <div class="marker m80"><span>80%</span></div><div class="marker m100"><span>100%</span></div><div class="marker m120"><span>120%</span></div>
-          </div>
-          <div class="commission-grid">
-            <div class="mini"><span>Current estimate</span><b>${shortMoney(comm.current)}</b></div>
-            <div class="mini"><span>At target</span><b>${shortMoney(comm.atTarget)}</b></div>
-            <div class="mini"><span>Extra available</span><b>${shortMoney(Math.max(0,comm.atTarget-comm.current))}</b></div>
-          </div>
-          <div class="callout" style="margin-top:10px"><strong>Next action:</strong> ${esc(comm.unlock)}</div>
-        </div>
-      </section>
-
-      <section class="grid-2">
-        <div class="panel"><div class="panel-head"><div><h3>Today's action centre</h3><p>Prioritized actions based on pace, pipeline, CRM and commission gates.</p></div><span class="badge red">Action required</span></div>${actionHTML(s)}</div>
-        <div class="panel"><div class="panel-head"><div><h3>Execution drivers</h3><p>${state.role==="BDE"?"Department context that shapes your personal execution.":"The operational drivers that must remain visible."}</p></div><span class="badge blue">${esc(state.role==="BDE"?state.department:s.department)}</span></div>${driverHTML(orgContext)}</div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><div><h3>${state.role==="BDE"?"Your department performance context":state.role==="BDO"?"BDE performance and coaching view":"Five-SBU performance comparison"}</h3><p>Every figure should drill into the underlying leads, opportunities, payments, actions and evidence.</p></div><span class="badge blue">Drill-down enabled</span></div>
-        ${state.role==="BDE"?teamTable(departments[state.department]):state.role==="BDO"?teamTable(s):sbuTable(s)}
-      </section>`;
-  }
-
-  function funnelHTML(s){
-    const d=state.role==="BDE"||state.role==="BDO"?departments[state.department]:null;
-    const funnel=d?d.funnel:[["Enterprise leads",7800],["Qualified",3640],["Meetings / sessions / demos",1840],["Proposal / commitment",920],["Payment / activation",608]];
-    const max=funnel[0][1];
-    return `<div class="funnel">${funnel.map(([label,n],i)=>`<div class="funnel-row"><label>${esc(label)}</label><div class="funnel-bar"><div style="width:${Math.max(8,n/max*100)}%">${fmt.format(n)}</div></div><span class="conversion">${i?Math.round(n/funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div>`;
-  }
-
-  function priorityTable(s){
-    let rows=[];
-    if(state.role==="BDE"){
-      const name=s.name;
-      if(state.department==="Corporate") rows=[
-        ["Kenya Revenue Authority","Discovery held","KES 2.8M","Decision meeting","Tomorrow",name],
-        ["AAR Insurance","Proposal sent","KES 1.6M","Confirm review team","Today",name],
-        ["Manufacturers Association","Qualified","KES 900K","Book executive briefing","Friday",name],
-        ["AI for Leaders cohort","Registrations","KES 620K","Call sponsor organizations","Today",name]
-      ];
-      else if(state.department==="International") rows=[
-        ["Ministry of Finance – Botswana","Nomination pending","18 participants","Confirm approval date","Today",name],
-        ["NGO Consortium – Namibia","Proposal sent","12 participants","Call country director","Tomorrow",name],
-        ["Central Bank – Sierra Leone","Discovery","10 participants","Send team package","Today",name],
-        ["Alumni employer network","Nurture","8 participants","Request introductions","Friday",name]
-      ];
-      else if(state.department==="Digital Solutions") rows=[
-        ["Regional NGO Consortium","Demo scheduled","KES 900K","Prepare tailored Eval360 demo","Tomorrow",name],
-        ["Manufacturing Group","Proposal","420 staff","Confirm procurement route","Today",name],
-        ["Government Planning Unit","RFP qualified","KES 4.2M","Complete bid/no-bid review","Today",name],
-        ["SME Founder Network","Campaign","180 staff potential","Schedule group briefing","Friday",name]
-      ];
-      else if(state.department==="Academic") rows=[
-        ["University partnership","Presentation booked","240 learners","Confirm audience and tracked link","Thursday",name],
-        ["College network","Proposal","160 learners","Send cohort package","Today",name],
-        ["Employer CPD programme","Discovery","75 learners","Book platform demo","Friday",name],
-        ["Abandoned checkout segment","Reactivation","43 prospects","Test recovery sequence","Today",name]
-      ];
-      else rows=[
-        ["Hot payment commitments","Closing","KES 380K","Complete calls","Today",name],
-        ["Free-session attendees","Follow-up","64 prospects","Payment and objection calls","Today",name],
-        ["Institutional sponsorship lead","Discovery","24 participants","Book HR briefing","Tomorrow",name],
-        ["Old enquiry segment","Reactivation","120 prospects","Run personalized sequence","Friday",name]
-      ];
-    }else{
-      const source=state.role==="BDO"?state.department:"All SBUs";
-      rows=[
-        ["High-value organization A","Negotiation","KES 5.8M","Executive decision call","Today",source],
-        ["Government / donor programme","Proposal / RFP","KES 8.4M","Compliance review","Tomorrow",source],
-        ["Multi-participant sponsorship","Approval","KES 3.2M","Confirm nominee list","Today",source],
-        ["Recurring digital account","Renewal","KES 1.1M","Resolve adoption issue","Friday",source],
-        ["Open / academic programme channel","Campaign","KES 2.4M","Review ROI and conversion","Today",source]
-      ];
-    }
-    return `<div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th><th>Owner</th></tr></thead><tbody>${rows.map(r=>`<tr>${r.map((v,i)=>`<td>${i===0?"<b>"+esc(v)+"</b>":esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
-  }
-
-  function sourceHTML(){
-    const d=state.role==="BDE"||state.role==="BDO"?departments[state.department]:null;
-    const sources=d?d.sources:[["Direct / strategic accounts",29],["Digital campaigns",24],["Organizations / partnerships",21],["Referrals / alumni",15],["RFPs / procurement",11]];
-    const max=Math.max(...sources.map(x=>x[1]));
-    return sources.map(([n,v])=>`<div class="source-row"><span>${esc(n)}</span><div class="bar"><div style="width:${v/max*100}%"></div></div><b>${v}%</b></div>`).join("");
-  }
-
-  function pipeline(){
-    const s=getScope();
-    return `
-      <section class="grid-2">
-        <div class="panel"><div class="panel-head"><div><h3>Acquisition and conversion funnel</h3><p>Click-through production view should filter by owner, department, course/product, country, source and date.</p></div><span class="badge blue">Live funnel</span></div>${funnelHTML(s)}</div>
-        <div class="panel"><div class="panel-head"><div><h3>Lead-source contribution</h3><p>The production version should show volume, quality, conversion, cost and cleared revenue by source.</p></div><span class="badge blue">Source ROI</span></div>${sourceHTML()}</div>
-      </section>
-      <section class="panel"><div class="panel-head"><div><h3>Priority opportunity control</h3><p>No important opportunity may exist only in email, WhatsApp, a notebook or memory.</p></div><span class="badge red">Next action required</span></div>${priorityTable(s)}</section>
-      <section class="grid-3">
-        <div class="panel"><div class="panel-head"><div><h3>Stale-lead alerts</h3><p>Live opportunities without a meaningful interaction inside the configured period.</p></div></div>
-          ${["5 hot leads have no action today","3 proposals have no confirmed review date","11 payment promises are overdue"].map((x,i)=>`<div class="action-card"><span class="priority-dot ${i===0?"red":"amber"}"></span><div><b>${x}</b><p>Open the filtered list and assign the next action.</p></div><span class="due">Open</span></div>`).join("")}
-        </div>
-        <div class="panel"><div class="panel-head"><div><h3>Conversion-quality alerts</h3><p>Volume alone is not enough; the system must identify the stage causing leakage.</p></div></div>
-          ${["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"].map(x=>`<div class="action-card"><span class="priority-dot amber"></span><div><b>${x}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="due">Review</span></div>`).join("")}
-        </div>
-        <div class="panel"><div class="panel-head"><div><h3>Cross-SBU opportunity engine</h3><p>Internal relationships should create larger institutional and recurring opportunities.</p></div></div>
-          ${["Virtual participant → employer briefing","International alumnus → ministry sponsorship","Training client → Eval360 / 360 opportunity","Academic employer → corporate cohort"].map(x=>`<div class="action-card"><span class="priority-dot blue"></span><div><b>${x}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="due">Route</span></div>`).join("")}
-        </div>
-      </section>`;
-  }
-
-  function commission(){
-    const s=getScope(),c=commissionForScope(s),att=s.actual/s.target;
-    return `
-      <section class="hero">
-        <div class="panel">
-          <div class="panel-head"><div><h3>Your transparent commission journey</h3><p>The employee should always understand the current estimate, the applicable rule, unresolved gates and what is required to move to the next band.</p></div><span class="badge ${c.current?"green":"amber"}">${c.current?"Current estimate":"Locked"}</span></div>
-          <div class="commission-road">
-            <div class="road"><div class="fill" style="width:${Math.min(100,att/1.2*100)}%"></div></div>
-            <div class="marker m80"><span>80%</span></div><div class="marker m100"><span>100%</span></div><div class="marker m120"><span>120%</span></div>
-          </div>
-          <div class="commission-grid">
-            <div class="mini"><span>Estimated now</span><b>${shortMoney(c.current)}</b></div>
-            <div class="mini"><span>Estimated at target</span><b>${shortMoney(c.atTarget)}</b></div>
-            <div class="mini"><span>Additional earning</span><b>${shortMoney(Math.max(0,c.atTarget-c.current))}</b></div>
-          </div>
-          <div class="callout" style="margin-top:12px"><strong>Commission explanation:</strong> ${esc(c.rule)}</div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h3>Next earning milestone</h3><p>Plain-language encouragement linked to the exact remaining gap.</p></div></div>
-          <div style="font-size:25px;font-weight:850;line-height:1.2;margin:15px 0">${shortMoney(Math.max(0,s.target-s.actual))}</div>
-          <div style="color:var(--muted);font-size:12px">remaining to the full revenue target</div>
-          <div class="callout" style="margin-top:15px"><strong>Recommended push:</strong> ${esc(c.unlock)}. Concentrate on verified opportunities nearest to payment rather than increasing unqualified activity.</div>
-        </div>
-      </section>
-      <section class="grid-2">
-        <div class="panel"><div class="panel-head"><div><h3>Eligibility checklist</h3><p>Every commission result must explain why it is unlocked, held or unavailable.</p></div></div>
-          <div class="checklist">${c.gates.map(([n,ok,v])=>`<div class="check ${ok?"pass":"fail"}"><span class="symbol">${ok?"✓":"!"}</span><div><b>${esc(n)}</b><div style="font-size:10px;color:var(--muted)">${ok?"Condition satisfied":"Condition not yet satisfied"}</div></div><span>${esc(v)}</span></div>`).join("")}</div>
-        </div>
-        <div class="panel"><div class="panel-head"><div><h3>Commission audit trail</h3><p>The production CRM must keep a calculation trace for every amount.</p></div></div>
-          ${[
-            ["Rule version","COMM-2026-09-v1","Effective-dated and locked after month close"],
-            ["Revenue source","Finance-cleared payments","Invoices and promises excluded"],
-            ["Ownership","CRM acquisition owner","Joint splits require prior written approval"],
-            ["Hold-back","Leadership / balance gate","Displayed separately from payable amount"],
-            ["Reversals","Refunds and credit notes","Recalculate and preserve audit history"]
-          ].map(r=>`<div class="action-card"><span class="priority-dot blue"></span><div><b>${r[0]}: ${r[1]}</b><p>${r[2]}</p></div><span class="due">Trace</span></div>`).join("")}
-        </div>
-      </section>
-      <section class="panel"><div class="panel-head"><div><h3>Three-month consistency journey</h3><p>Recognition and performance support should be visible, evidence-based and never triggered automatically without authorized review.</p></div><span class="badge blue">Month 2 of 3</span></div>
-        <div class="grid-3">
-          <div class="mini"><span>Month 1</span><b>Target achieved</b><div class="up">↑ Verified</div></div>
-          <div class="mini"><span>Month 2</span><b>${att>=1?"On track":"Recovery required"}</b><div class="${att>=1?"up":"neutral"}">${pct(att)} current attainment</div></div>
-          <div class="mini"><span>Month 3</span><b>Future period</b><div class="neutral">Consistency reward pending</div></div>
-        </div>
-      </section>`;
-  }
-
-  function reportFields(role,s){
-    if(role==="BDE") return [
-      ["Daily target","number",Math.round(s.target/state.workingDays)],
-      ["Actual cleared revenue today","number",Math.round(s.actual/state.elapsedDays)],
-      ["New enquiries / accounts","number",38],
-      ["Qualified leads","number",19],
-      ["Calls / meaningful conversations","number",14],
-      ["Meetings / demos / sessions","number",3],
-      ["Proposals / payment links sent","number",7],
-      ["Payments / activations today","number",5],
-      ["Top opportunities and next actions","textarea","1. Priority organization – decision call tomorrow\n2. Payment promise – follow up 10:00 AM\n3. Demo prospect – send tailored agenda"],
-      ["Marketing / automation / product observation","textarea","Best source, weakest source, AI issue, broken link, onboarding friction or message that converted."],
-      ["What worked and what prevented conversion","textarea","Record evidence and learning, not general narration."],
-      ["Support required and tomorrow's plan","textarea","Named support owner, deadline, top five prospects and tomorrow's target."]
-    ];
-    if(role==="BDO") return [
-      ["Department daily revenue target","number",Math.round(s.target/state.workingDays)],
-      ["Actual cleared revenue today","number",Math.round(s.actual/state.elapsedDays)],
-      ["BDEs on / above pace","number",s.team.filter(x=>paceStatus(x.actual,x.target).status==="green").length],
-      ["Red portfolios","number",s.team.filter(x=>paceStatus(x.actual,x.target).status==="red").length],
-      ["Qualified pipeline value","number",s.pipeline],
-      ["Meetings / demos / sessions today","number",6],
-      ["Proposals / commitments moved","number",4],
-      ["Collection commitments due","number",9],
-      ["BDE performance and coaching actions","textarea",s.team.map(x=>`${x.name}: ${x.notes}`).join("\n")],
-      ["Product / course / country recovery action","textarea","State target, actual, exact gap, owner, deadline and evidence required."],
-      ["Marketing, CRM, AI and product issues","textarea","Lead-flow variance, data quality, automation failure and corrective action."],
-      ["Executive support and tomorrow's priorities","textarea","Top opportunities, decisions required and next-day departmental result."]
-    ];
-    if(role==="BDM") return [
-      ["Organization daily revenue target","number",Math.round(s.target/state.workingDays)],
-      ["Actual cleared revenue today","number",Math.round(s.actual/state.elapsedDays)],
-      ["SBUs at 80%+ pace","number",s.departments.filter(d=>paceStatus(d.actual,d.target).status==="green").length],
-      ["Strategic-account meetings","number",4],
-      ["BDM personal revenue MTD","number",s.personalActual],
-      ["Consolidated qualified pipeline","number",s.pipeline],
-      ["Proposals / tenders at risk","number",3],
-      ["Collections requiring escalation","number",7],
-      ["SBU performance summary","textarea",s.departments.map(d=>`${d.name}: ${shortMoney(d.actual)} / ${shortMoney(d.target)}; forecast ${shortMoney(d.forecast)}`).join("\n")],
-      ["Strategic accounts and blocked deals","textarea","Account, value, stage, owner, blocker, executive action and next date."],
-      ["HOD coaching / recovery decisions","textarea","Named HOD, issue, action, deadline and review point."],
-      ["CEO decisions required","textarea","Budget, pricing, executive access, technology, legal, payment or capacity decision."]
-    ];
-    return [
-      ["Organization target","number",s.target],
-      ["Cleared revenue MTD","number",s.actual],
-      ["Month-end forecast","number",s.forecast],
-      ["Commission exposure","number",commissionForScope(s).current],
-      ["SBUs below pace","number",s.departments.filter(d=>paceStatus(d.actual,d.target).status==="red").length],
-      ["Staff requiring immediate support","number",s.departments.flatMap(d=>d.team).filter(x=>paceStatus(x.actual,x.target).status==="red").length],
-      ["High-value opportunities requiring CEO","number",5],
-      ["Critical collections / risks","number",6],
-      ["Enterprise performance interpretation","textarea","What moved, why it moved, largest gap, strongest SBU and weakest SBU."],
-      ["CEO intervention centre","textarea","Decision, responsible executive, deadline, expected commercial effect and follow-up date."],
-      ["Recognition and leadership message","textarea","Recognize evidence-based performance and reinforce the next organization-wide priority."],
-      ["Next executive review priorities","textarea","Revenue, collections, strategic accounts, products, staffing and decisions."]
-    ];
-  }
-
-  function report(){
-    const s=getScope(),fields=reportFields(state.role,s);
-    return `
-      <section class="panel">
-        <div class="panel-head"><div><h3>${state.role==="BDE"?"BDE daily execution report":state.role==="BDO"?"BDO / HOD daily command report":state.role==="BDM"?"BDM consolidated commercial report":"CEO intervention and decision report"}</h3><p>The form is embedded in the dashboard. Numeric fields should prefill from CRM and Finance; the user explains causes, actions, decisions and learning.</p></div><span class="badge blue">Auto-prefilled</span></div>
-        <div class="form-grid" id="reportForm">
-          ${fields.map((f,i)=>`<div class="field ${f[1]==="textarea"?"span2":""}"><label for="rf${i}">${esc(f[0])}</label>${f[1]==="textarea"?`<textarea id="rf${i}" data-label="${esc(f[0])}">${esc(f[2])}</textarea>`:`<input class="input" id="rf${i}" data-label="${esc(f[0])}" type="${f[1]}" value="${esc(f[2])}">`}</div>`).join("")}
-        </div>
-        <div class="report-actions"><button class="primary-btn" id="generateReport" type="button">Generate report summary</button><button class="ghost-btn" id="downloadReport" type="button">Download report</button><button class="ghost-btn" id="clearNarrative" type="button">Clear narrative fields</button></div>
-      </section>
-      <section class="panel"><div class="panel-head"><div><h3>Generated management summary</h3><p>This preview can be stored as a daily snapshot, sent upward and compared with the next day's actual results.</p></div><span class="badge green">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Select “Generate report summary” to compile the dashboard data and your explanations.</div></section>
-      <section class="grid-3">
-        ${[
-          ["Automatic evidence","Revenue, payments, activity logs, opportunities, meetings, proposals, demos and CRM completeness are system-calculated."],
-          ["Required human judgement","The user explains why performance moved, what is blocked, what was learned and which support or decision is required."],
-          ["Manager workflow","Supervisor reviews, comments, approves or returns the report and converts commitments into tracked actions."]
-        ].map(([a,b])=>`<div class="panel"><div class="panel-head"><div><h3>${a}</h3></div></div><p style="font-size:12px;color:var(--muted);margin:0">${b}</p></div>`).join("")}
-      </section>`;
-  }
-
-  function strategy(){
-    const d=state.role==="BDE"||state.role==="BDO"?departments[state.department]:departments["Corporate"];
-    const s=getScope();
-    const scorecards = state.role==="BDE"
-      ? [["Revenue / qualifying volume",35],["Pipeline and conversion",20],["CRM and forecast quality",15],["Strategic execution",10],["Marketing / channel learning",10],["Client experience and reporting",10]]
-      : state.role==="BDO"
-      ? [["Departmental revenue and collections",30],["Balanced team performance",20],["Pipeline and forecast control",15],["Coaching and recovery",15],["CRM / AI / reporting",10],["Market and product leadership",10]]
-      : state.role==="BDM"
-      ? [["Revenue achievement across SBUs",30],["Qualified pipeline",10],["Proposal and tender conversion",10],["Strategic accounts",10],["Team supervision",10],["CRM / ERP discipline",10],["Marketing conversion",5],["Collections",5],["Reporting",5],["Systems improvement",5]]
-      : [["Organization revenue and forecast",30],["Strategic growth and market position",15],["SBU balance and leadership",15],["Cash, margin and recurring revenue",15],["Critical accounts and partnerships",10],["Product and customer experience",5],["People and execution culture",5],["Governance and decisions",5]];
-    return `
-      <section class="panel"><div class="panel-head"><div><h3>Role mandate</h3><p>The dashboard should remind the user what the role exists to achieve—not only display numbers.</p></div><span class="badge blue">${esc(roleMandate())}</span></div><div class="callout"><strong>${esc(s.strategyTitle)}</strong><br>${esc(s.strategyText)}</div></section>
-      <section class="panel"><div class="panel-head"><div><h3>Non-negotiable operating principles</h3><p>These appear as short reminders and are also used by supervisors during coaching and report review.</p></div></div><div class="principles">${d.principles.map(([a,b])=>`<div class="principle"><b>${esc(a)}</b><p>${esc(b)}</p></div>`).join("")}</div></section>
-      <section class="grid-2">
-        <div class="panel"><div class="panel-head"><div><h3>Daily operating rhythm</h3><p>The dashboard changes emphasis throughout the day: morning priorities, mid-day pace review and closing actions.</p></div></div><div class="timeline">${d.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
-        <div class="panel"><div class="panel-head"><div><h3>Performance scorecard</h3><p>Target achievement is central, but quality, balance, CRM evidence, learning and client experience remain visible.</p></div></div>
-          ${scorecards.map(([n,w])=>`<div class="source-row" style="grid-template-columns:190px 1fr 45px"><span>${esc(n)}</span><div class="bar"><div style="width:${w/35*100}%"></div></div><b>${w}%</b></div>`).join("")}
-        </div>
-      </section>
-      <section class="grid-3">
-        <div class="panel"><div class="panel-head"><div><h3>Green response</h3></div><span class="badge green">At / above pace</span></div><p style="font-size:12px;color:var(--muted)">Protect quality, collections and client experience; pursue stretch opportunities and share winning practices.</p></div>
-        <div class="panel"><div class="panel-head"><div><h3>Amber response</h3></div><span class="badge amber">Near pace / weak movement</span></div><p style="font-size:12px;color:var(--muted)">Agree corrective action within 24 hours, intensify senior support and concentrate on the nearest commercial next steps.</p></div>
-        <div class="panel"><div class="panel-head"><div><h3>Red response</h3></div><span class="badge red">Below pace / major risk</span></div><p style="font-size:12px;color:var(--muted)">Create a quantified recovery plan, monitor daily and escalate decisions or resources before the gap becomes irreversible.</p></div>
-      </section>`;
-  }
-
-  function developer(){
-    return `
-      <section class="panel"><div class="panel-head"><div><h3>Recommended technical architecture</h3><p>One formula and rule service should feed web dashboards, reports, alerts and commission calculations.</p></div><span class="badge blue">Implementation map</span></div>
-        <div class="dev-grid">
-          ${[
-            ["Identity and hierarchy","Stable <code>staff_id</code>, role code, SBU, reporting line, active status and effective dates."],
-            ["Targets and rule master","Effective-dated targets, fees, volume rules, commission bands, gates, hold-backs and approval versions."],
-            ["Lead and opportunity","Source, ownership, stage, value, probability, buying group, next action, due date and activity history."],
-            ["Client and transaction","Organization, individual, enrollment, subscription, staff activation, country, product, course and unique transaction key."],
-            ["Finance and commission","Invoices, amount due, cleared payment, reversals, collection rate, acquisition owner and calculation trace."],
-            ["Performance snapshots","Real-time current state plus locked nightly and month-end snapshots for history, audit and trend comparison."],
-            ["Alerts and action centre","Event-driven alerts with exact gap, affected record, owner, required action, due date and acknowledgement."],
-            ["Reporting workflow","Auto-prefilled report, human narrative, supervisor comment, approval/return, action conversion and archived version."]
-          ].map(([a,b])=>`<div class="panel" style="box-shadow:none"><div class="panel-head"><div><h3>${a}</h3></div></div><p style="font-size:12px;color:var(--muted);margin:0">${b}</p></div>`).join("")}
-        </div>
-      </section>
-      <section class="grid-2">
-        <div class="panel"><div class="panel-head"><div><h3>Role permissions</h3><p>Scope expands by hierarchy while sensitive Finance and HR actions remain restricted.</p></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Role</th><th>Read scope</th><th>Core actions</th><th>Restrictions</th></tr></thead><tbody>
-            <tr><td><b>BDE / Coordinator</b></td><td>Own records and portfolio</td><td>Create/update leads, activities, reports, escalations</td><td>Cannot approve commission or alter cleared payments</td></tr>
-            <tr><td><b>BDO / HOD</b></td><td>Own department and personal portfolio</td><td>Assign, coach, comment, recover, escalate, approve reports</td><td>Cannot change approved rule versions or Finance evidence</td></tr>
-            <tr><td><b>BDM</b></td><td>All commercial SBUs</td><td>Reallocate support, control forecasts, strategic accounts and HOD performance</td><td>Commission approval remains authorized workflow</td></tr>
-            <tr><td><b>CEO / Director</b></td><td>Enterprise view</td><td>Executive decisions, intervention, strategic approval and recognition</td><td>Audit trail preserved; no silent data overwrite</td></tr>
-            <tr><td><b>Finance verifier</b></td><td>Payment and commission evidence</td><td>Post/reverse payment, verify collections and payable commission</td><td>Cannot reassign commercial ownership without approval</td></tr>
-          </tbody></table></div>
-        </div>
-        <div class="panel"><div class="panel-head"><div><h3>Core formulas and events</h3><p>Production logic should be centralized and testable.</p></div></div>
-          <div class="timeline">
-            <div class="time-row"><time>Achievement</time><div><code>actual_qualifying_value ÷ approved_target</code></div></div>
-            <div class="time-row"><time>Pace</time><div><code>actual ÷ (target × elapsed_working_days ÷ total_working_days)</code></div></div>
-            <div class="time-row"><time>Forecast</time><div>Weighted pipeline by expected close date + cleared actual, with manual override reason and audit.</div></div>
-            <div class="time-row"><time>Commission</time><div>Rule version + qualifying transactions + cleared payments + gates − reversals and approved hold-backs.</div></div>
-            <div class="time-row"><time>Alert events</time><div>Lead created, stage change, action overdue, payment posted, payment reversed, threshold crossed, campaign below pace, issue escalated.</div></div>
-            <div class="time-row"><time>Snapshots</time><div>Near-real-time UI, nightly performance snapshot and locked month-end calculation snapshot.</div></div>
-          </div>
-        </div>
-      </section>
-      <section class="panel"><div class="panel-head"><div><h3>Suggested API payload for the role dashboard</h3><p>The front-end should receive display-ready metrics plus drill-down identifiers and calculation explanations.</p></div></div>
-        <div class="report-preview">{
-  "context": {"month":"2026-09","role":"BDE","staff_id":"DIG-EVAL-01","sbu_id":"DIGITAL"},
-  "targets": [{"kpi_code":"EVAL_CORP_SETUP","volume_target":2,"revenue_target":1800000}],
-  "actuals": {"cleared_revenue":1370000,"qualifying_volume":84,"collection_percent":0.95},
-  "pace": {"expected_to_date":1270455,"pace_ratio":1.078,"status":"GREEN"},
-  "pipeline": {"qualified_value":8900000,"coverage_ratio":4.14,"overdue_actions":3},
-  "commission": {"estimated":29500,"payable":0,"held":29500,"rule_version":"COMM-2026-09-v1",
-                 "explanation":["Corporate support threshold not complete"]},
-  "actions": [{"priority":"HIGH","record_id":"OPP-1042","instruction":"Confirm demo decision and payment route","due_at":"2026-09-15T10:00:00+03:00"}],
-  "report": {"prefilled":true,"narrative_required":["what_worked","blockers","support_required","tomorrow_plan"]}
-}</div>
-      </section>
-      <section class="callout"><strong>Important:</strong> Performance-support and PIP alerts should never impose an employment decision automatically. The CRM surfaces evidence, history and recommended workflow; authorized leaders make and document the decision under company policy.</section>`;
-  }
-
-  function render(){
-    updateStrategy();
-    const w=document.getElementById("workspace");
-    w.innerHTML=state.view==="overview"?overview():state.view==="pipeline"?pipeline():state.view==="commission"?commission():state.view==="report"?report():state.view==="strategy"?strategy():developer();
-    bindDynamic();
-  }
-
-  function bindDynamic(){
-    bdeApp.querySelectorAll(".scenario-input").forEach(inp=>inp.addEventListener("change",()=>{
-      const key=inp.dataset.key;
-      state.overrides[scopeKey()] ||= {};
-      let v=Number(inp.value);
-      if(key==="collection")v=v/100;
-      state.overrides[scopeKey()][key]=v;
-      render();
-    }));
-    const reset=document.getElementById("resetScenario");
-    if(reset)reset.addEventListener("click",()=>{delete state.overrides[scopeKey()];render()});
-    const gen=document.getElementById("generateReport");
-    if(gen)gen.addEventListener("click",generateReport);
-    const down=document.getElementById("downloadReport");
-    if(down)down.addEventListener("click",downloadReport);
-    const clear=document.getElementById("clearNarrative");
-    if(clear)clear.addEventListener("click",()=>bdeApp.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
-  }
-
-  function generateReport(){
-    const s=getScope(),lines=[];
-    lines.push(`VANTAGE AFRICA — ${state.role} PERFORMANCE REPORT`);
-    lines.push(`Period: ${document.getElementById("monthSelect").value}`);
-    lines.push(`Role holder: ${s.name} | ${s.title}`);
-    lines.push(`Scope: ${s.department}`);
-    lines.push("");
-    bdeApp.querySelectorAll("#reportForm input,#reportForm textarea").forEach(el=>{
-      lines.push(`${el.dataset.label}: ${el.value.trim()||"—"}`);
-    });
-    lines.push("");
-    lines.push(`Dashboard position: ${shortMoney(s.actual)} cleared against ${shortMoney(s.target)} target (${pct(s.actual/s.target)}).`);
-    lines.push(`Qualified pipeline: ${shortMoney(s.pipeline)}. Collection rate: ${pct(s.collection)}.`);
-    lines.push(`Commission / incentive estimate: ${shortMoney(commissionForScope(s).current)}.`);
-    lines.push("All figures are subject to CRM evidence and Finance verification.");
-    const p=document.getElementById("reportPreview");p.textContent=lines.join("\n");p.dataset.report=lines.join("\n");
-  }
-
-  function downloadReport(){
-    const p=document.getElementById("reportPreview");
-    if(!p.dataset.report)generateReport();
-    const text=document.getElementById("reportPreview").dataset.report||document.getElementById("reportPreview").textContent;
-    const blob=new Blob([text],{type:"text/plain"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`Vantage_${state.role}_${document.getElementById("monthSelect").value.replace(/\s+/g,"_")}_Report.txt`;a.click();URL.revokeObjectURL(a.href);
-  }
-
-  // Period stays interactive; Role/Department/Employee are locked (display-only).
-  document.getElementById("monthSelect").addEventListener("change",render);
-  bdeApp.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{state.view=b.dataset.view;bdeApp.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));render()}));
-  document.getElementById("themeBtn").addEventListener("click",()=>{
-    state.theme=state.theme==="light"?"dark":"light";
-    bdeApp.classList.toggle("theme-dark",state.theme==="dark");
-    document.getElementById("themeLbl").textContent=state.theme==="light"?"Dark mode":"Light mode";
-  });
-  document.getElementById("printBtn").addEventListener("click",()=>window.print());
-
-  render();
-})();
-</script>
 
 <?php require_once 'footer.php'; ?>
