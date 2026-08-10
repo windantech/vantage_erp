@@ -4700,6 +4700,50 @@ function wa_ai_simulate($conn, $refType, $refId, $history, $kbOverride = null) {
  * conversation may have moved on since the escalation). De-duped against the last
  * note so a run of escalations doesn't repeat the same note. Returns true if posted.
  */
+/**
+ * A staff comment on a conversation — the record of anything that happened OUTSIDE
+ * WhatsApp: a phone call, a meeting, a payment promised, a decision taken. Stored
+ * as type='note' so it is staff-only and NEVER sent to the customer, but attributed
+ * to the rep who wrote it (unlike wa_ai_post_note, which the AI writes unattributed).
+ *
+ * Not de-duplicated: two reps legitimately log the same-looking update, and a repeat
+ * of yesterday's note is meaningful progress, not noise.
+ */
+function wa_note_add($conn, $contactId, $body, $staffId = null) {
+    wa_message_flags_ensure($conn);
+    $cid  = (int)$contactId;
+    $body = trim((string)$body);
+    if ($cid < 1 || $body === '') { return false; }
+    $sb = ((int)$staffId > 0) ? (int)$staffId : 'NULL';
+    mysqli_query($conn,
+        "INSERT INTO wa_messages (contact_id, direction, type, body, wa_timestamp, status, sent_by_staff)
+         VALUES ($cid, 'outbound', 'note', " . wa_sql($conn, $body) . ", NOW(), 'note', $sb)");
+    return mysqli_affected_rows($conn) > 0;
+}
+
+/**
+ * Recent staff comments, newest first, for the AI's context.
+ *
+ * These are deliberately NOT part of wa_ai_history(): a note is not a chat turn, and
+ * feeding it in as one would have the AI repeat internal wording back to the
+ * customer. They belong in the known-facts block instead, where the AI treats them
+ * as background it must act on but never quote.
+ */
+function wa_notes_recent($conn, $contactId, $limit = 5) {
+    $cid = (int)$contactId;
+    $limit = max(1, (int)$limit);
+    $res = mysqli_query($conn,
+        "SELECT m.body, m.wa_timestamp, COALESCE(NULLIF(s.full_name,''), ru.fullname) AS author
+           FROM wa_messages m
+      LEFT JOIN registered_users ru ON ru.id = m.sent_by_staff
+      LEFT JOIN staff s             ON s.system_user_id = m.sent_by_staff
+          WHERE m.contact_id = $cid AND m.type = 'note' AND m.sent_by_staff IS NOT NULL
+          ORDER BY m.id DESC LIMIT $limit");
+    $out = [];
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $out[] = $r; } }
+    return array_reverse($out);   // oldest first, so the AI reads them as a progression
+}
+
 function wa_ai_post_note($conn, $contactId, $note) {
     $note = trim((string)$note);
     if ($note === '') { return false; }
@@ -4876,6 +4920,21 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     if ($refName) { $profileLines[] = '- Interested in: ' . $refName; }
     foreach ($known as $label => $val) { $profileLines[] = '- ' . $label . ': ' . $val; }
     if ($enrolling) { $profileLines[] = '- A registration is already in progress — continue it, do not restart.'; }
+    // Staff comments: what happened away from WhatsApp (a call, a meeting, a payment
+    // promised). The AI must act on these — otherwise it contradicts a colleague who
+    // already spoke to the client — but must never read them out.
+    $staffNotes = wa_notes_recent($conn, $cid, 5);
+    if ($staffNotes) {
+        $profileLines[] = '- Internal staff updates (private — act on these, never quote or mention them to the customer):';
+        foreach ($staffNotes as $sn) {
+            $when = trim((string)($sn['wa_timestamp'] ?? ''));
+            $who  = trim((string)($sn['author'] ?? '')) ?: 'a colleague';
+            $txt  = trim(preg_replace('/\s+/u', ' ', (string)$sn['body']));
+            if ($txt === '') { continue; }
+            $profileLines[] = '    • ' . ($when !== '' ? substr($when, 0, 16) . ' ' : '')
+                            . $who . ': ' . mb_substr($txt, 0, 300);
+        }
+    }
     $profile = $profileLines ? implode("\n", $profileLines) : '';
 
     $system = wa_ai_system_prompt($refName, $kb, $isEvent ? '' : wa_trainings_catalog($conn), $regLink, $isEvent, $outline, $outlineTxt, $profile);

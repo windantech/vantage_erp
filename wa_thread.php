@@ -166,8 +166,13 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                             <?php /* Internal staff-only handoff note — never sent to the customer. */ ?>
                             <div class="d-flex justify-content-center mb-2">
                                 <div class="px-3 py-2 rounded-3" style="max-width:82%; background:#fff8e1; border:1px solid #ffe08a">
+                                    <?php $noteBy = trim((string)($m['sent_by_name'] ?? '')); ?>
                                     <div class="small fw-semibold text-warning-emphasis" style="font-size:11px; letter-spacing:.02em">
-                                        <i class="bi bi-headset me-1"></i>HANDOFF — FOR STAFF
+                                        <?php if ($noteBy !== ''): ?>
+                                            <i class="bi bi-chat-left-text me-1"></i>STAFF COMMENT — <?php echo wa_e($noteBy); ?>
+                                        <?php else: ?>
+                                            <i class="bi bi-headset me-1"></i>HANDOFF — FOR STAFF
+                                        <?php endif; ?>
                                     </div>
                                     <div class="fst-italic text-dark" style="white-space:pre-wrap; word-wrap:break-word"><?php echo nl2br(wa_e($m['body'])); ?></div>
                                     <div class="small text-muted" style="font-size:11px"><?php echo wa_e($m['wa_timestamp'] ?: $m['created_at']); ?></div>
@@ -425,6 +430,27 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         <?php endif; ?>
                     <?php endif; ?>
 
+                    <?php /* Staff comment — internal only. Logs what happened away from
+                             WhatsApp (a call, a meeting, a promise to pay) so colleagues AND
+                             the AI have the current picture. Deliberately outside the 24-hour
+                             window check: offline contact usually happens once the chat has
+                             gone quiet, which is when the window is shut. */ ?>
+                    <form method="post" action="includes/wa_process.php" class="mt-3 border-top pt-2">
+                        <input type="hidden" name="action" value="add_note">
+                        <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                        <label class="form-label small text-muted mb-1">
+                            <i class="bi bi-chat-left-text me-1"></i>Add a comment
+                            <span class="text-muted">— staff only, never sent to the customer. Use it to log a call,
+                            a meeting or a decision; the AI reads these and will not contradict them.</span>
+                        </label>
+                        <div class="d-flex gap-2 align-items-start">
+                            <textarea name="note" class="form-control form-control-sm" rows="2"
+                                      placeholder="e.g. Called her — she wants the Lilongwe session and will pay by Friday."
+                                      required></textarea>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-save me-1"></i>Save</button>
+                        </div>
+                    </form>
+
                     <?php /* Manual reassign + course/event switch — available to all WhatsApp staff. */ ?>
                         <form method="post" action="includes/wa_process.php" class="d-flex gap-2 mt-2 align-items-center">
                             <input type="hidden" name="action" value="reassign">
@@ -506,7 +532,10 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
             nb.innerHTML =
                 '<div class="px-3 py-2 rounded-3" style="max-width:82%; background:#fff8e1; border:1px solid #ffe08a">'
                 + '<div class="small fw-semibold text-warning-emphasis" style="font-size:11px; letter-spacing:.02em">'
-                + '<i class="bi bi-headset me-1"></i>HANDOFF — FOR STAFF</div>'
+                + (m.by
+                    ? '<i class="bi bi-chat-left-text me-1"></i>STAFF COMMENT — ' + esc(m.by)
+                    : '<i class="bi bi-headset me-1"></i>HANDOFF — FOR STAFF')
+                + '</div>'
                 + '<div class="fst-italic text-dark" style="white-space:pre-wrap;word-wrap:break-word">' + esc(m.body).replace(/\n/g, '<br>') + '</div>'
                 + '<div class="small text-muted" style="font-size:11px">' + esc(m.ts || '') + '</div>'
                 + '</div>';

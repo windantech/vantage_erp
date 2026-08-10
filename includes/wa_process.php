@@ -150,6 +150,26 @@ switch ($action) {
         wa_redirect('../wa_thread.php?id=' . $conv_id);
     }
 
+    // ---- Thread: staff comment (internal, never sent to the customer) ----
+    case 'add_note': {
+        $conv_id = (int)($_POST['id'] ?? 0);
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not for one of your courses.');
+            wa_redirect('../wa_inbox.php');
+        }
+        $body = trim((string)($_POST['note'] ?? ''));
+        if ($body === '') {
+            wa_flash('warning', 'Write something before saving the comment.');
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+        $ok = wa_note_add($conn, (int)$conv['contact_id'], $body, $staff_id);
+        wa_flash($ok ? 'success' : 'danger',
+            $ok ? 'Comment saved — visible to staff only, and the AI will take it into account.'
+                : 'Could not save the comment.');
+        wa_redirect('../wa_thread.php?id=' . $conv_id);
+    }
+
     // ---- Thread: send the approved re-engagement template (re-opens a closed 24h window) ----
     case 'reengage': {
         $conv_id = (int)($_POST['id'] ?? 0);

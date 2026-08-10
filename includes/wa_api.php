@@ -396,20 +396,27 @@ if ($action === 'inbox') {
 
 // ---- New messages in a thread (and mark it read) ----
 if ($action === 'thread') {
+    wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before the join below
     $id    = (int)($_GET['id'] ?? 0);
     $after = (int)($_GET['after'] ?? 0);
 
-    $res = mysqli_query($conn,
-        "SELECT contact_id, assigned_user_id FROM wa_conversations WHERE id = $id LIMIT 1");
+    // Same rule as opening the thread page. This used to demand the chat be assigned
+    // to you, which is stricter than wa_thread.php: a course, programme or triage
+    // viewer could open the chat and then never see it live-update.
+    $res = mysqli_query($conn, "SELECT * FROM wa_conversations WHERE id = $id LIMIT 1");
     $conv = $res ? mysqli_fetch_assoc($res) : null;
-    if (!$conv || (!$is_supervisor && (int)$conv['assigned_user_id'] !== (int)$staff_id)) {
+    if (!$conv || !wa_user_can_see_conv($conn, $conv, $staff_id, $is_supervisor)) {
         http_response_code(403); wa_json_out(['error' => 'forbidden']);
     }
 
     $contactId = (int)$conv['contact_id'];
     $res = mysqli_query($conn,
-        "SELECT id, direction, type, body, wa_timestamp, status, created_at
-           FROM wa_messages WHERE contact_id = $contactId AND id > $after ORDER BY id ASC");
+        "SELECT m.id, m.direction, m.type, m.body, m.wa_timestamp, m.status, m.created_at,
+                COALESCE(NULLIF(s.full_name,''), ru.fullname) AS sent_by_name
+           FROM wa_messages m
+      LEFT JOIN registered_users ru ON ru.id = m.sent_by_staff
+      LEFT JOIN staff s             ON s.system_user_id = m.sent_by_staff
+          WHERE m.contact_id = $contactId AND m.id > $after ORDER BY m.id ASC");
     $msgs = [];
     if ($res) {
         while ($m = mysqli_fetch_assoc($res)) {
@@ -420,6 +427,9 @@ if ($action === 'thread') {
                 'body'      => (string)$m['body'],
                 'ts'        => $m['wa_timestamp'] ?: $m['created_at'],
                 'status'    => $m['status'] ?: '',
+                // Author of an internal note: set for a staff comment, empty for an
+                // AI handoff note, so the live view can label them apart.
+                'by'        => trim((string)($m['sent_by_name'] ?? '')),
             ];
         }
     }
