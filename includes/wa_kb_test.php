@@ -73,16 +73,16 @@ ck('self-heal: ai_updated_at added', true, in_array('ai_updated_at', $cols, true
 ck('self-heal: learnings table created', true,
     (bool)mysqli_query($conn, "SELECT 1 FROM wa_kb_learnings LIMIT 1") !== false);
 
-// ---- set stores raw + processes into body_ai; AI reads processed ----
+// ---- set stores raw verbatim; the AI reads exactly that (no AI processing) ----
 wa_knowledge_set($conn, 'course', 101, "Fees: 195 USD\nDuration: 4 weeks");
 ck('set: raw stored verbatim', "Fees: 195 USD\nDuration: 4 weeks", wa_knowledge_get($conn, 'course', 101));
-ck('set: AI reads processed', 'PROCESSED: bullets', wa_knowledge_get_ai($conn, 'course', 101));
+ck('set: AI reads the raw text verbatim', "Fees: 195 USD\nDuration: 4 weeks", wa_knowledge_get_ai($conn, 'course', 101));
 
-// ---- when the AI is down, raw is still saved and used ----
+// ---- provider state is irrelevant now: saving never calls the AI ----
 $GLOBALS['WA_PROVIDER_READY'] = false;
 wa_knowledge_set($conn, 'course', 102, "Just raw, no AI");
 ck('AI down: raw saved', "Just raw, no AI", wa_knowledge_get($conn, 'course', 102));
-ck('AI down: get_ai falls back to raw', "Just raw, no AI", wa_knowledge_get_ai($conn, 'course', 102));
+ck('AI down: get_ai still returns the raw text', "Just raw, no AI", wa_knowledge_get_ai($conn, 'course', 102));
 $GLOBALS['WA_PROVIDER_READY'] = true;
 
 // ---- learnings: trivial skipped, substantive captured ----
@@ -93,13 +93,13 @@ $lid = wa_kb_learning_add($conn, 'course', 101, 1, 2, null,
 ck('learn: substantive captured', true, $lid > 0);
 ck('learn: shows as pending', 1, count(wa_kb_learnings_pending($conn, 'course', 101)));
 
-// ---- approve folds into raw + reprocesses; leaves the queue ----
+// ---- approve folds into raw and leaves the queue (no reprocessing) ----
 $GLOBALS['WA_PROCESS_OUT'] = 'PROCESSED: with quickbooks';
 ck('approve: returns true', true, wa_kb_learning_approve($conn, $lid, 7));
 $raw = wa_knowledge_get($conn, 'course', 101);
 ck('approve: appended under "Learned from the team"', true, strpos($raw, 'Learned from the team:') !== false);
 ck('approve: raw contains the fact', true, strpos($raw, 'free QuickBooks license') !== false);
-ck('approve: AI re-read (reprocessed)', 'PROCESSED: with quickbooks', wa_knowledge_get_ai($conn, 'course', 101));
+ck('approve: AI re-reads the updated raw text', true, strpos(wa_knowledge_get_ai($conn, 'course', 101), 'free QuickBooks license') !== false);
 ck('approve: no longer pending', 0, count(wa_kb_learnings_pending($conn, 'course', 101)));
 
 // ---- a second approval appends under the SAME section (no duplicate header) ----

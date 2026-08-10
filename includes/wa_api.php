@@ -56,7 +56,6 @@ if ($action === 'kb_save') {
     // form-based twin in wa_process.php. The role-44 gate at the top of this file
     // still applies. Previously supervisor-only here, so the page let a rep in and
     // then 403'd every save: "Could not save — try again."
-    @set_time_limit(200);   // saving reprocesses body_ai via the AI — needs headroom
     $rt  = in_array($_POST['ref_type'] ?? '', ['event','program'], true) ? $_POST['ref_type'] : 'course';
     $rid = (int)($_POST['ref_id'] ?? 0);
     if ($rid <= 0) { wa_json_out(['ok' => false, 'error' => 'no_ref']); }

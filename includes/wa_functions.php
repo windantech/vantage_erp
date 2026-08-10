@@ -3743,25 +3743,30 @@ function wa_knowledge_get($conn, $refType, $refId) {
     return $r ? (string)$r['body'] : '';
 }
 
-/** The KB text the LIVE AI answers from: the processed bullets when present,
- *  else the raw text (so it still works before the first processing runs). */
+/**
+ * The KB text the LIVE AI answers from — now always the raw text you wrote.
+ *
+ * It used to return an AI-rewritten copy (body_ai) built on every save. That was a
+ * second, silent author between the staff who curate the knowledge base and the
+ * customer: a save could quietly reword or lose a detail, and what the AI answered
+ * from was not what anyone had typed or reviewed. The knowledge base is written
+ * cleanly by hand, so it is used verbatim.
+ *
+ * Kept as a function rather than inlined because eight call sites read through it —
+ * this is the single place the decision lives. body_ai is left in the table
+ * untouched (unread, no longer written) so nothing is destroyed and the old
+ * behaviour can be restored by reverting this function and wa_knowledge_set().
+ */
 function wa_knowledge_get_ai($conn, $refType, $refId) {
-    $rt = "'" . mysqli_real_escape_string($conn, $refType) . "'";
-    $rid = (int)$refId;
-    $res = @mysqli_query($conn, "SELECT body, body_ai FROM wa_knowledge WHERE ref_type = $rt AND ref_id = $rid LIMIT 1");
-    if (!$res) {   // body_ai column not present yet -> fall back to raw
-        return wa_knowledge_get($conn, $refType, $refId);
-    }
-    $r = mysqli_fetch_assoc($res);
-    if (!$r) { return ''; }
-    $ai = trim((string)($r['body_ai'] ?? ''));
-    return $ai !== '' ? $ai : (string)$r['body'];
+    return wa_knowledge_get($conn, $refType, $refId);
 }
 
 /**
- * Store the raw KB text, then (re)generate the AI-processed bullet version so the
- * live AI always answers from a clean, structured copy. If the AI is unavailable
- * the raw text is still saved and used (body_ai left as-is / empty).
+ * Store the KB text exactly as written.
+ *
+ * No longer runs the text through the AI on save: what you type is what the live AI
+ * answers from. Saving is now immediate rather than waiting on a provider call, and
+ * cannot fail or silently reword your text when the provider is slow or down.
  */
 function wa_knowledge_set($conn, $refType, $refId, $body) {
     wa_kb_ensure_schema($conn);
@@ -3771,11 +3776,11 @@ function wa_knowledge_set($conn, $refType, $refId, $body) {
     mysqli_query($conn,
         "INSERT INTO wa_knowledge (ref_type, ref_id, body) VALUES ($rt, $rid, $b)
          ON DUPLICATE KEY UPDATE body = VALUES(body)");
-    wa_knowledge_reprocess($conn, $refType, $refId);
 }
 
-/** Regenerate body_ai from the current raw body via the AI. No-op if no provider
- *  or empty raw. Returns true when body_ai was updated. */
+/** Regenerate body_ai from the current raw body via the AI.
+ *  NOT called any more — the KB is used verbatim (see wa_knowledge_get_ai). Kept so
+ *  the behaviour can be restored deliberately rather than rebuilt from scratch. */
 function wa_knowledge_reprocess($conn, $refType, $refId) {
     wa_kb_ensure_schema($conn);
     $raw = wa_knowledge_get($conn, $refType, $refId);
@@ -3867,7 +3872,7 @@ function wa_kb_learning_approve($conn, $learningId, $reviewerId = null) {
     } else {
         $newRaw = rtrim($raw) . ($raw !== '' ? "\n\n" : '') . $section . "\n" . $add;
     }
-    // Save raw + reprocess (wa_knowledge_set handles both).
+    // Save the raw text; the AI reads it verbatim (no processing step any more).
     wa_knowledge_set($conn, $refType, $refId, $newRaw);
     $rv = $reviewerId !== null ? (int)$reviewerId : 'NULL';
     mysqli_query($conn,
