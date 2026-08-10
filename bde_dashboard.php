@@ -109,9 +109,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .nextstep{margin-top:12px;background:var(--slate-soft);border:1px solid color-mix(in srgb,var(--slate) 30%,var(--line));border-radius:var(--radius-sm);padding:13px;font-size:12.5px;color:var(--ink2);line-height:1.5} .bde-app .nextstep b{color:var(--slate)}
 
     .bde-app .list{display:grid;gap:9px}
-    .bde-app .row{display:flex;align-items:flex-start;gap:11px;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
-    .bde-app .row .pd{flex:0 0 8px;width:8px;height:8px;border-radius:50%;margin-top:6px} .bde-app .row>div{flex:1 1 auto;min-width:0} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
-    .bde-app .row .due{flex:0 0 auto;font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
+    .bde-app .arow{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
+    .bde-app .arow .pd{width:8px;height:8px;border-radius:50%;margin-top:6px;align-self:start} .bde-app .arow b{font-size:12.5px}.bde-app .arow p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+    .bde-app .arow .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
@@ -307,7 +307,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ["blue","Protect CRM evidence","Update calls, meetings, objections, proposal status and payment evidence.","Before report"],
           ["green","Create tomorrow's advantage","Prepare the top five prospects, decision-makers or account exceptions for the next day.","4:45 PM"]
         ];
-        return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="row"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
       }
       function driversCard(){
         return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s])=>`<div class="driver"><div class="dt"><b>${esc(l)}</b><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><small>${esc(s)}</small></div>`).join("")}</div></div>`;
@@ -347,9 +347,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>`<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="due" style="align-self:auto">${esc(r[4])}</span></td></tr>`).join("")}</tbody></table></div></div>
           <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4></div><div class="list">${stale.map(([x,c])=>`<div class="row"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="due" style="align-self:center">Open</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4></div><div class="list">${quality.map(x=>`<div class="row"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="due" style="align-self:center">Review</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4></div><div class="list">${cross.map(x=>`<div class="row"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="due" style="align-self:center">Route</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="due" style="align-self:center">Open</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="due" style="align-self:center">Review</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="due" style="align-self:center">Route</span></div>`).join("")}</div></div>
           </section>`;
       }
 
