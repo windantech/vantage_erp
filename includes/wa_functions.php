@@ -1579,19 +1579,38 @@ function wa_template_var_count($body) {
  * Contacts to broadcast to. $filter = 'all' | 'optedin' | 'course'.
  * Returns [ ['wa_id'=>..,'name'=>..], ... ].
  */
+/** Parse a ref id that may be a single value or a CSV of them ("12" or "12,7,3").
+ *  Returns a de-duplicated list of positive ints, in the order given. */
+function wa_ref_ids($refId) {
+    $out = [];
+    foreach (explode(',', (string)$refId) as $p) {
+        $n = (int)trim($p);
+        if ($n > 0 && !in_array($n, $out, true)) { $out[] = $n; }
+    }
+    return $out;
+}
+
 function wa_broadcast_audience($conn, $filter, $refId = 0) {
-    $refId = (int)$refId;
+    // $refId may be several ids: a broadcast can target more than one course at once
+    // (e.g. every M&E cohort), which is one send to a de-duplicated audience rather
+    // than one send per course hitting shared contacts twice.
+    $ids = wa_ref_ids($refId);
     // Never broadcast to anyone who has opted out — regardless of the filter.
     $where = "c.wa_id <> '' AND c.opted_out = 0";
     // 'course'/'event' filter contacts to those whose conversation is linked to
-    // that course or onsite event (refId is the course_id / event_id).
+    // those courses or onsite events (refId is the course_id / event_id).
     if ($filter === 'optedin') {
         $where .= ' AND c.opted_in = 1';
-    } elseif (($filter === 'course' || $filter === 'event') && $refId > 0) {
+    } elseif (($filter === 'course' || $filter === 'event') && $ids) {
         $f = mysqli_real_escape_string($conn, $filter);
-        $where .= " AND cv.ref_type = '$f' AND cv.ref_id = $refId";
-    } elseif ($filter === 'batch' && $refId > 0) {
-        $where .= " AND c.import_batch_id = $refId";   // exactly the contacts from that import
+        $where .= " AND cv.ref_type = '$f' AND cv.ref_id IN (" . implode(',', $ids) . ")";
+    } elseif ($filter === 'batch' && $ids) {
+        $where .= " AND c.import_batch_id IN (" . implode(',', $ids) . ")";
+    } elseif (in_array($filter, ['course', 'event', 'batch'], true)) {
+        // A targeted filter with nothing selected must send to NOBODY. Falling through
+        // to the unfiltered WHERE would blast every contact in the database — easy to
+        // trigger now the course picker is multi-select and can be left empty.
+        return [];
     }
     // Pull each contact's linked course/event, its registration link and assigned rep, so
     // template tokens ({name},{course},{link},{rep}) can be filled per-contact from the DB.
@@ -1736,16 +1755,30 @@ function wa_broadcast_suggest_vars($conn, $name, $lang) {
 
 /** Record the start of a broadcast run. Returns the new broadcast id. */
 function wa_broadcast_create($conn, $template, $language, $audience, $courseId, $total, $createdBy) {
+    wa_broadcast_refids_schema_ensure($conn);
     $t   = "'" . mysqli_real_escape_string($conn, $template) . "'";
     $l   = "'" . mysqli_real_escape_string($conn, $language ?: 'en') . "'";
     $a   = "'" . mysqli_real_escape_string($conn, $audience ?: 'all') . "'";
-    $cid = ((int)$courseId > 0) ? (int)$courseId : 'NULL';
+    // course_id is INT, so it holds the FIRST id and keeps every existing report and
+    // label working; ref_ids carries the whole selection when several were chosen.
+    $ids = wa_ref_ids($courseId);
+    $cid = $ids ? $ids[0] : 'NULL';
+    $rids = $ids ? "'" . implode(',', $ids) . "'" : 'NULL';
     $tot = (int)$total;
     $by  = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
     mysqli_query($conn,
-        "INSERT INTO wa_broadcasts (template, language, audience, course_id, total, created_by)
-         VALUES ($t, $l, $a, $cid, $tot, $by)");
+        "INSERT INTO wa_broadcasts (template, language, audience, course_id, ref_ids, total, created_by)
+         VALUES ($t, $l, $a, $cid, $rids, $tot, $by)");
     return (int)mysqli_insert_id($conn);
+}
+
+/** Add the multi-target column once (idempotent). */
+function wa_broadcast_refids_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_broadcasts`
+        ADD COLUMN IF NOT EXISTS `ref_ids` VARCHAR(255) DEFAULT NULL");
 }
 
 /** Idempotently ensure the last_error column exists on wa_broadcasts. */
@@ -1788,10 +1821,16 @@ function wa_broadcasts_list($conn, $limit = 50) {
                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'delivered') AS delivered,
                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'read')      AS read_ct,
                (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'sent')      AS sent_only,
-               CASE b.audience
-                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
-                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
-               END AS course_name
+               CONCAT(
+                 COALESCE(CASE b.audience
+                      WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
+                      WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
+                 END, ''),
+                 -- Several targets: say so, rather than naming only the first.
+                 CASE WHEN COALESCE(b.ref_ids,'') LIKE '%,%'
+                      THEN CONCAT(' +', LENGTH(b.ref_ids) - LENGTH(REPLACE(b.ref_ids, ',', '')), ' more')
+                      ELSE '' END
+               ) AS course_name
           FROM wa_broadcasts b
       ORDER BY b.id DESC
          LIMIT $limit";
@@ -1811,10 +1850,16 @@ function wa_broadcast_get($conn, $id) {
                 (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'delivered') AS delivered,
                 (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'read')      AS read_ct,
                 (SELECT COUNT(*) FROM wa_messages m WHERE m.broadcast_id = b.id AND m.status = 'sent')      AS sent_only,
-                CASE b.audience
-                     WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
-                     WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
-                END AS course_name
+                CONCAT(
+                  COALESCE(CASE b.audience
+                       WHEN 'course' THEN (SELECT course FROM course WHERE course_id = b.course_id)
+                       WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = b.course_id)
+                  END, ''),
+                  -- Several targets: say so, rather than naming only the first.
+                  CASE WHEN COALESCE(b.ref_ids,'') LIKE '%,%'
+                       THEN CONCAT(' +', LENGTH(b.ref_ids) - LENGTH(REPLACE(b.ref_ids, ',', '')), ' more')
+                       ELSE '' END
+                ) AS course_name
            FROM wa_broadcasts b WHERE b.id = $id LIMIT 1");
     return $res ? mysqli_fetch_assoc($res) : null;
 }
@@ -2399,20 +2444,34 @@ function wa_contact_stamp_import($conn, $cid, $optIn, $batchId) {
 }
 
 /** Queue a broadcast for a future time. $scheduledAt is 'Y-m-d H:i:s'. Returns id. */
+/** Add the multi-target column to scheduled broadcasts once (idempotent). */
+function wa_scheduled_refids_schema_ensure($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    @mysqli_query($conn, "ALTER TABLE `wa_scheduled_broadcasts`
+        ADD COLUMN IF NOT EXISTS `ref_ids` VARCHAR(255) DEFAULT NULL");
+}
+
 function wa_broadcast_schedule($conn, $template, $lang, $vars, $audience, $courseId, $scheduledAt, $createdBy, $headerMediaId = '', $headerType = '') {
     wa_broadcast_header_schema_ensure($conn);
+    wa_scheduled_refids_schema_ensure($conn);
     $t   = "'" . mysqli_real_escape_string($conn, $template) . "'";
     $l   = "'" . mysqli_real_escape_string($conn, $lang ?: 'en') . "'";
     $a   = "'" . mysqli_real_escape_string($conn, $audience ?: 'all') . "'";
-    $cid = ((int)$courseId > 0) ? (int)$courseId : 'NULL';
+    // Keep the WHOLE selection: course_id is INT and would silently drop every course
+    // after the first, so a multi-course schedule would fire at a fraction of its audience.
+    $ids  = wa_ref_ids($courseId);
+    $cid  = $ids ? $ids[0] : 'NULL';
+    $rids = $ids ? "'" . implode(',', $ids) . "'" : 'NULL';
     $v   = "'" . mysqli_real_escape_string($conn, json_encode(array_values((array)$vars), JSON_UNESCAPED_UNICODE)) . "'";
     $sa  = "'" . mysqli_real_escape_string($conn, $scheduledAt) . "'";
     $by  = ((int)$createdBy > 0) ? (int)$createdBy : 'NULL';
     $hm  = trim((string)$headerMediaId) !== '' ? "'" . mysqli_real_escape_string($conn, $headerMediaId) . "'" : 'NULL';
     $ht  = in_array($headerType, ['image', 'video', 'document'], true) ? "'" . $headerType . "'" : 'NULL';
     mysqli_query($conn,
-        "INSERT INTO wa_scheduled_broadcasts (template, language, audience, course_id, vars, scheduled_at, created_by, header_media_id, header_type)
-         VALUES ($t, $l, $a, $cid, $v, $sa, $by, $hm, $ht)");
+        "INSERT INTO wa_scheduled_broadcasts (template, language, audience, course_id, ref_ids, vars, scheduled_at, created_by, header_media_id, header_type)
+         VALUES ($t, $l, $a, $cid, $rids, $v, $sa, $by, $hm, $ht)");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -2466,7 +2525,10 @@ function wa_run_due_scheduled($conn, $limit = 5) {
             // Enqueue for reliable background delivery instead of sending all at once — a
             // large scheduled send then drains over many cron ticks (see wa_run_broadcast_queue).
             $r = wa_broadcast_enqueue($conn, $row['template'], $row['language'], $vars,
-                                      $row['audience'], $row['course_id'], $row['created_by'],
+                                      $row['audience'],
+                                      // ref_ids holds the full selection; course_id only the first.
+                                      (trim((string)($row['ref_ids'] ?? '')) !== '' ? $row['ref_ids'] : $row['course_id']),
+                                      $row['created_by'],
                                       (string)($row['header_media_id'] ?? ''), (string)($row['header_type'] ?? ''));
             $bid = (int)$r['broadcast_id']; $total = (int)$r['total'];
             mysqli_query($conn,

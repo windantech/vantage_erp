@@ -125,7 +125,8 @@ if ($action === 'template_draft') {
 if ($action === 'broadcast_audience') {
     if (!$is_supervisor) { http_response_code(403); wa_json_out(['ok' => false, 'error' => 'forbidden']); }
     $filter   = $_POST['filter'] ?? $_GET['filter'] ?? 'all';
-    $courseId = (int)($_POST['course_id'] ?? $_GET['course_id'] ?? 0);
+    // May be a CSV when several courses/events are targeted — sanitised by wa_ref_ids().
+    $courseId = implode(',', wa_ref_ids($_POST['course_id'] ?? $_GET['course_id'] ?? 0));
     // Catch any DB error so the client gets JSON (not a fatal that corrupts the response).
     try {
         wa_json_out(['ok' => true, 'contacts' => wa_broadcast_audience($conn, $filter, $courseId)]);
@@ -241,7 +242,8 @@ if ($action === 'broadcast_create') {
     $tpl   = (string)($_POST['template'] ?? '');
     $lang  = (string)($_POST['lang'] ?? 'en');
     $aud   = (string)($_POST['audience'] ?? 'all');
-    $cid   = (int)($_POST['course_id'] ?? 0);
+    // May be a CSV when several courses/events are targeted — sanitised by wa_ref_ids().
+    $cid   = implode(',', wa_ref_ids($_POST['course_id'] ?? 0));
     $total = (int)($_POST['total'] ?? 0);
     if ($tpl === '') { wa_json_out(['ok' => false, 'error' => 'no_template']); }
     $id = wa_broadcast_create($conn, $tpl, $lang, $aud, $cid, $total, (int)$staff_id);
@@ -255,7 +257,8 @@ if ($action === 'broadcast_enqueue') {
     $tpl  = (string)($_POST['template'] ?? '');
     $lang = (string)($_POST['lang'] ?? 'en');
     $aud  = (string)($_POST['audience'] ?? 'all');
-    $cid  = (int)($_POST['course_id'] ?? 0);
+    // May be a CSV when several courses/events are targeted — sanitised by wa_ref_ids().
+    $cid  = implode(',', wa_ref_ids($_POST['course_id'] ?? 0));
     $vars = json_decode((string)($_POST['vars'] ?? '[]'), true) ?: [];
     $hm   = (string)($_POST['header_media_id'] ?? '');
     $ht   = (string)($_POST['header_type'] ?? '');
@@ -284,7 +287,8 @@ if ($action === 'broadcast_schedule') {
     $tpl   = (string)($_POST['template'] ?? '');
     $lang  = (string)($_POST['lang'] ?? 'en');
     $aud   = (string)($_POST['audience'] ?? 'all');
-    $cid   = (int)($_POST['course_id'] ?? 0);
+    // May be a CSV when several courses/events are targeted — sanitised by wa_ref_ids().
+    $cid   = implode(',', wa_ref_ids($_POST['course_id'] ?? 0));
     $vars  = json_decode((string)($_POST['vars'] ?? '[]'), true) ?: [];
     $whenRaw = trim((string)($_POST['when'] ?? ''));
     if ($tpl === '')    { wa_json_out(['ok' => false, 'error' => 'no_template']); }

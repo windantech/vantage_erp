@@ -84,8 +84,8 @@ $tplJs = array_map(function ($t) {
                             <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="event" id="audEvent"><label class="form-check-label" for="audEvent">By event (onsite)</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="aud" value="batch" id="audBatch"><label class="form-check-label" for="audBatch">By import batch</label></div>
                         </div>
-                        <select id="bCourse" class="form-select mt-2 d-none" style="max-width:360px">
-                            <option value="">— Select course —</option>
+                        <select id="bCourse" class="form-select mt-2 d-none" style="max-width:360px" multiple size="6"
+                                title="Ctrl/Cmd-click to pick more than one course — recipients are de-duplicated across them">
                             <?php foreach ($courses as $c): ?>
                                 <option value="<?php echo (int)$c['id']; ?>"><?php echo wa_e($c['name']); ?></option>
                             <?php endforeach; ?>
@@ -266,10 +266,12 @@ $tplJs = array_map(function ($t) {
     function audience() {
         var f = document.querySelector('input[name=aud]:checked').value;
         // course_id carries the ref id for course, event AND batch filters.
+        // The course picker is multi-select, so course_id may be a CSV of ids.
         var refId = f === 'event' ? (eventSel.value || 0)
                   : f === 'batch' ? (batchSel.value || 0)
-                  : (courseSel.value || 0);
-        return { filter: f, course_id: refId };
+                  : Array.prototype.filter.call(courseSel.selectedOptions || [], function (o) { return o.value; })
+                         .map(function (o) { return o.value; }).join(',');
+        return { filter: f, course_id: refId || 0, n_refs: (f === 'course' && refId) ? refId.split(',').length : 1 };
     }
     function post(action, data) {
         var fd = new FormData(); fd.append('action', action);
@@ -338,7 +340,7 @@ $tplJs = array_map(function ($t) {
         var t = currentTpl();
         if (!t) { statusEl.textContent = 'Pick a template.'; return; }
         var aud = audience();
-        if (aud.filter === 'course' && !aud.course_id) { statusEl.textContent = 'Pick a course.'; return; }
+        if (aud.filter === 'course' && !aud.course_id) { statusEl.textContent = 'Pick at least one course.'; return; }
         if (aud.filter === 'event' && !aud.course_id) { statusEl.textContent = 'Pick an event.'; return; }
         if (aud.filter === 'batch' && !aud.course_id) { statusEl.textContent = 'Pick an import batch.'; return; }
         var scheduled = document.getElementById('whenLater').checked;
@@ -378,7 +380,8 @@ $tplJs = array_map(function ($t) {
             document.getElementById('bpMore').textContent = list.length > CAP
                 ? ('Showing the first ' + CAP + ' of ' + list.length + ' — all ' + list.length + ' will receive it.') : '';
             document.getElementById('bpSummary').innerHTML = 'Template <strong>' + esc(t.name) + '</strong> ('
-                + esc(t.language) + ') · Audience: <strong>' + esc(audLabels[aud.filter] || aud.filter) + '</strong>'
+                + esc(t.language) + ') · Audience: <strong>' + esc(audLabels[aud.filter] || aud.filter)
+                + (aud.n_refs > 1 ? ' (' + aud.n_refs + ' courses)' : '') + '</strong>'
                 + (headerMedia ? ' · Flier: <strong>' + esc(headerMedia.name) + '</strong>' : '')
                 + (scheduled ? ' · Scheduled for <strong>' + esc(whenInput.value.replace('T', ' ')) + '</strong>' : '');
             var confirmBtn = document.getElementById('bpConfirm');
