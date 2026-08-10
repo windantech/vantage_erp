@@ -28,8 +28,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       --line:#e0e7ee; --navy:#123a5c; --navy2:#0c2740; --orange:#ec6e2d; --gold:#e0a53c; --teal:#1f8f88;
       --green:#1f7d4d; --amber:#b07d10; --red:#c23c37; --blue:#3a6ea5; --purple:#6f5aa8;
       --greenbg:#e7f5ec; --amberbg:#fbf1d6; --redbg:#fbe8e6; --bluebg:#e9f0f8;
-      /* Blue tile family — small boxes are shaded in two tiers so they layer against white panels. */
-      --tileA:#f5f9fe; --tileB:#e8f1fc; --tile2A:#e6eff9; --tile2B:#d4e4f4; --tileline:#d5e2f1;
       --shadow:0 1px 2px rgba(16,40,64,.05), 0 18px 38px -18px rgba(16,40,64,.20);
       --display:"Sora",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
       background:var(--bg); color:var(--ink);
@@ -41,7 +39,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       --line:#2b3a45; --navy:#7fb4d6; --navy2:#9ed0ea; --orange:#f2905a; --gold:#e0b25a; --teal:#54bfb6;
       --green:#5cc487; --amber:#e0b257; --red:#ec7a72; --blue:#71a6d8; --purple:#a595d6;
       --greenbg:#16301f; --amberbg:#2f2913; --redbg:#331d1f; --bluebg:#182b3b; --shadow:none;
-      --tileA:#1b2d3b; --tileB:#152433; --tile2A:#1e3140; --tile2B:#172836; --tileline:#2d3f4e;
     }
     .bde-app *{box-sizing:border-box}
     .bde-app button,.bde-app select,.bde-app input,.bde-app textarea{font:inherit;color:inherit}
@@ -105,7 +102,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .marker span{font-size:9px;color:var(--muted);font-weight:800}
     .bde-app .marker.m80{left:66.67%}.bde-app .marker.m100{left:83.33%}.bde-app .marker.m120{left:100%}
     .bde-app .commission-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:22px}
-    .bde-app .mini{background:linear-gradient(162deg,var(--tile2A),var(--tile2B));border:1px solid var(--tileline);border-radius:11px;padding:10px}
+    .bde-app .mini{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:10px}
     .bde-app .mini b{font-size:16px;display:block;margin-top:3px}
     .bde-app .mini span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:800}
     .bde-app .list{display:grid;gap:8px}
@@ -184,7 +181,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .metric .value,.bde-app .mini b,.bde-app .driver .num,.bde-app .score,.bde-app td{font-variant-numeric:tabular-nums}
     .bde-app .bde-topbar{border-radius:20px}
     .bde-app .panel{border-radius:18px}
-    .bde-app .metric{border-radius:14px;background:linear-gradient(162deg,var(--tileA),var(--tileB));border-color:var(--tileline);transition:transform .18s ease,box-shadow .18s ease}
+    .bde-app .metric{border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}
     .bde-app .metric:hover{transform:translateY(-2px);box-shadow:0 14px 26px -14px rgba(18,42,60,.28)}
     .bde-app .metric::after{width:auto;height:3px;left:0;right:0;top:0;border-radius:14px 14px 0 0;background:linear-gradient(90deg,var(--orange),var(--gold))}
     .bde-app .tab{transition:color .15s ease,box-shadow .15s ease,background .15s ease}
