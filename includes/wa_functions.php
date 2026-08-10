@@ -140,6 +140,12 @@ function wa_touch_last_inbound($conn, $contactId, $dt) {
     $contactId = (int)$contactId;
     $dt = "'" . mysqli_real_escape_string($conn, $dt) . "'";
     mysqli_query($conn, "UPDATE wa_contacts SET last_inbound_at = $dt WHERE id = $contactId");
+    // The customer answered, so the nudge did its job: clear the stamp and let ONE
+    // more follow-up become possible if they go quiet again. Without this the stamp
+    // is permanent and a contact can only ever be nudged once in their lifetime.
+    // Every inbound message funnels through here, so this is the one place to do it.
+    @mysqli_query($conn, "UPDATE wa_conversations SET followup_sent_at = NULL
+                           WHERE contact_id = $contactId AND followup_sent_at IS NOT NULL");
 }
 
 function wa_find_contact_by_waid($conn, $waId) {
@@ -5112,11 +5118,11 @@ function wa_run_followups($conn, $afterHours = 23, $limit = 20) {
           WHERE cv.handler <> 'human'
             AND cv.escalated = 0
             AND cv.status = 'open'
+            -- Exactly ONE follow-up per silence. The stamp is cleared the moment the
+            -- customer replies (wa_touch_last_inbound), so a fresh one only becomes
+            -- possible after they have answered — never a second nudge on silence.
+            -- (wa_conversations is UNIQUE(contact_id), so this covers the contact.)
             AND cv.followup_sent_at IS NULL
-            -- Never more than ONE follow-up per contact, ever — even across a second
-            -- conversation. If this person was ever nudged, they're excluded here.
-            AND NOT EXISTS (SELECT 1 FROM wa_conversations cv2
-                             WHERE cv2.contact_id = c.id AND cv2.followup_sent_at IS NOT NULL)
             AND c.opted_out = 0
             AND c.last_inbound_at IS NOT NULL
             AND c.last_inbound_at <= (NOW() - INTERVAL $afterHours HOUR)
