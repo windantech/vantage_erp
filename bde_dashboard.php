@@ -45,7 +45,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app button{cursor:pointer}
     .bde-app .bde-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:15px 18px;box-shadow:var(--shadow)}
     .bde-app .brand{display:flex;align-items:center;gap:12px;min-width:260px}
-    .bde-app .mark{width:42px;height:42px;padding:0;border-radius:12px;background:linear-gradient(135deg,var(--navy),var(--orange));display:grid;place-items:center;color:#fff;font-weight:900;letter-spacing:-1px}
+    .bde-app .mark{width:42px;height:42px;padding:5px;border-radius:12px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}
+    .bde-app .mark img{width:100%;height:100%;object-fit:contain;display:block}
     .bde-app .brand h1{font-size:17px;margin:0;line-height:1.15;color:var(--ink)}
     .bde-app .brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
     .bde-app .controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:end}
@@ -81,12 +82,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .badge.red{color:var(--red);background:var(--redbg)}
     .bde-app .badge.blue{color:var(--blue);background:var(--bluebg)}
     .bde-app .metric-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .bde-app .metric{padding:13px;min-height:112px;position:relative;overflow:hidden}
+    .bde-app .metric{padding:15px 15px 14px;min-height:132px;position:relative;overflow:hidden;display:flex;flex-direction:column}
     .bde-app .metric::after{content:"";position:absolute;width:78px;height:78px;border-radius:50%;right:-34px;top:-34px;background:color-mix(in srgb,var(--orange) 10%,transparent)}
     .bde-app .metric .label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
     .bde-app .metric .value{font-size:23px;font-weight:850;margin:8px 0 4px;line-height:1.1;letter-spacing:-.02em}
     .bde-app .metric .note{font-size:11px;color:var(--muted)}
-    .bde-app .metric .delta{font-size:11px;font-weight:750;margin-top:6px}
+    .bde-app .metric .delta{font-size:11px;font-weight:750;margin-top:auto;padding-top:8px}
     .bde-app .up{color:var(--green)} .bde-app .down{color:var(--red)} .bde-app .neutral{color:var(--amber)}
     .bde-app .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
     .bde-app .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
@@ -191,7 +192,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .primary-btn{box-shadow:0 8px 18px -8px rgba(23,58,84,.5)}
     .bde-app .avatar{background:linear-gradient(135deg,var(--navy),color-mix(in srgb,var(--navy) 55%,var(--orange)))}
     .bde-app .strategy-strip{position:relative;overflow:hidden;box-shadow:0 20px 44px -22px rgba(15,39,57,.55)}
-    .bde-app .strategy-strip::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 150% at 100% 0,color-mix(in srgb,var(--orange) 24%,transparent),transparent 55%);pointer-events:none}
+    .bde-app .strategy-strip::before{display:none}
     .bde-app .strategy-strip>*{position:relative;z-index:1}
     @media (prefers-reduced-motion: reduce){
       .bde-app .metric,.bde-app .tab{transition:none}
@@ -206,7 +207,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .brand p .sep{color:var(--gold);margin:0 3px}
     .bde-app .controls{align-items:center;gap:10px}
     .bde-app .identity,.bde-app .period select,.bde-app .icon-btn{height:48px}
-    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(12,39,64,.7)}
+    .bde-app .identity{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#574a8a,#3f3566);color:#fff;border-radius:14px;padding:0 15px 0 11px;box-shadow:0 10px 22px -12px rgba(58,44,94,.7)}
     .bde-app .identity .ava{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-weight:800;font-family:var(--display);font-size:13px;border:1px solid rgba(255,255,255,.18)}
     .bde-app .identity .who b{display:block;font-size:13.5px;font-weight:700;line-height:1.15;color:#fff}
     .bde-app .identity .who span{display:block;font-size:10.5px;color:#c7d6e4;margin-top:2px;letter-spacing:.02em}
@@ -217,7 +218,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       background-repeat:no-repeat;background-position:right 12px center}
     .bde-app .icon-btn{display:inline-flex;align-items:center;gap:7px;border-radius:11px;padding:0 13px;font-weight:650;font-size:13px}
     .bde-app .icon-btn:hover{border-color:var(--orange);color:var(--orange)}
-    .bde-app .strategy-strip{margin-top:16px;border-radius:20px;background:linear-gradient(120deg,var(--navy2),var(--navy));grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;padding:22px 26px;align-items:stretch}
+    .bde-app .strategy-strip{margin-top:16px;border-radius:20px;background:var(--navy);grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:20px;padding:22px 26px;align-items:stretch}
     .bde-app .strategy-strip .eyebrow{display:inline-flex;align-items:center;gap:8px;opacity:1;color:var(--gold);font-size:10.5px;letter-spacing:.18em;margin-bottom:12px}
     .bde-app .strategy-strip .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
     .bde-app .strategy-strip h2{font-size:23px;line-height:1.28;margin:0 0 12px}
@@ -266,7 +267,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     <div class="bde-app" id="bdeApp">
       <header class="bde-topbar">
         <div class="brand">
-          <div class="mark">VA</div>
+          <div class="mark"><img src="assets/img/logo.png" alt="Vantage Africa"></div>
           <div>
             <h1>BDE Command Centre</h1>
             <p>Strategy <span class="sep">&rsaquo;</span> execution <span class="sep">&rsaquo;</span> revenue <span class="sep">&rsaquo;</span> commission <span class="sep">&rsaquo;</span> growth</p>
