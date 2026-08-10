@@ -91,7 +91,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc,var(--jade))}
     .bde-app .kpi .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
     .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
-    .bde-app .kpi .delta{font-size:11px;font-weight:700;margin-top:10px} .bde-app .delta.up{color:var(--jade)} .bde-app .delta.down{color:var(--coral)} .bde-app .delta.live{color:var(--faint)}
+    .bde-app .kpi .delta{font-size:11px;font-weight:700;margin-top:10px} .bde-app .kpi .delta .dic{font-weight:900;font-size:14px;display:inline-block;vertical-align:-1px;margin-right:1px} .bde-app .delta.up{color:var(--jade)} .bde-app .delta.down{color:var(--coral)} .bde-app .delta.live{color:var(--brand)}
 
     .bde-app .prog .pl{font-size:13px;color:var(--muted);margin-top:2px} .bde-app .prog .pl b{color:var(--ink)}
     .bde-app .bar{height:14px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden;margin-top:14px;position:relative} .bde-app .bar .bf{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--coral),var(--amber) 55%,var(--jade));transition:width .6s cubic-bezier(.22,.61,.36,1)} .bde-app .bar .exp{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink2);opacity:.6}
@@ -109,9 +109,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .nextstep{margin-top:12px;background:var(--slate-soft);border:1px solid color-mix(in srgb,var(--slate) 30%,var(--line));border-radius:var(--radius-sm);padding:13px;font-size:12.5px;color:var(--ink2);line-height:1.5} .bde-app .nextstep b{color:var(--slate)}
 
     .bde-app .list{display:grid;gap:9px}
-    .bde-app .row{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
-    .bde-app .row .pd{width:8px!important;height:8px!important;min-width:8px;max-width:8px;flex:0 0 8px;place-self:start;border-radius:50%;margin-top:6px} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
-    .bde-app .row .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
+    .bde-app .row{display:flex;align-items:flex-start;gap:11px;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
+    .bde-app .row .pd{flex:0 0 8px;width:8px;height:8px;border-radius:50%;margin-top:6px} .bde-app .row>div{flex:1 1 auto;min-width:0} .bde-app .row b{font-size:12.5px}.bde-app .row p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+    .bde-app .row .due{flex:0 0 auto;font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
@@ -126,7 +126,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app table{width:100%;border-collapse:collapse;min-width:720px;background:var(--surface)} .bde-app th,.bde-app td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
     .bde-app th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface2);font-weight:800} .bde-app tr:last-child td{border-bottom:0}
     .bde-app .prow{display:flex;align-items:center;gap:10px} .bde-app .prow .a{width:30px;height:30px;border-radius:8px;background:var(--slate);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:850} .bde-app .prow b{display:block;font-size:12.5px}.bde-app .prow span{font-size:10.5px;color:var(--muted)}
-    .bde-app tr.me td{background:linear-gradient(90deg,var(--slate-soft),transparent)} .bde-app tr.me .a{background:linear-gradient(150deg,var(--slate),#33507a)}
+    .bde-app tr.me td{background:linear-gradient(90deg,color-mix(in srgb,var(--slate) 24%,var(--surface)),transparent)} .bde-app tr.me .a{background:linear-gradient(150deg,var(--slate),#33507a)}
     .bde-app .mini-track{height:7px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--line);min-width:70px;display:inline-block;vertical-align:middle} .bde-app .mini-track div{height:100%;border-radius:99px}
     .bde-app .sbadge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px} .bde-app .sbadge .dot{width:7px;height:7px;border-radius:50%}
     .bde-app .sg{color:var(--jade);background:var(--jade-soft)} .bde-app .sg .dot{background:var(--jade)} .bde-app .sa{color:var(--amber);background:var(--amber-soft)} .bde-app .sa .dot{background:var(--amber)} .bde-app .sr{color:var(--coral);background:var(--coral-soft)} .bde-app .sr .dot{background:var(--coral)}
@@ -257,7 +257,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ["Commission estimate",kMoney(c.current),"current eligible estimate","live","var(--gold)"],
           ["Daily pace needed",kMoney(dailyNeed),daysLeft+" working days left","live","var(--amber)"]
         ];
-        const dt={up:"↑ Positive movement",down:"↓ Below pace",live:"• Live from CRM / Finance"};
+        const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',live:'<span class="dic">•</span> Live from CRM / Finance'};
         return `<div class="kpis">${items.map(([l,v,m,d,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div><div class="delta ${d}">${dt[d]}</div></div>`).join("")}</div>`;
       }
 
