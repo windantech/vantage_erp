@@ -113,6 +113,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .arow{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px}
     .bde-app .arow .pd{width:8px;height:8px;border-radius:50%;margin-top:6px;align-self:start} .bde-app .arow b{font-size:12.5px}.bde-app .arow p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
     .bde-app .arow .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
+    .bde-app .stage-chip{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--slate-soft);color:var(--slate)}
+    .bde-app .duec{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px}
+    .bde-app .duec.hot{background:var(--coral-soft);color:var(--coral)} .bde-app .duec.soon{background:var(--amber-soft);color:var(--amber)} .bde-app .duec.cool{background:var(--slate-soft);color:var(--slate)}
+    .bde-app .arow .abtn{align-self:center;font-size:10.5px;font-weight:800;padding:5px 12px;border-radius:8px;white-space:nowrap;border:0;cursor:pointer;transition:background .15s,color .15s}
+    .bde-app .abtn.hot{background:var(--coral-soft);color:var(--coral)} .bde-app .abtn.hot:hover{background:var(--coral);color:#fff}
+    .bde-app .abtn.warn{background:var(--amber-soft);color:var(--amber)} .bde-app .abtn.warn:hover{background:var(--amber);color:#fff}
+    .bde-app .abtn.info{background:var(--slate-soft);color:var(--slate)} .bde-app .abtn.info:hover{background:var(--slate);color:#fff}
+    .bde-app .table-wrap tbody tr:not(.me):hover td{background:color-mix(in srgb,var(--slate) 6%,var(--surface))}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -367,11 +375,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
           </section>
           <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>`<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="due" style="align-self:auto">${esc(r[4])}</span></td></tr>`).join("")}</tbody></table></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>
           <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="due" style="align-self:center">Open</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="due" style="align-self:center">Review</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="due" style="align-self:center">Route</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4><span class="chip amber">${quality.length} to review</span></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="abtn warn">Review</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} open</span></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="abtn info">Route</span></div>`).join("")}</div></div>
           </section>`;
       }
 
