@@ -114,8 +114,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .arow .due{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;background:var(--surface3);padding:4px 8px;border-radius:7px;border:1px solid var(--line);align-self:center}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
-    .bde-app .drivers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
-    .bde-app .driver{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px} .bde-app .driver .dt{display:flex;justify-content:space-between;align-items:center;gap:6px} .bde-app .driver b{font-size:12px} .bde-app .driver .n{font-size:20px;font-weight:850;margin:9px 0 2px;letter-spacing:-.02em} .bde-app .driver small{color:var(--muted);font-size:10.5px}
+    .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .bde-app .driver{position:relative;overflow:hidden;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px 15px 14px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
+    .bde-app .driver:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+    .bde-app .driver::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--dacc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .bde-app .driver .dtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+    .bde-app .driver .dicon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:color-mix(in srgb,var(--dacc,var(--brand)) 15%,var(--surface));color:var(--dacc,var(--brand))}
+    .bde-app .driver .dicon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+    .bde-app .driver .n{font-size:23px;font-weight:850;margin:1px 0;letter-spacing:-.02em;color:var(--ink)} .bde-app .driver b{font-size:12px;color:var(--ink)} .bde-app .driver small{color:var(--muted);font-size:10.5px;margin-top:1px}
     .bde-app .live{font-size:9px;font-weight:800;color:var(--jade);background:var(--jade-soft);padding:2px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.05em}
 
     .bde-app .funnel{display:grid;gap:10px} .bde-app .fr{display:grid;grid-template-columns:170px 1fr 52px;gap:11px;align-items:center} .bde-app .fr label{font-size:12px;font-weight:650}
@@ -310,7 +316,15 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
       }
       function driversCard(){
-        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s])=>`<div class="driver"><div class="dt"><b>${esc(l)}</b><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><small>${esc(s)}</small></div>`).join("")}</div></div>`;
+        const dAcc=["#3a7bd5","var(--brand)","var(--jade)","#2f8f88","var(--gold)"];
+        const dIcons=[
+          '<svg viewBox="0 0 24 24"><path d="M3 21h18M6 21V7l6-4 6 4v14"/><path d="M10 10h4M10 14h4"/></svg>',
+          '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M10.5 8.2l3.5 2-3.5 2z"/></svg>',
+          '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 14l2 2 4-4"/></svg>',
+          '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>',
+          '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 3M20 5v6h-6"/></svg>'
+        ];
+        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function teamTable(){
         const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
