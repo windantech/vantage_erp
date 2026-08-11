@@ -121,6 +121,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     .bde-app .abtn.warn{background:var(--amber-soft);color:var(--amber)} .bde-app .abtn.warn:hover{background:var(--amber);color:#fff}
     .bde-app .abtn.info{background:var(--slate-soft);color:var(--slate)} .bde-app .abtn.info:hover{background:var(--slate);color:#fff}
     .bde-app .table-wrap tbody tr:not(.me):hover td{background:color-mix(in srgb,var(--slate) 6%,var(--surface))}
+    .bde-app .segmented{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface2)} .bde-app .seg{border:0;background:transparent;padding:6px 12px;font-size:11px;font-weight:750;color:var(--muted);cursor:pointer} .bde-app .seg.on{background:var(--brand);color:#fff}
+    .bde-app .legend{display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:var(--muted);font-weight:700} .bde-app .lg{display:inline-flex;align-items:center;gap:6px} .bde-app .lg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+    .bde-app .tvp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px} .bde-app .tvp{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:13px} .bde-app .tvp-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;gap:8px} .bde-app .tvp-top b{font-size:12.5px} .bde-app .tvp-sub{font-size:10.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
+    .bde-app .track2{height:9px;border-radius:6px;background:var(--surface3);overflow:hidden;border:1px solid var(--line)} .bde-app .fill2{height:100%;border-radius:6px}
     .bde-app .pd.red{background:var(--coral)}.bde-app .pd.amber{background:var(--amber)}.bde-app .pd.blue{background:var(--slate)}.bde-app .pd.green{background:var(--jade)}
 
     .bde-app .drivers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -352,6 +356,48 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Forecast</th><th>Pipeline</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><a href="bdo_dashboard.php" style="color:inherit;text-decoration:none">${esc(d.name)}</a></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(d.forecast)}</td><td class="num">${kMoney(d.pipeline)}</td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
+      /* ---------- executive master view (BDM request) ---------- */
+      function execRevenueBreakdown(){
+        const shortName={"International":"Int'l","Virtual":"Virtual","Corporate":"Corporate","Digital Solutions":"Digital","Academic":"Academic"};
+        const data=B.sbus.map(d=>({name:shortName[d.name]||d.name,closed:d.actual,open:d.pipeline}));
+        const max=Math.max(...data.map(d=>d.closed+d.open))*1.14;
+        const w=640,h=250,pd=34,base=h-pd-16,plot=base-pd,step=(w-2*pd)/data.length,bw=52;
+        const bars=data.map((d,i)=>{const cx=pd+step*i+step/2,x=cx-bw/2;const ch=d.closed/max*plot,oh=d.open/max*plot;return `<g><rect x="${x.toFixed(1)}" y="${(base-ch).toFixed(1)}" width="${bw}" height="${Math.max(0,ch).toFixed(1)}" rx="3" fill="var(--jade)"/><rect x="${x.toFixed(1)}" y="${(base-ch-oh).toFixed(1)}" width="${bw}" height="${Math.max(0,oh).toFixed(1)}" rx="3" fill="#4d8bd6"/><text x="${cx.toFixed(1)}" y="${base+16}" text-anchor="middle">${esc(d.name)}</text><text x="${cx.toFixed(1)}" y="${(base-ch-oh-6).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">${kMoney(d.closed+d.open)}</text></g>`;}).join("");
+        return `<div class="card"><div class="chead"><div><h4>Revenue breakdown</h4><p>Open pipeline vs closed-won revenue, by department.</p></div><span class="segmented">${["Monthly","Quarterly","YTD"].map((f,i)=>`<button class="seg${i===0?" on":""}" type="button">${f}</button>`).join("")}</span></div>
+          <svg class="chart" viewBox="0 0 ${w} ${h}" style="height:250px" role="img" aria-label="Revenue breakdown by department">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg>
+          <div class="legend"><span class="lg"><i style="background:var(--jade)"></i>Closed-won</span><span class="lg"><i style="background:#4d8bd6"></i>Open pipeline</span></div></div>`;
+      }
+      function execTargetProgress(){
+        const p=period();
+        const rows=B.sbus.map(d=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";return `<div class="tvp"><div class="tvp-top"><b>${esc(d.name)}</b><span class="chip ${st==="green"?"jade":st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div><div class="track2"><div class="fill2" style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></div><div class="tvp-sub">${kMoney(d.actual)} / ${kMoney(d.target)}</div></div>`;}).join("");
+        return `<div class="card"><div class="chead"><div><h4>Target vs actual — by department</h4><p>Closed revenue against each departmental quota.</p></div><span class="chip slate">Colour = pace</span></div><div class="tvp-grid">${rows}</div></div>`;
+      }
+      function execTopDeals(){
+        const deals=[
+          ["National Bank L&D framework","National Bank","Corporate",8400000,"Negotiation","Edwin Otieno"],
+          ["Ministry M&E rollout — Botswana","Ministry of Finance","International",5800000,"Proposal / RFP","Erick Ndiema"],
+          ["Government planning — Eval360","Government Planning Unit","Digital Solutions",4200000,"RFP qualified","Alein Kagunza"],
+          ["Manufacturing group appraisal","Manufacturing Group","Digital Solutions",3200000,"Approval","Alein Kagunza"],
+          ["Regional NGO consortium","NGO Consortium","Corporate",2800000,"Discovery","Edwin Otieno"],
+          ["Corporate L&D partner","Safaricom","Virtual",2400000,"Negotiation","Francisca Ing'aa"],
+          ["University staff cohort","Kenyatta University","Virtual",2400000,"Proposal","Francisca Ing'aa"],
+          ["Central Bank data analysis","Central Bank — Sierra Leone","International",1900000,"Discovery","Erick Ndiema"],
+          ["College network CPD","College Network","Academic",1600000,"Proposal","Hellen Letting"],
+          ["Recurring digital account","AAR Insurance","Digital Solutions",1100000,"Renewal","Alein Kagunza"]
+        ].sort((a,b)=>b[3]-a[3]);
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Deal</th><th>Account</th><th>Department</th><th>Value</th><th>Stage</th><th>Owner</th></tr></thead><tbody>${deals.map((r,i)=>`<tr><td class="num">${i+1}</td><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td><span class="stage-chip">${esc(r[2])}</span></td><td class="num">${kMoney(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table></div></div>`;
+      }
+      function execCrossSell(){
+        const rows=[
+          ["Corporate","Digital Solutions",3600000,"Proposal","Edwin Otieno + Alein Kagunza"],
+          ["International","Academic",2100000,"Discovery","Erick Ndiema + Hellen Letting"],
+          ["Virtual","Corporate",1800000,"Negotiation","Francisca Ing'aa + Edwin Otieno"],
+          ["Digital Solutions","Corporate",1400000,"Approval","Alein Kagunza + Edwin Otieno"],
+          ["Academic","Virtual",900000,"Campaign","Hellen Letting + Francisca Ing'aa"]
+        ];
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Primary dept</th><th>Secondary dept</th><th>Value</th><th>Stage</th><th>Co-owners</th></tr></thead><tbody>${rows.map(r=>`<tr><td><span class="stage-chip">${esc(r[0])}</span></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${kMoney(r[2])}</td><td><span class="duec cool">${esc(r[3])}</span></td><td>${esc(r[4])}</td></tr>`).join("")}</tbody></table></div></div>`;
+      }
+
       /* ---------- views ---------- */
       function vCommand(){
         const ps=pace();
@@ -366,7 +412,13 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
           <div class="section-tag"><h3>Five-SBU performance comparison</h3><span>Each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
-          ${teamTable()}`;
+          ${teamTable()}
+          <div class="section-tag"><h3>Executive master view</h3><span>Requested by the BDM — revenue mix, targets, top deals and cross-sell</span><div class="rule"></div></div>
+          <section class="grid-2">${execRevenueBreakdown()}${execTargetProgress()}</section>
+          <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
+          ${execTopDeals()}
+          <div class="section-tag"><h3>Cross-sell collaboration tracker</h3><span>Deals shared across two departments</span><div class="rule"></div></div>
+          ${execCrossSell()}`;
       }
 
       function vPipeline(){
