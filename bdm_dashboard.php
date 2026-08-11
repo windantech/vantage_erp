@@ -320,16 +320,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
 
-      function commissionMini(){
-        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;
-        return `<div class="card">
-          <div class="chead"><h4>Commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Eligible":"Not yet unlocked"}</span></div>
-          <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
-          <div class="mini3"><div class="cm gold"><span>Estimate now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Extra available</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
-          <div class="nextstep"><b>Next step:</b> ${esc(c.unlock)}</div>
-        </div>`;
-      }
-
       function actionsCard(){
         const list=[
           ["red","Recover the weakest SBU","Require a quantified seven-day recovery forecast and a named opportunity list.","Today"],
@@ -339,21 +329,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         ];
         return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
       }
-      function driversCard(){
-        const dAcc=["#3a7bd5","var(--brand)","var(--jade)","#2f8f88","var(--gold)"];
-        const dIcons=[
-          '<svg viewBox="0 0 24 24"><path d="M3 21h18M6 21V7l6-4 6 4v14"/><path d="M10 10h4M10 14h4"/></svg>',
-          '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M10.5 8.2l3.5 2-3.5 2z"/></svg>',
-          '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 14l2 2 4-4"/></svg>',
-          '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>',
-          '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 3M20 5v6h-6"/></svg>'
-        ];
-        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
-      }
       function teamTable(){
         const avatarCols=["var(--slate)","#2f8f88","var(--brand)","var(--violet)","var(--gold)"];
         const p=period();
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Forecast</th><th>Pipeline</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><a href="bdo_dashboard.php" style="color:inherit;text-decoration:none">${esc(d.name)}</a></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(d.forecast)}</td><td class="num">${kMoney(d.pipeline)}</td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><a href="bdo_dashboard.php" style="color:inherit;text-decoration:none">${esc(d.name)}</a></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- executive master view (BDM request) ---------- */
@@ -387,16 +366,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         ].sort((a,b)=>b[3]-a[3]);
         return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Deal</th><th>Account</th><th>Department</th><th>Value</th><th>Stage</th><th>Owner</th></tr></thead><tbody>${deals.map((r,i)=>`<tr><td class="num">${i+1}</td><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td><span class="stage-chip">${esc(r[2])}</span></td><td class="num">${kMoney(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table></div></div>`;
       }
-      function execCrossSell(){
-        const rows=[
-          ["Corporate","Digital Solutions",3600000,"Proposal","Edwin Otieno + Alein Kagunza"],
-          ["International","Academic",2100000,"Discovery","Erick Ndiema + Hellen Letting"],
-          ["Virtual","Corporate",1800000,"Negotiation","Francisca Ing'aa + Edwin Otieno"],
-          ["Digital Solutions","Corporate",1400000,"Approval","Alein Kagunza + Edwin Otieno"],
-          ["Academic","Virtual",900000,"Campaign","Hellen Letting + Francisca Ing'aa"]
-        ];
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Primary dept</th><th>Secondary dept</th><th>Value</th><th>Stage</th><th>Co-owners</th></tr></thead><tbody>${rows.map(r=>`<tr><td><span class="stage-chip">${esc(r[0])}</span></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${kMoney(r[2])}</td><td><span class="duec cool">${esc(r[3])}</span></td><td>${esc(r[4])}</td></tr>`).join("")}</tbody></table></div></div>`;
-      }
 
       /* ---------- views ---------- */
       function vCommand(){
@@ -413,15 +382,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
           <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
           ${execTopDeals()}
-          <div class="section-tag"><h3>Cross-sell collaboration tracker</h3><span>Deals shared across two departments</span><div class="rule"></div></div>
-          ${execCrossSell()}
 
-          <div class="section-tag"><h3>Pace, forecast &amp; commission</h3><span>Month-end trajectory, leadership incentive and today's execution</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Pace, forecast &amp; today's execution</h3><span>Month-end trajectory and the actions in play now</span><div class="rule"></div></div>
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
-            ${commissionMini()}
-          </section>
-          <section class="grid-2">${actionsCard()}${driversCard()}</section>`;
+            ${actionsCard()}
+          </section>`;
       }
 
       function vPipeline(){
