@@ -58,7 +58,7 @@ if (!function_exists('corporate_get_all_programs')) {
         $program = mysqli_fetch_assoc($res);
 
         $program['curriculum_rows'] = [];
-        $cr = mysqli_query($conn, "SELECT `id`, `day_label`, `module_name`, `sort_order` FROM `corporate_curriculum` WHERE `program_id` = $id ORDER BY `sort_order` ASC, `id` ASC");
+        $cr = mysqli_query($conn, "SELECT `id`, `day_label`, `day_subtitle`, `module_name`, `sort_order` FROM `corporate_curriculum` WHERE `program_id` = $id ORDER BY `sort_order` ASC, `id` ASC");
         if ($cr) {
             while ($r = mysqli_fetch_assoc($cr)) {
                 $program['curriculum_rows'][] = $r;
@@ -81,18 +81,19 @@ if (!function_exists('corporate_get_all_programs')) {
         $program_id = (int) $program_id;
         mysqli_query($conn, "DELETE FROM `corporate_curriculum` WHERE `program_id` = $program_id");
         $sort = 0;
-        $stmt = $conn->prepare("INSERT INTO `corporate_curriculum` (`program_id`, `day_label`, `module_name`, `sort_order`) VALUES (?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO `corporate_curriculum` (`program_id`, `day_label`, `day_subtitle`, `module_name`, `sort_order`) VALUES (?, ?, ?, ?, ?)");
         if (!$stmt) {
             return false;
         }
         foreach ($rows_in as $row) {
             $day = isset($row['day_label']) ? trim((string) $row['day_label']) : '';
+            $sub = isset($row['day_subtitle']) ? trim((string) $row['day_subtitle']) : '';
             $name = isset($row['module_name']) ? trim((string) $row['module_name']) : '';
             if ($name === '') {
                 continue;
             }
             $sort++;
-            $stmt->bind_param('issi', $program_id, $day, $name, $sort);
+            $stmt->bind_param('isssi', $program_id, $day, $sub, $name, $sort);
             $stmt->execute();
         }
         $stmt->close();
@@ -294,23 +295,29 @@ if (!function_exists('corporate_get_all_programs')) {
         return $data;
     }
 
+    /**
+     * Day-grouped course outline. The form posts parallel arrays per day:
+     * day_label[], day_subtitle[] and day_points[] (one textarea per day, one
+     * point per line). Flattened here to one row per point, each carrying its
+     * day's label + subtitle.
+     */
     function corporate_collect_curriculum_from_post()
     {
-        if (empty($_POST['module_name']) || !is_array($_POST['module_name'])) {
-            return [];
-        }
-        $names = $_POST['module_name'];
-        $days = (isset($_POST['day_label']) && is_array($_POST['day_label'])) ? $_POST['day_label'] : [];
+        $labels = (isset($_POST['day_label']) && is_array($_POST['day_label'])) ? $_POST['day_label'] : [];
+        $subs   = (isset($_POST['day_subtitle']) && is_array($_POST['day_subtitle'])) ? $_POST['day_subtitle'] : [];
+        $points = (isset($_POST['day_points']) && is_array($_POST['day_points'])) ? $_POST['day_points'] : [];
         $rows = [];
-        foreach ($names as $idx => $moduleName) {
-            $name = trim((string) $moduleName);
-            if ($name === '') {
-                continue;
+        foreach ($labels as $i => $label) {
+            $day = trim((string) $label);
+            $sub = isset($subs[$i]) ? trim((string) $subs[$i]) : '';
+            $block = isset($points[$i]) ? (string) $points[$i] : '';
+            foreach (preg_split('/\r\n|\r|\n/', $block) as $line) {
+                $name = trim($line);
+                if ($name === '') {
+                    continue;
+                }
+                $rows[] = ['day_label' => $day, 'day_subtitle' => $sub, 'module_name' => $name];
             }
-            $rows[] = [
-                'module_name' => $name,
-                'day_label' => isset($days[$idx]) ? trim((string) $days[$idx]) : '',
-            ];
         }
         return $rows;
     }

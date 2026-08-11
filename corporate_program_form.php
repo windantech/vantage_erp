@@ -131,15 +131,23 @@ if ($coverPreviewSrc !== '' && strncmp($coverPreviewSrc, 'admin/uploads/', 14) =
     $coverPreviewSrc = 'uploads/' . substr($coverPreviewSrc, 14);
 }
 
-$curriculumValues = [];
+$days = [];
 $lecturerValues = [];
 if ($program) {
     foreach ($program['curriculum_rows'] as $row) {
-        $curriculumValues[] = [
-            'day_label' => isset($row['day_label']) ? $row['day_label'] : '',
-            'module_name' => isset($row['module_name']) ? $row['module_name'] : '',
-        ];
+        $lbl = isset($row['day_label']) ? (string) $row['day_label'] : '';
+        if (!isset($days[$lbl])) {
+            $days[$lbl] = [
+                'day_label' => $lbl,
+                'day_subtitle' => isset($row['day_subtitle']) ? (string) $row['day_subtitle'] : '',
+                'points' => [],
+            ];
+        }
+        if (isset($row['module_name']) && trim((string) $row['module_name']) !== '') {
+            $days[$lbl]['points'][] = (string) $row['module_name'];
+        }
     }
+    $days = array_values($days);
     if (isset($program['lecturer_rows']) && is_array($program['lecturer_rows'])) {
         foreach ($program['lecturer_rows'] as $row) {
             $lecturerValues[] = [
@@ -152,8 +160,8 @@ if ($program) {
         }
     }
 }
-if (empty($curriculumValues)) {
-    $curriculumValues = [['day_label' => 'Day 1', 'module_name' => '']];
+if (empty($days)) {
+    $days = [['day_label' => 'Day 1', 'day_subtitle' => '', 'points' => []]];
 }
 if (empty($lecturerValues)) {
     $lecturerValues = [['photo_url' => '', 'name' => '', 'title' => '', 'description' => '', 'qualifications' => '']];
@@ -312,14 +320,26 @@ $bulletBox = static function ($name, $label) use ($v) {
                 <div class="card shadow mb-4 rounded-0">
                     <div class="card-header bg_main text-white rounded-0 py-2 d-flex justify-content-between align-items-center">
                         <span>Course outline (day-by-day)</span>
-                        <button type="button" class="btn btn-sm btn-light rounded-0" id="addCurriculumRow">+ Add item</button>
+                        <button type="button" class="btn btn-sm btn-light rounded-0" id="addCurriculumRow">+ Add day</button>
                     </div>
                     <div class="card-body" id="curriculumRows">
-                        <?php foreach ($curriculumValues as $mod): ?>
-                            <div class="input-group mb-2 curriculum-row">
-                                <input type="text" name="day_label[]" class="form-control rounded-0" style="max-width: 160px;" value="<?php echo htmlspecialchars(isset($mod['day_label']) ? $mod['day_label'] : ''); ?>" placeholder="Day 1">
-                                <input type="text" name="module_name[]" class="form-control rounded-0" value="<?php echo htmlspecialchars(isset($mod['module_name']) ? $mod['module_name'] : ''); ?>" placeholder="Session / topic">
-                                <button type="button" class="btn btn-outline-danger rounded-0 remove-curriculum">&times;</button>
+                        <?php foreach ($days as $day): ?>
+                            <div class="curriculum-day border rounded-0 p-3 mb-3">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-1">Day label</label>
+                                        <input type="text" name="day_label[]" class="form-control rounded-0" value="<?php echo htmlspecialchars($day['day_label']); ?>" placeholder="Day 1">
+                                    </div>
+                                    <div class="col-md-9">
+                                        <label class="form-label small mb-1">Day title / subtitle</label>
+                                        <input type="text" name="day_subtitle[]" class="form-control rounded-0" value="<?php echo htmlspecialchars($day['day_subtitle']); ?>" placeholder="e.g. M&amp;E Foundations for Development Programming">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-1">Points / sessions <small class="text-muted">— one per line</small></label>
+                                        <textarea name="day_points[]" class="form-control rounded-0" rows="5" placeholder="Overview of Project Management&#10;Theory of Change&#10;Key M&amp;E concepts"><?php echo htmlspecialchars(implode("\n", $day['points'])); ?></textarea>
+                                    </div>
+                                </div>
+                                <div class="text-end mt-2"><button type="button" class="btn btn-sm btn-outline-danger rounded-0 remove-day">Remove day</button></div>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -382,10 +402,22 @@ $bulletBox = static function ($name, $label) use ($v) {
 </section>
 
 <template id="tplCurriculumRow">
-    <div class="input-group mb-2 curriculum-row">
-        <input type="text" name="day_label[]" class="form-control rounded-0" style="max-width: 160px;" value="" placeholder="Day 1">
-        <input type="text" name="module_name[]" class="form-control rounded-0" value="" placeholder="Session / topic">
-        <button type="button" class="btn btn-outline-danger rounded-0 remove-curriculum">&times;</button>
+    <div class="curriculum-day border rounded-0 p-3 mb-3">
+        <div class="row g-2">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Day label</label>
+                <input type="text" name="day_label[]" class="form-control rounded-0" value="" placeholder="Day 1">
+            </div>
+            <div class="col-md-9">
+                <label class="form-label small mb-1">Day title / subtitle</label>
+                <input type="text" name="day_subtitle[]" class="form-control rounded-0" value="" placeholder="e.g. M&amp;E Foundations for Development Programming">
+            </div>
+            <div class="col-12">
+                <label class="form-label small mb-1">Points / sessions <small class="text-muted">— one per line</small></label>
+                <textarea name="day_points[]" class="form-control rounded-0" rows="5" placeholder="One point per line"></textarea>
+            </div>
+        </div>
+        <div class="text-end mt-2"><button type="button" class="btn btn-sm btn-outline-danger rounded-0 remove-day">Remove day</button></div>
     </div>
 </template>
 <template id="tplLecturerRow">
@@ -431,10 +463,10 @@ document.getElementById('addLecturerRow').addEventListener('click', function() {
     document.getElementById('lecturerRows').appendChild(document.getElementById('tplLecturerRow').content.cloneNode(true));
 });
 document.addEventListener('click', function(e) {
-    var rc = e.target.closest('.remove-curriculum');
+    var rc = e.target.closest('.remove-day');
     if (rc) {
-        var row = rc.closest('.curriculum-row');
-        if (row && document.querySelectorAll('.curriculum-row').length > 1) row.remove();
+        var row = rc.closest('.curriculum-day');
+        if (row && document.querySelectorAll('.curriculum-day').length > 1) row.remove();
         return;
     }
     var rl = e.target.closest('.remove-lecturer');
