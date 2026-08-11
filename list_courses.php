@@ -218,6 +218,11 @@ if(isset($_POST['course_id'])){
        if ($outline_url === '' && !empty($_POST['outline_link'])) {
            $outline_url = trim($_POST['outline_link']);
        }
+       // PDFs: open fitted to the window width (you scroll) instead of the thin centred view.
+       // Only for real PDFs and only if no fragment is already set (Drive/other links are left alone).
+       if ($outline_url !== '' && stripos($outline_url, '.pdf') !== false && strpos($outline_url, '#') === false) {
+           $outline_url .= '#zoom=page-width';
+       }
        if ($outline_url !== '') {
            $href = htmlspecialchars($outline_url, ENT_QUOTES);
            if (preg_match('/<a\b[^>]*>(.*?Download the Course Outline.*?)<\/a>/is', $instruction)) {
