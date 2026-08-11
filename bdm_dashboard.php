@@ -406,19 +406,22 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
             <div class="card"><div class="chead"><h4>Organization portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
+
+          <div class="section-tag"><h3>Five-SBU performance comparison</h3><span>The whole picture — each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
+          ${teamTable()}
+          ${execRevenueBreakdown()}
+
+          <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
+          ${execTopDeals()}
+          <div class="section-tag"><h3>Cross-sell collaboration tracker</h3><span>Deals shared across two departments</span><div class="rule"></div></div>
+          ${execCrossSell()}
+
+          <div class="section-tag"><h3>Pace, forecast &amp; commission</h3><span>Month-end trajectory, leadership incentive and today's execution</span><div class="rule"></div></div>
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
           </section>
-          <section class="grid-2">${actionsCard()}${driversCard()}</section>
-          <div class="section-tag"><h3>Five-SBU performance comparison</h3><span>Each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
-          ${teamTable()}
-          <div class="section-tag"><h3>Executive master view</h3><span>Requested by the BDM — revenue mix, targets, top deals and cross-sell</span><div class="rule"></div></div>
-          <section class="grid-2">${execRevenueBreakdown()}${execTargetProgress()}</section>
-          <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
-          ${execTopDeals()}
-          <div class="section-tag"><h3>Cross-sell collaboration tracker</h3><span>Deals shared across two departments</span><div class="rule"></div></div>
-          ${execCrossSell()}`;
+          <section class="grid-2">${actionsCard()}${driversCard()}</section>`;
       }
 
       function vPipeline(){
