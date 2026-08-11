@@ -1501,8 +1501,7 @@ function generateCorporateTrainingInvoice($conn, $program_id, $client_email, $cl
             <div class="muted">Vantage Africa School of Leadership</div>
         </div>
         <p><strong>Invoice No:</strong> ' . htmlspecialchars($invoice_no) . '<br>
-           <strong>Date:</strong> ' . htmlspecialchars($invoice_date) . '<br>
-           <strong>Bill To:</strong> ' . htmlspecialchars($client_name) . ' (' . htmlspecialchars($client_email) . ')' .
+           <strong>Date:</strong> ' . htmlspecialchars($invoice_date) .
            ($dates_line !== '' ? '<br><strong>Training Dates:</strong> ' . $dates_line : '') .
            ($venue !== '' ? '<br><strong>Venue:</strong> ' . htmlspecialchars($venue) : '') . '</p>
         <table>
