@@ -135,7 +135,12 @@ require_once 'header.php';
                                                                 <span class="input-group-text rounded-0 bg_main" style="width: 11rem;">Course outline PDF</span>
                                                                 <input type="file" name="outline_file" accept="application/pdf" class="form-control rounded-0">
                                                             </div>
-                                                            <small class="text-muted d-block mb-3">Upload a PDF <em>or</em> paste a link — it sets the "Download the Course Outline Here" link the site already shows. A file overrides the link; leave both blank to keep the current one.</small>
+                                                            <small class="text-muted d-block mb-3">
+                                                                <?php if ($current_outline !== ''): ?>
+                                                                    <span class="text-success fw-bold">&#10003; Outline is set:</span> <a href="<?php echo htmlspecialchars($current_outline); ?>" target="_blank" rel="noopener">open current outline</a>.<br>
+                                                                <?php endif; ?>
+                                                                The <strong>PDF box always shows empty</strong> — browsers can't keep a chosen file; that doesn't mean it's unsaved. Leave both fields as they are to keep the current outline; upload a PDF or paste a link only to <strong>change</strong> it.
+                                                            </small>
                                                         </div>
 
                                                             <div class="col-md-12">
