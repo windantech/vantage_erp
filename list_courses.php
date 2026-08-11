@@ -219,9 +219,12 @@ if(isset($_POST['course_id'])){
            $outline_url = trim($_POST['outline_link']);
        }
        // PDFs: open fitted to the window width (you scroll) instead of the thin centred view.
-       // Only for real PDFs and only if no fragment is already set (Drive/other links are left alone).
-       if ($outline_url !== '' && stripos($outline_url, '.pdf') !== false && strpos($outline_url, '#') === false) {
-           $outline_url .= '#zoom=page-width';
+       // #view=FitH is the parameter Chrome/Edge actually honour. Normalise any old fragment and
+       // re-apply, so re-saving fixes links that had the wrong #zoom hint. Drive/non-PDF links untouched.
+       if ($outline_url !== '' && stripos($outline_url, '.pdf') !== false) {
+           $hp = strpos($outline_url, '#');
+           if ($hp !== false) { $outline_url = substr($outline_url, 0, $hp); }
+           $outline_url .= '#view=FitH';
        }
        if ($outline_url !== '') {
            $href = htmlspecialchars($outline_url, ENT_QUOTES);
