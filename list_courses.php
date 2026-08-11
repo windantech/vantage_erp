@@ -120,16 +120,22 @@ require_once 'header.php';
                                                             </div>
                                                         </div>
 
+                                                        <?php
+                                                        $current_outline = '';
+                                                        if (preg_match('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?Download the Course Outline.*?<\/a>/is', (string) $row['writeup'], $mOut)) {
+                                                            $current_outline = $mOut[1];
+                                                        }
+                                                        ?>
                                                         <div class="col-md-12">
                                                             <div class="input-group mb-1">
                                                                 <span class="input-group-text rounded-0 bg_main" style="width: 11rem;">Course outline link</span>
-                                                                <input type="url" name="outline_link" value="<?php echo htmlspecialchars(isset($row['outline_link']) ? (string) $row['outline_link'] : ''); ?>" class="form-control rounded-0" placeholder="Paste a link (e.g. Google Drive) — optional">
+                                                                <input type="url" name="outline_link" value="<?php echo htmlspecialchars($current_outline); ?>" class="form-control rounded-0" placeholder="Paste a link (e.g. Google Drive) — optional">
                                                             </div>
                                                             <div class="input-group mb-1">
                                                                 <span class="input-group-text rounded-0 bg_main" style="width: 11rem;">Course outline PDF</span>
                                                                 <input type="file" name="outline_file" accept="application/pdf" class="form-control rounded-0">
                                                             </div>
-                                                            <small class="text-muted d-block mb-3">Upload a PDF <em>or</em> paste a link — the site shows this as the course-outline download (below the write-up). A file overrides the link; clear both to remove it.</small>
+                                                            <small class="text-muted d-block mb-3">Upload a PDF <em>or</em> paste a link — it sets the "Download the Course Outline Here" link the site already shows. A file overrides the link; leave both blank to keep the current one.</small>
                                                         </div>
 
                                                             <div class="col-md-12">
@@ -194,8 +200,9 @@ if(isset($_POST['course_id'])){
        $course_id_new = $_POST['course_id_new'];
        $module_id = $_POST['module_id'];
 
-       // Course outline — stored on its own (course.outline_link); the site renders the download
-       // below the write-up. An uploaded PDF (hosted here) wins; otherwise the pasted link.
+       // Course outline — sets the "Download the Course Outline Here" link the site already shows.
+       // Uploaded PDF (hosted here) wins; otherwise the pasted link. Update the existing link's href,
+       // or append the line if the write-up doesn't have one yet. Nothing else about the write-up changes.
        $outline_url = '';
        if (isset($_FILES['outline_file']) && $_FILES['outline_file']['error'] === UPLOAD_ERR_OK && (int) $_FILES['outline_file']['size'] > 0) {
            $ext = strtolower(pathinfo($_FILES['outline_file']['name'], PATHINFO_EXTENSION));
@@ -208,16 +215,20 @@ if(isset($_POST['course_id'])){
                }
            }
        }
-       if ($outline_url === '') {
-           $outline_url = isset($_POST['outline_link']) ? trim($_POST['outline_link']) : '';
+       if ($outline_url === '' && !empty($_POST['outline_link'])) {
+           $outline_url = trim($_POST['outline_link']);
        }
-       // Remove any inline "Download the Course Outline Here" link from the write-up — shown separately now.
-       $instruction = preg_replace('/<p>\s*<a\b[^>]*>.*?Download the Course Outline.*?<\/a>\s*<\/p>/is', '', $instruction);
-       $instruction = preg_replace('/<a\b[^>]*>.*?Download the Course Outline.*?<\/a>/is', '', $instruction);
+       if ($outline_url !== '') {
+           $href = htmlspecialchars($outline_url, ENT_QUOTES);
+           if (preg_match('/<a\b[^>]*>(.*?Download the Course Outline.*?)<\/a>/is', $instruction)) {
+               $instruction = preg_replace('/<a\b[^>]*>(.*?Download the Course Outline.*?)<\/a>/is', '<a href="' . $href . '" target="_blank" rel="noopener">$1</a>', $instruction, 1);
+           } else {
+               $instruction .= '<p><a href="' . $href . '" target="_blank" rel="noopener"><strong>Download the Course Outline Here</strong></a></p>';
+           }
+       }
 
        $instruction_sql = mysqli_real_escape_string($conn, $instruction);
-       $outline_sql = mysqli_real_escape_string($conn, $outline_url);
-       $update = mysqli_query($conn,"UPDATE course SET intro_video='$intro_link',testmonial_link='$testmonial_link',adm_letter='$adm_letter',writeup='$instruction_sql',course_id_new='$course_id_new',module_id='$module_id',outline_link='$outline_sql' WHERE course_id='$course_id'") or die(mysqli_error($conn));
+       $update = mysqli_query($conn,"UPDATE course SET intro_video='$intro_link',testmonial_link='$testmonial_link',adm_letter='$adm_letter',writeup='$instruction_sql',course_id_new='$course_id_new',module_id='$module_id' WHERE course_id='$course_id'") or die(mysqli_error($conn));
     
    ?>
    <script>window.alert("Updated!");
