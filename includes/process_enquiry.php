@@ -169,47 +169,6 @@ switch ($action) {
         break;
     
     // ==========================================
-    // DELETE PAYMENT (remove a duplicate / erroneous payment record)
-    // ==========================================
-    case 'delete_payment':
-        $special_id   = isset($_POST['special_id']) ? trim($_POST['special_id']) : '';
-        $enquiry_type = isset($_POST['enquiry_type']) ? $_POST['enquiry_type'] : '';
-        $enquiry_id   = isset($_POST['enquiry_id']) ? $_POST['enquiry_id'] : '';
-
-        // Always send the user back to the record they were viewing
-        if ($enquiry_type && $enquiry_id) {
-            $redirect = 'enquiry_details.php?type=' . urlencode($enquiry_type) . '&id=' . urlencode($enquiry_id);
-        }
-
-        if ($special_id === '') {
-            $_SESSION['message'] = ['type' => 'danger', 'text' => 'Invalid payment reference — nothing was deleted.'];
-            break;
-        }
-
-        // Confirm the row exists first (and grab its details for the confirmation message)
-        $stmt = $conn->prepare("SELECT TransactionAmount, token, email FROM dpo_payment WHERE special_id = ? LIMIT 1");
-        $stmt->bind_param("s", $special_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $pay = $res ? $res->fetch_assoc() : null;
-        $stmt->close();
-
-        if (!$pay) {
-            $_SESSION['message'] = ['type' => 'danger', 'text' => 'Payment record not found — it may already have been deleted.'];
-            break;
-        }
-
-        $del = $conn->prepare("DELETE FROM dpo_payment WHERE special_id = ? LIMIT 1");
-        $del->bind_param("s", $special_id);
-        if ($del->execute() && $del->affected_rows > 0) {
-            $_SESSION['message'] = ['type' => 'success', 'text' => 'Deleted the payment of $' . number_format((float)$pay['TransactionAmount'], 2) . ' (Ref: ' . htmlspecialchars($pay['token']) . ').'];
-        } else {
-            $_SESSION['message'] = ['type' => 'danger', 'text' => 'Failed to delete the payment record: ' . $conn->error];
-        }
-        $del->close();
-        break;
-
-    // ==========================================
     // ADD FLAG
     // ==========================================
     case 'add_flag':

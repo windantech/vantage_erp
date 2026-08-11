@@ -747,25 +747,9 @@ if ($enquiry && !empty($enquiry['email'])) {
                             <?php if (!empty($payment['recorded_by_name'])): ?>
                             <small class="d-block">
                                 <i class="bi bi-person text-primary"></i>
-                                <span class="text-muted">By:</span>
+                                <span class="text-muted">By:</span> 
                                 <?php echo htmlspecialchars($payment['recorded_by_name']); ?>
                             </small>
-                            <?php endif; ?>
-
-                            <!-- Delete (for removing duplicate / erroneous records) -->
-                            <?php if (!empty($payment['special_id'])): ?>
-                            <div class="mt-2 text-end">
-                                <form action="includes/process_enquiry.php" method="POST" class="d-inline"
-                                      onsubmit="return confirm('Delete this payment of $<?php echo number_format($payment['TransactionAmount'], 2); ?> (Ref: <?php echo htmlspecialchars($payment['token'] ?? $payment['special_id'], ENT_QUOTES); ?>)?\n\nThis permanently removes the record and cannot be undone. Only do this for a duplicate or a payment recorded in error.');">
-                                    <input type="hidden" name="action" value="delete_payment">
-                                    <input type="hidden" name="special_id" value="<?php echo htmlspecialchars($payment['special_id'], ENT_QUOTES); ?>">
-                                    <input type="hidden" name="enquiry_type" value="<?php echo htmlspecialchars($type, ENT_QUOTES); ?>">
-                                    <input type="hidden" name="enquiry_id" value="<?php echo htmlspecialchars($id, ENT_QUOTES); ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 11px;">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </button>
-                                </form>
-                            </div>
                             <?php endif; ?>
                         </div>
                     </div>
