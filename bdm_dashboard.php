@@ -30,7 +30,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       background:var(--ground);color:var(--ink);font-size:14px;
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       line-height:1.45;-webkit-font-smoothing:antialiased;
-      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;
+      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;width:100%;min-height:100vh;
     }
     .bde-app.theme-dark{
       --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
@@ -189,7 +189,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
       <main id="workspace"></main>
-      <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
     </div>
 
     <script>
@@ -437,15 +436,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
 
       function vStrategy(){
-        const score=[["Revenue achievement across SBUs",30],["Qualified pipeline",10],["Proposal and tender conversion",10],["Strategic accounts",10],["Team supervision",10],["CRM / ERP discipline",10],["Marketing conversion",5],["Collections",5],["Reporting",5],["Systems improvement",5]];
-        const smax=Math.max(...score.map(x=>x[1]));
         return `
           <div class="card"><div class="chead"><h4>Role mandate</h4><span class="chip jade">Commercial command</span></div><div class="motiv green"><b>${esc(B.mandate)}</b><br>${esc(B.mandateText)}</div></div>
           <div class="card"><div class="chead"><h4>Non-negotiable operating principles</h4></div><div class="principles">${B.principles.map(([a,b])=>`<div class="principle"><b>${esc(a)}</b><p>${esc(b)}</p></div>`).join("")}</div></div>
-          <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Daily operating rhythm</h4></div><div class="timeline">${B.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Performance scorecard</h4></div><div class="scorecard">${score.map(([n,w])=>`<div class="scr"><label>${esc(n)}</label><div class="sb"><div style="width:${w/smax*100}%"></div></div><b>${w}%</b></div>`).join("")}</div></div>
-          </section>
+          <div class="card"><div class="chead"><h4>Daily operating rhythm</h4></div><div class="timeline">${B.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Green response</h4><span class="chip jade">At / above pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Protect quality, collections and client experience; pursue stretch opportunities and share winning practices.</p></div>
             <div class="card"><div class="chead"><h4>Amber response</h4><span class="chip amber">Near pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Agree corrective action within 24 hours, intensify senior support and concentrate on the nearest commercial next steps.</p></div>
