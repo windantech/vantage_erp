@@ -218,13 +218,12 @@ if(isset($_POST['course_id'])){
        if ($outline_url === '' && !empty($_POST['outline_link'])) {
            $outline_url = trim($_POST['outline_link']);
        }
-       // PDFs: open fitted to the window width (you scroll) instead of the thin centred view.
-       // #view=FitH is the parameter Chrome/Edge actually honour. Normalise any old fragment and
-       // re-apply, so re-saving fixes links that had the wrong #zoom hint. Drive/non-PDF links untouched.
+       // PDFs open at the browser default (100%) — the view the other courses already use and that
+       // looks fine. Strip any #zoom/#view hint a previous save may have added so it's a clean URL.
+       // Drive/non-PDF links untouched.
        if ($outline_url !== '' && stripos($outline_url, '.pdf') !== false) {
            $hp = strpos($outline_url, '#');
            if ($hp !== false) { $outline_url = substr($outline_url, 0, $hp); }
-           $outline_url .= '#view=FitH';
        }
        if ($outline_url !== '') {
            $href = htmlspecialchars($outline_url, ENT_QUOTES);
