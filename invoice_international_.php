@@ -515,7 +515,7 @@ function generateInvoice($client_email, $client_name, $invoice_items, $discount_
 // =============================================
 // SEND INVOICE EMAIL WITH LOGGING
 // =============================================
-function sendInvoiceEmail($client_email, $client_name, $subject, $generatedFilePath, $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $corporate_variant = '') {
+function sendInvoiceEmail($client_email, $client_name, $subject, $generatedFilePath, $start_date = null, $end_date = null, $location = null, $conn = null, $ticket_id = null, $record_id = null, $corporate_variant = '', $custom_body = null) {
     $year = date("Y");
     $attachments = [$generatedFilePath];
     $url_pay_now = ($ticket_id !== null && $ticket_id !== '')
@@ -618,6 +618,12 @@ function sendInvoiceEmail($client_email, $client_name, $subject, $generatedFileP
                 </div>
             </div>' .
         '</body></html>';
+
+    // A configured template body (e.g. the corporate email from system_emails1) overrides
+    // the built-in default above, so admins can edit the confirmation like any other course.
+    if (is_string($custom_body) && trim($custom_body) !== '') {
+        $body = $custom_body;
+    }
 
     // Send email
     $email_sent = send_mail_function($client_email, $body, $subject, $attachments);
@@ -1453,7 +1459,7 @@ function sendAdmissionEmail($client_email, $client_name, $subject, $generatedFil
  */
 function generateCorporateTrainingInvoice($conn, $program_id, $client_email, $client_name, $start_date = null, $end_date = null, $ticket_id = null, $record_id = null) {
     $program_id = (int) $program_id;
-    $res = mysqli_query($conn, "SELECT `title`, `fee`, `fee_unit`, `currency`, `location`, `start_date`, `end_date` FROM `corporate_programs` WHERE `id` = $program_id LIMIT 1");
+    $res = mysqli_query($conn, "SELECT `title`, `fee`, `fee_unit`, `currency`, `location`, `start_date`, `end_date`, `event_id` FROM `corporate_programs` WHERE `id` = $program_id LIMIT 1");
     if (!$res || !($p = mysqli_fetch_assoc($res))) {
         return false;
     }
@@ -1523,8 +1529,38 @@ function generateCorporateTrainingInvoice($conn, $program_id, $client_email, $cl
         return false;
     }
 
+    // Confirmation email body: prefer the corporate template configured in system_emails1
+    // (keyed by the corporate Event's event_id, exactly like academic/international admissions),
+    // so admins can edit it from the CMS just like every other programme. When no active
+    // template exists, sendInvoiceEmail falls back to its built-in default body.
+    $tpl_body = null;
+    $eid = (int) ($p['event_id'] ?? 0);
+    if ($eid > 0) {
+        $tpl_res = mysqli_query($conn, "SELECT `body` FROM system_emails1 WHERE event_id = $eid AND email_opt = 1 ORDER BY id DESC LIMIT 1");
+        if ($tpl_res && mysqli_num_rows($tpl_res) > 0) {
+            $tpl_row  = mysqli_fetch_assoc($tpl_res);
+            $raw_body = isset($tpl_row['body']) ? (string) $tpl_row['body'] : '';
+            // Body is stored JSON-encoded; decode, with a manual-unescape fallback.
+            $decoded  = json_decode($raw_body, true);
+            if (!is_string($decoded) || $decoded === '') {
+                $trimmed = trim($raw_body);
+                if (strlen($trimmed) >= 2 && $trimmed[0] === '"' && substr($trimmed, -1) === '"') {
+                    $trimmed = substr($trimmed, 1, -1);
+                }
+                $decoded = stripcslashes($trimmed);
+            }
+            if (is_string($decoded) && trim($decoded) !== '') {
+                $tpl_body = str_replace('$name', ucfirst(strtolower((string) $client_name)), $decoded);
+            } else {
+                error_log('CORPORATE EMAIL: template row for event_id=' . $eid . ' had an empty/unparseable body — using default invoice body');
+            }
+        } else {
+            error_log('CORPORATE EMAIL: no active system_emails1 template for event_id=' . $eid . ' — using default invoice body');
+        }
+    }
+
     // Confirmation email (reuses the shared, currency-agnostic invoice email + logging).
-    sendInvoiceEmail($client_email, $client_name, "Proforma Invoice - " . $invoice_no, $pdfPath, $sd_fmt, $ed_fmt, $venue, $conn, $ticket_id, $record_id, '');
+    sendInvoiceEmail($client_email, $client_name, "Proforma Invoice - " . $invoice_no, $pdfPath, $sd_fmt, $ed_fmt, $venue, $conn, $ticket_id, $record_id, '', $tpl_body);
     return $pdfPath;
 }
 
