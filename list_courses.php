@@ -125,15 +125,6 @@ require_once 'header.php';
                                                         if (preg_match('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?Download the Course Outline.*?<\/a>/is', (string) $row['writeup'], $mOut)) {
                                                             $current_outline = $mOut[1];
                                                         }
-                                                        $outline_name = '';
-                                                        if ($current_outline !== '') {
-                                                            if (preg_match('/\.pdf(\?|#|$)/i', $current_outline)) {
-                                                                $op = parse_url($current_outline, PHP_URL_PATH);
-                                                                $outline_name = $op ? rawurldecode(basename($op)) : $current_outline;
-                                                            } else {
-                                                                $outline_name = $current_outline;
-                                                            }
-                                                        }
                                                         ?>
                                                         <div class="col-md-12">
                                                             <div class="input-group mb-1">
@@ -144,12 +135,6 @@ require_once 'header.php';
                                                                 <span class="input-group-text rounded-0 bg_main" style="width: 11rem;">Course outline PDF</span>
                                                                 <input type="file" name="outline_file" accept="application/pdf" class="form-control rounded-0">
                                                             </div>
-                                                            <small class="text-muted d-block mb-3">
-                                                                <?php if ($current_outline !== ''): ?>
-                                                                    <span class="text-success fw-bold">&#10003; Current outline:</span> <a href="<?php echo htmlspecialchars($current_outline); ?>" target="_blank" rel="noopener"><?php echo htmlspecialchars($outline_name); ?></a><br>
-                                                                <?php endif; ?>
-                                                                The <strong>PDF box always shows empty</strong> — browsers can't keep a chosen file; that doesn't mean it's unsaved. Leave both fields as they are to keep the current outline; upload a PDF or paste a link only to <strong>change</strong> it.
-                                                            </small>
                                                         </div>
 
                                                             <div class="col-md-12">
