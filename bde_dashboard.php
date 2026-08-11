@@ -181,6 +181,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <nav class="tabs" aria-label="Dashboard sections">
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
+        <button class="tab" data-v="visits"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Field Visits</button>
         <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
         <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
@@ -224,6 +225,18 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         team:[
           {name:"Austin Abere",title:"BDE — Eval360",target:2150000,actual:1370000,pipeline:8900000,collection:.95,units:84,me:true,notes:"Corporate setup pipeline strong; individual users need 16 more."},
           {name:"Ruth Ngari",title:"BDE — 360 Appraisal",target:1200000,actual:1020000,pipeline:5700000,collection:.92,units:510,notes:"30 paid staff to reach the 80% commission threshold."}
+        ],
+        visitGoal:60,
+        visits:[
+          {date:"2026-09-15",client:"Grace Wanjiru",org:"Nairobi Women's SACCO",location:"Nairobi CBD",product:"Eval360",outcome:"registered",value:180000,notes:"Signed up 24 staff for Eval360; onboarding next week."},
+          {date:"2026-09-15",client:"Peter Otieno",org:"Rift Valley Dairies",location:"Nakuru",product:"360 Appraisal",outcome:"interested",value:120000,notes:"Wants a tailored demo for HR before committing."},
+          {date:"2026-09-14",client:"Amina Yusuf",org:"Coastal Youth Trust",location:"Mombasa",product:"M&E System",outcome:"visited",value:0,notes:"Introductory meeting; decision-maker travelling, follow up Fri."},
+          {date:"2026-09-14",client:"James Kariuki",org:"Summit Manufacturing",location:"Thika",product:"360 Appraisal",outcome:"interested",value:420000,notes:"420 staff; routing through procurement."},
+          {date:"2026-09-13",client:"Dr. Nafula",org:"Western Health Network",location:"Kakamega",product:"Data Analysis",outcome:"registered",value:95000,notes:"Paid for the data-analysis package on the spot."},
+          {date:"2026-09-13",client:"Brian Mutua",org:"AgriConnect Co-op",location:"Machakos",product:"Eval360",outcome:"visited",value:0,notes:"Gatekeeper meeting; needs board approval."},
+          {date:"2026-09-12",client:"Sarah Chebet",org:"Highlands SACCO",location:"Eldoret",product:"Eval360",outcome:"interested",value:150000,notes:"Comparing us with a competitor; send value doc."},
+          {date:"2026-09-12",client:"Kevin Odhiambo",org:"Lakeside Traders Assoc.",location:"Kisumu",product:"360 Appraisal",outcome:"registered",value:110000,notes:"Group briefing converted to a paid cohort of 18."},
+          {date:"2026-09-11",client:"Lucy Wambui",org:"Metro Property Ltd",location:"Nairobi Westlands",product:"M&E System",outcome:"visited",value:0,notes:"Cold visit; captured contact, scheduled discovery call."}
         ]
       };
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
@@ -234,6 +247,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
+      const fmtDate=s=>{const d=new Date(s+"T00:00:00");return isNaN(d.getTime())?s:d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});};
+      const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
       const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
       const period=()=>periods[state.p];
 
@@ -461,10 +476,87 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           </section>`;
       }
 
+      /* ---------- field visit tracker (visuals; real data wired later) ---------- */
+      const VISIT_PRODUCTS=["Eval360","360 Appraisal","Data Analysis","M&E System"];
+      const VISIT_OUTCOMES=[["visited","Visited","slate"],["interested","Interested","amber"],["registered","Registered","jade"]];
+      function visitStats(){
+        const v=B.visits||[];
+        const visited=v.length;
+        const interested=v.filter(x=>x.outcome==="interested").length;
+        const registered=v.filter(x=>x.outcome==="registered").length;
+        return {visited,interested,registered,conv:visited?registered/visited:0};
+      }
+      function vVisits(){
+        const s=visitStats();
+        const outChip=o=>{const m=VISIT_OUTCOMES.find(x=>x[0]===o)||["","",""];return `<span class="chip ${m[2]}">${m[1]}</span>`;};
+        const kpis=[
+          ["Clients visited",nf.format(s.visited),"of "+nf.format(B.visitGoal)+" monthly goal","var(--slate)"],
+          ["Interested",nf.format(s.interested),"in active follow-up","var(--amber)"],
+          ["Registered",nf.format(s.registered),"auto-confirmed from payments","var(--jade)"],
+          ["Conversion rate",pct(s.conv,0),"visited → registered","var(--brand)"]
+        ];
+        const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        const rows=(B.visits||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<tr>
+              <td class="num">${esc(fmtDate(x.date))}</td>
+              <td><b>${esc(x.client)}</b><span style="display:block;font-size:11px;color:var(--muted)">${esc(x.org)}</span></td>
+              <td>${esc(x.location)}</td>
+              <td><span class="stage-chip">${esc(x.product)}</span></td>
+              <td>${outChip(x.outcome)}</td>
+              <td class="num">${x.value?kMoney(x.value):"&#8212;"}</td></tr>`).join("");
+        const prodOpts=VISIT_PRODUCTS.map(p=>`<option>${esc(p)}</option>`).join("");
+        const outOpts=VISIT_OUTCOMES.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
+        return `
+          <div class="section-tag"><h3>Field visit tracker</h3><span>Log every client you visit in the field — visits roll up to your department (BDO) and the BDM</span><div class="rule"></div></div>
+          ${kpiRow}
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
+              <div class="form-grid">
+                <div class="field"><label>Client / contact person</label><input id="vf_client" type="text" placeholder="e.g. Grace Wanjiru"></div>
+                <div class="field"><label>Organization</label><input id="vf_org" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
+                <div class="field"><label>Location / area</label><input id="vf_loc" type="text" placeholder="e.g. Nairobi CBD"></div>
+                <div class="field"><label>Product of interest</label><select id="vf_prod">${prodOpts}</select></div>
+                <div class="field"><label>Outcome</label><select id="vf_out">${outOpts}</select></div>
+                <div class="field"><label>Potential value (KES)</label><input id="vf_val" type="number" min="0" placeholder="0"></div>
+                <div class="field"><label>Visit date</label><input id="vf_date" type="date" value="${todayStr()}"></div>
+                <div class="field span2"><label>Notes</label><textarea id="vf_notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
+              </div>
+              <div class="report-actions"><button class="tbtn solid" id="vf_save" type="button">Log visit</button><button class="tbtn" id="vf_clear" type="button">Clear</button></div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Registered" is auto-confirmed against Finance-verified payments once real data is connected — you only log the visit.</div>
+            </div>
+            <div class="card"><div class="chead"><h4>This month at a glance</h4><span class="chip jade">${nf.format(s.visited)} visits</span></div>
+              <div class="mini3"><div class="cm"><span>Visited</span><b class="num">${nf.format(s.visited)}</b></div><div class="cm gold"><span>Interested</span><b class="num">${nf.format(s.interested)}</b></div><div class="cm"><span>Registered</span><b class="num">${nf.format(s.registered)}</b></div></div>
+              <div class="nextstep"><b>Tip:</b> log visits the same day while the details are fresh. Every field visit is visible to your BDO and the BDM.</div>
+            </div>
+          </section>
+          <div class="section-tag"><h3>My recent field visits</h3><span>${nf.format((B.visits||[]).length)} logged</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      }
+      function bindVisits(){
+        const save=el("vf_save"); if(!save)return;
+        save.addEventListener("click",()=>{
+          const client=el("vf_client").value.trim();
+          if(!client){el("vf_client").focus();return;}
+          B.visits.push({
+            date:el("vf_date").value||todayStr(),
+            client,
+            org:el("vf_org").value.trim(),
+            location:el("vf_loc").value.trim(),
+            product:el("vf_prod").value,
+            outcome:el("vf_out").value,
+            value:parseInt(el("vf_val").value,10)||0,
+            notes:el("vf_notes").value.trim()
+          });
+          render();
+        });
+        const clr=el("vf_clear");
+        if(clr)clr.addEventListener("click",()=>["vf_client","vf_org","vf_loc","vf_val","vf_notes"].forEach(id=>{const e=el(id);if(e)e.value="";}));
+      }
+
       function render(){
         const v=state.view;
-        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
+        if(v==="visits")bindVisits();
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
