@@ -1529,34 +1529,44 @@ function generateCorporateTrainingInvoice($conn, $program_id, $client_email, $cl
         return false;
     }
 
-    // Confirmation email body: prefer the corporate template configured in system_emails1
-    // (keyed by the corporate Event's event_id, exactly like academic/international admissions),
-    // so admins can edit it from the CMS just like every other programme. When no active
-    // template exists, sendInvoiceEmail falls back to its built-in default body.
+    // Confirmation email body: prefer the corporate template configured in system_emails1 so
+    // admins can edit it from the CMS just like every other programme. We match the corporate
+    // Event's event_id first (how academic/international resolve their templates), then fall
+    // back to course_opt = the exact training title. When neither is configured/active,
+    // sendInvoiceEmail uses its built-in default body.
+    $decode_tpl = function ($raw_body) use ($client_name) {
+        $decoded = json_decode((string) $raw_body, true);
+        // Body is stored JSON-encoded; if decode fails, unescape manually.
+        if (!is_string($decoded) || $decoded === '') {
+            $trimmed = trim((string) $raw_body);
+            if (strlen($trimmed) >= 2 && $trimmed[0] === '"' && substr($trimmed, -1) === '"') {
+                $trimmed = substr($trimmed, 1, -1);
+            }
+            $decoded = stripcslashes($trimmed);
+        }
+        if (is_string($decoded) && trim($decoded) !== '') {
+            return str_replace('$name', ucfirst(strtolower((string) $client_name)), $decoded);
+        }
+        return null;
+    };
+
     $tpl_body = null;
     $eid = (int) ($p['event_id'] ?? 0);
     if ($eid > 0) {
         $tpl_res = mysqli_query($conn, "SELECT `body` FROM system_emails1 WHERE event_id = $eid AND email_opt = 1 ORDER BY id DESC LIMIT 1");
-        if ($tpl_res && mysqli_num_rows($tpl_res) > 0) {
-            $tpl_row  = mysqli_fetch_assoc($tpl_res);
-            $raw_body = isset($tpl_row['body']) ? (string) $tpl_row['body'] : '';
-            // Body is stored JSON-encoded; decode, with a manual-unescape fallback.
-            $decoded  = json_decode($raw_body, true);
-            if (!is_string($decoded) || $decoded === '') {
-                $trimmed = trim($raw_body);
-                if (strlen($trimmed) >= 2 && $trimmed[0] === '"' && substr($trimmed, -1) === '"') {
-                    $trimmed = substr($trimmed, 1, -1);
-                }
-                $decoded = stripcslashes($trimmed);
-            }
-            if (is_string($decoded) && trim($decoded) !== '') {
-                $tpl_body = str_replace('$name', ucfirst(strtolower((string) $client_name)), $decoded);
-            } else {
-                error_log('CORPORATE EMAIL: template row for event_id=' . $eid . ' had an empty/unparseable body — using default invoice body');
-            }
-        } else {
-            error_log('CORPORATE EMAIL: no active system_emails1 template for event_id=' . $eid . ' — using default invoice body');
+        if ($tpl_res && ($tpl_row = mysqli_fetch_assoc($tpl_res))) {
+            $tpl_body = $decode_tpl($tpl_row['body'] ?? '');
         }
+    }
+    if ($tpl_body === null) {
+        $title_esc = mysqli_real_escape_string($conn, $title);
+        $tpl_res2 = mysqli_query($conn, "SELECT `body` FROM system_emails1 WHERE course_opt = '$title_esc' AND email_opt = 1 ORDER BY id DESC LIMIT 1");
+        if ($tpl_res2 && ($tpl_row2 = mysqli_fetch_assoc($tpl_res2))) {
+            $tpl_body = $decode_tpl($tpl_row2['body'] ?? '');
+        }
+    }
+    if ($tpl_body === null) {
+        error_log('CORPORATE EMAIL: no active system_emails1 template for event_id=' . $eid . ' / course_opt="' . $title . '" — using default invoice body');
     }
 
     // Confirmation email (reuses the shared, currency-agnostic invoice email + logging).
@@ -1572,6 +1582,27 @@ function generateAdmissionWithInvoice($client_email, $client_name, $training_pro
     // every other flow (academic / virtual / corporate_variant) completely untouched.
     if ($conn && preg_match('/corporate#(\d+)/i', (string) $location, $cm)) {
         return generateCorporateTrainingInvoice($conn, (int) $cm[1], $client_email, $client_name, $start_date, $end_date, $ticket_id, $record_id);
+    }
+
+    // Website corporate-training registrations hand off here with an explicit
+    // 'corporate_program' variant and the corporate Event's event_id (the Event's location may
+    // be a physical venue rather than the corporate#<id> marker, so the check above won't catch
+    // it). Resolve the corporate_programs row from that event_id — or the location marker as a
+    // fallback — and run the same isolated KES invoice + CRM-template confirmation path:
+    // invoice only, no admission letter.
+    if ($conn && $corporate_variant === 'corporate_program') {
+        $cp_id = 0;
+        if ((int) $event_id > 0) {
+            $cpr = mysqli_query($conn, "SELECT `id` FROM `corporate_programs` WHERE `event_id` = " . (int) $event_id . " LIMIT 1");
+            if ($cpr && ($cprow = mysqli_fetch_assoc($cpr))) { $cp_id = (int) $cprow['id']; }
+        }
+        if ($cp_id <= 0 && preg_match('/corporate#(\d+)/i', (string) $location, $cpm)) {
+            $cp_id = (int) $cpm[1];
+        }
+        if ($cp_id > 0) {
+            return generateCorporateTrainingInvoice($conn, $cp_id, $client_email, $client_name, $start_date, $end_date, $ticket_id, $record_id);
+        }
+        error_log('CORPORATE EMAIL: corporate_program variant but no corporate_programs row resolved (event_id=' . var_export($event_id, true) . ', location=' . var_export($location, true) . ') — falling through to default');
     }
 
     // Use explicit corporate variant from process_payment (by event title): 'corporate_sldp', 'corporate_me', 'singapore_me' or ''
