@@ -77,7 +77,7 @@ require_once 'header.php';
                                                     <i class="bi bi-x-lg btn p-0" data-bs-dismiss="modal" aria-label="Close"></i>
                                                 </div>
                                                 <div class="modal-body">
-                                                       <form method="POST" action="#">
+                                                       <form method="POST" action="#" enctype="multipart/form-data">
                                                     <input type="hidden" name="course_id" value="<?php echo $row['course_id']; ?>"> 
                                                     
                                                         <div class="row">
@@ -119,7 +119,25 @@ require_once 'header.php';
                                                                 <textarea name="instruction" id="instruction" cols="30" rows="10" class="form-control rounded-0 instruction"><?php echo $row['writeup'] ?></textarea>
                                                             </div>
                                                         </div>
-                                                        
+
+                                                        <?php
+                                                        $current_outline = '';
+                                                        if (preg_match('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>.*?Download the Course Outline.*?<\/a>/is', (string) $row['writeup'], $mOut)) {
+                                                            $current_outline = $mOut[1];
+                                                        }
+                                                        ?>
+                                                        <div class="col-md-12">
+                                                            <div class="input-group mb-1">
+                                                                <span class="input-group-text rounded-0 bg_main" style="width: 9rem;">Outline link</span>
+                                                                <input type="url" name="outline_link" value="<?php echo htmlspecialchars($current_outline); ?>" class="form-control rounded-0" placeholder="Paste a link (e.g. Google Drive) — optional">
+                                                            </div>
+                                                            <div class="input-group mb-1">
+                                                                <span class="input-group-text rounded-0 bg_main" style="width: 9rem;">Outline PDF</span>
+                                                                <input type="file" name="outline_file" accept="application/pdf" class="form-control rounded-0">
+                                                            </div>
+                                                            <small class="text-muted d-block mb-3">Upload a PDF <em>or</em> paste a link — it becomes the "Download the Course Outline Here" link at the bottom of the Write Up. A file overrides the link; leave both blank to keep the current one.</small>
+                                                        </div>
+
                                                             <div class="col-md-12">
                                                             <div class="input-group mb-3">
                                                                 <span class="input-group-text rounded-0 bg_main" style="width: 9rem;" id="basic-addon1">Course Outline </span>
@@ -181,8 +199,36 @@ if(isset($_POST['course_id'])){
        $adm_letter = $_POST['adm_letter'];
        $course_id_new = $_POST['course_id_new'];
        $module_id = $_POST['module_id'];
-      
-      $update = mysqli_query($conn,"UPDATE course SET intro_video='$intro_link',testmonial_link='$testmonial_link',adm_letter='$adm_letter',writeup='$instruction',course_id_new='$course_id_new',module_id='$module_id' WHERE course_id='$course_id'") or die(mysqli_error($conn));
+
+       // Course outline: an uploaded PDF (hosted here) takes precedence over a pasted link.
+       $outline_url = '';
+       if (isset($_FILES['outline_file']) && $_FILES['outline_file']['error'] === UPLOAD_ERR_OK && (int) $_FILES['outline_file']['size'] > 0) {
+           $ext = strtolower(pathinfo($_FILES['outline_file']['name'], PATHINFO_EXTENSION));
+           if ($ext === 'pdf') {
+               $odir = __DIR__ . '/uploads/course_outlines';
+               if (!is_dir($odir)) { @mkdir($odir, 0775, true); }
+               $ofile = 'outline_' . preg_replace('/[^0-9]/', '', (string) $course_id) . '_' . time() . '.pdf';
+               if (move_uploaded_file($_FILES['outline_file']['tmp_name'], $odir . '/' . $ofile)) {
+                   $outline_url = 'https://vantageafricaleaders.com/admin/uploads/course_outlines/' . $ofile;
+               }
+           }
+       }
+       if ($outline_url === '' && !empty($_POST['outline_link'])) {
+           $outline_url = trim($_POST['outline_link']);
+       }
+       // Write the resolved URL into the "Download the Course Outline Here" link in the Write Up:
+       // update the existing link's href if present, otherwise append the line at the bottom.
+       if ($outline_url !== '') {
+           $href = htmlspecialchars($outline_url, ENT_QUOTES);
+           if (preg_match('/<a\b[^>]*>(.*?Download the Course Outline.*?)<\/a>/is', $instruction)) {
+               $instruction = preg_replace('/<a\b[^>]*>(.*?Download the Course Outline.*?)<\/a>/is', '<a href="' . $href . '" target="_blank" rel="noopener">$1</a>', $instruction, 1);
+           } else {
+               $instruction .= '<p><a href="' . $href . '" target="_blank" rel="noopener"><strong>Download the Course Outline Here</strong></a></p>';
+           }
+       }
+
+       $instruction_sql = mysqli_real_escape_string($conn, $instruction);
+       $update = mysqli_query($conn,"UPDATE course SET intro_video='$intro_link',testmonial_link='$testmonial_link',adm_letter='$adm_letter',writeup='$instruction_sql',course_id_new='$course_id_new',module_id='$module_id' WHERE course_id='$course_id'") or die(mysqli_error($conn));
     
    ?>
    <script>window.alert("Updated!");
