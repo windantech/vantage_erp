@@ -185,7 +185,6 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <nav class="tabs" aria-label="Dashboard sections">
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
-        <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
         <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
@@ -393,46 +392,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       function vPipeline(){
         const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
         const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
-        const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
-        const cross=["Training client → Eval360 / 360 opportunity","Corporate demo → multi-department rollout","Academic employer → staff appraisal cohort","Alumnus → institutional sponsorship"];
         return `
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
           </section>
-          <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>
-          <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4><span class="chip amber">${quality.length} to review</span></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="abtn warn">Review</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} open</span></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="abtn info">Route</span></div>`).join("")}</div></div>
-          </section>`;
-      }
-
-      function vCommission(){
-        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;const met=c.gates.filter(g=>g[1]).length;
-        const audit=[["Rule version","COMM-2026-09-v1","Effective-dated and locked after month close"],["Revenue source","Finance-cleared payments","Invoices and promises excluded"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Hold-back","Balance / support gate","Displayed separately from payable amount"],["Reversals","Refunds and credit notes","Recalculate and preserve audit history"]];
-        return `
-          <section class="hero">
-            <div class="card">
-              <div class="chead"><h4>Your transparent commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Current estimate":"Locked"}</span></div>
-              <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
-              <div class="mini3"><div class="cm gold"><span>Estimated now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Additional earning</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
-              <div class="nextstep"><b>How it's earned:</b> ${esc(c.rule)}</div>
-            </div>
-            <div class="card"><div class="chead"><h4>Next earning milestone</h4></div>
-              <div style="font-size:30px;font-weight:850;letter-spacing:-.03em;margin:6px 0 4px" class="num">${kMoney(Math.max(0,B.target-B.actual))}</div>
-              <div style="color:var(--muted);font-size:12.5px">remaining to the full revenue target</div>
-              <div class="nextstep"><b>Recommended push:</b> ${esc(c.unlock)} Concentrate on verified opportunities nearest to payment rather than adding unqualified activity.</div>
-            </div>
-          </section>
-          <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===c.gates.length?"jade":"gold"}">${met} / ${c.gates.length} met</span></div><div class="list">${c.gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>
-          </section>
-          <div class="card"><div class="chead"><h4>Three-month consistency journey</h4><span class="chip slate">Month 2 of 3</span></div>
-            <div class="steps3"><div class="stepbox"><span>Month 1</span><b>Target achieved</b><div class="st" style="color:var(--jade)">✓ Verified</div></div><div class="stepbox"><span>Month 2</span><b>${att>=1?"On track":"Recovery required"}</b><div class="st" style="color:${att>=1?"var(--jade)":"var(--amber)"}">${pct(att)} current attainment</div></div><div class="stepbox"><span>Month 3</span><b>Future period</b><div class="st" style="color:var(--slate)">Consistency reward pending</div></div></div>
-          </div>`;
+          <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>`;
       }
 
       function vReport(){
@@ -490,7 +455,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
       function render(){
         const v=state.view;
-        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
       }
       function bindReport(){
