@@ -508,26 +508,20 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `
           <div class="section-tag"><h3>Field visit tracker</h3><span>Log every client you visit in the field — visits roll up to your department (BDO) and the BDM</span><div class="rule"></div></div>
           ${kpiRow}
-          <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
-              <div class="form-grid">
-                <div class="field"><label>Client / contact person</label><input id="vf_client" type="text" placeholder="e.g. Grace Wanjiru"></div>
-                <div class="field"><label>Organization</label><input id="vf_org" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
-                <div class="field"><label>Location / area</label><input id="vf_loc" type="text" placeholder="e.g. Nairobi CBD"></div>
-                <div class="field"><label>Product of interest</label><select id="vf_prod">${prodOpts}</select></div>
-                <div class="field"><label>Outcome</label><select id="vf_out">${outOpts}</select></div>
-                <div class="field"><label>Potential value (KES)</label><input id="vf_val" type="number" min="0" placeholder="0"></div>
-                <div class="field"><label>Visit date</label><input id="vf_date" type="date" value="${todayStr()}"></div>
-                <div class="field span2"><label>Notes</label><textarea id="vf_notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
-              </div>
-              <div class="report-actions"><button class="tbtn solid" id="vf_save" type="button">Log visit</button><button class="tbtn" id="vf_clear" type="button">Clear</button></div>
-              <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Registered" is auto-confirmed against Finance-verified payments once real data is connected — you only log the visit.</div>
+          <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
+            <div class="form-grid">
+              <div class="field"><label>Client / contact person</label><input id="vf_client" type="text" placeholder="e.g. Grace Wanjiru"></div>
+              <div class="field"><label>Organization</label><input id="vf_org" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
+              <div class="field"><label>Location / area</label><input id="vf_loc" type="text" placeholder="e.g. Nairobi CBD"></div>
+              <div class="field"><label>Product of interest</label><select id="vf_prod">${prodOpts}</select></div>
+              <div class="field"><label>Outcome</label><select id="vf_out">${outOpts}</select></div>
+              <div class="field"><label>Potential value (KES)</label><input id="vf_val" type="number" min="0" placeholder="0"></div>
+              <div class="field"><label>Visit date</label><input id="vf_date" type="date" value="${todayStr()}"></div>
+              <div class="field span2"><label>Notes</label><textarea id="vf_notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
             </div>
-            <div class="card"><div class="chead"><h4>This month at a glance</h4><span class="chip jade">${nf.format(s.visited)} visits</span></div>
-              <div class="mini3"><div class="cm"><span>Visited</span><b class="num">${nf.format(s.visited)}</b></div><div class="cm gold"><span>Interested</span><b class="num">${nf.format(s.interested)}</b></div><div class="cm"><span>Registered</span><b class="num">${nf.format(s.registered)}</b></div></div>
-              <div class="nextstep"><b>Tip:</b> log visits the same day while the details are fresh. Every field visit is visible to your BDO and the BDM.</div>
-            </div>
-          </section>
+            <div class="report-actions"><button class="tbtn solid" id="vf_save" type="button">Log visit</button><button class="tbtn" id="vf_clear" type="button">Clear</button></div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>Tip:</b> log visits the same day while the details are fresh. "Registered" is auto-confirmed against Finance-verified payments once real data is connected — you only log the visit. Every field visit is visible to your BDO and the BDM.</div>
+          </div>
           <div class="section-tag"><h3>My recent field visits</h3><span>${nf.format((B.visits||[]).length)} logged</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
