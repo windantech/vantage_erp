@@ -1,3 +1,6 @@
 
 # Live Brevo API key — server-only, never commit (see brevo-email-setup memory)
 email_plugins/email_key.php
+
+# Corporate-proposal receiver shared secret — server-only, never commit
+includes/proposal_config.php
