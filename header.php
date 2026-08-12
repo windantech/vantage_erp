@@ -82,7 +82,7 @@ if (!headers_sent()) {
     <!-- Nav Item - Performance (role dashboards).
          Only rendered while ON a performance-dashboard route, so it stays hidden
          from the shared sidebar on every other page. Links to the current one. -->
-    <?php $perf_page = basename($_SERVER['SCRIPT_NAME']); if (in_array($perf_page, ['bde_dashboard.php', 'bdo_dashboard.php', 'bdm_dashboard.php'], true)) { ?>
+    <?php $perf_page = basename($_SERVER['SCRIPT_NAME']); if (in_array($perf_page, ['bde_dashboard.php', 'bdo_dashboard.php', 'bdm_dashboard.php', 'ceo_dashboard.php'], true)) { ?>
     <li class="nav-item active">
         <a class="nav-link" href="<?php echo $perf_page; ?>">
             <i class="fas fa-fw fa-chart-line"></i>
