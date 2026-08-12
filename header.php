@@ -238,6 +238,12 @@ if (!headers_sent()) {
             <span>Corporate Trainings</span>
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link" href="corporate_proposal_settings.php">
+            <i class="bi bi-shield-lock"></i>
+            <span>Proposal Integration</span>
+        </a>
+    </li>
 <?php } ?>
 
 <?php if(in_array(4, $role)) {
