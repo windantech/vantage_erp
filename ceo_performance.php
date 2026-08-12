@@ -569,15 +569,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         const people=allPeople();
         const leaders=people.filter(p=>p.role==="BDM"||p.role==="BDO").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
         const lead=leaders.map((p,i)=>{const a=p.actual/p.target;const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.sbu)}</span></div></div></td><td><span class="chip slate">${p.role}</span></td><td class="num">${kMoney(p.target)}</td><td class="num">${kMoney(p.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
-        const deptCards=B.sbus.map((s,si)=>{const reps=(s.reps||[]);const inner=reps.map((r,ri)=>{const a=r.actual/r.target;const pc=paceOf(r);return `<div class="arow" data-scope="bde-${si}-${ri}" style="cursor:pointer"><span class="a" style="background:var(--slate);width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800">${esc(pInitials(r.name))}</span><div><b>${esc(r.name)}</b><p>${esc(r.title||"BDE")} · ${kMoney(r.actual)} / ${kMoney(r.target)}</p></div><span class="chip ${pc.st==="green"?"jade":pc.st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div>`;}).join("");
-          return `<div class="card"><div class="chead"><h4><span data-scope="bdo-${si}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(s.name)}</span></h4><span class="chip slate">${esc(s.leader)}</span></div><div class="list">${inner||'<div class="arow"><div><b>No reps listed</b></div></div>'}</div></div>`;}).join("");
         return `
           <div class="section-tag"><h3>Leadership scorecard</h3><span>BDM and department heads, ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Role</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
-          <div class="section-tag"><h3>Org-wide staff ranking</h3><span>Every executive scored — top and bottom highlighted</span><div class="rule"></div></div>
-          ${staffRanking()}
-          <div class="section-tag"><h3>Departments &amp; executives</h3><span>Every BDE under each department — click to drill into a person</span><div class="rule"></div></div>
-          <section class="grid-3">${deptCards}</section>`;
+          <div class="section-tag"><h3>Org-wide staff ranking</h3><span>Every executive scored — click a name to open their view; top and bottom highlighted</span><div class="rule"></div></div>
+          ${staffRanking()}`;
       }
 
       function vPerson(p){
