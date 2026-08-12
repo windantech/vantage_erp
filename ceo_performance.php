@@ -350,7 +350,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ["blue","Audit HOD forecasts","Every SBU forecast must be supported by stage, value, probability, owner and next action.","Before weekly review"],
           ["green","Protect balanced performance","Strong results in one SBU must not hide serious underperformance elsewhere.","Ongoing"]
         ];
-        return `<div class="card"><div class="chead"><h4>Interventions required</h4><span class="chip coral">Executive</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
+        const riskLabel={red:"Critical",amber:"High",blue:"Watch",green:"Positive"};
+        const riskChip={red:"coral",amber:"amber",blue:"slate",green:"jade"};
+        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip coral">Interventions</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
       }
       function decisionsCard(){
         const items=[
@@ -364,7 +366,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       function teamTable(){
         const avatarCols=["var(--slate)","#2f8f88","var(--brand)","var(--violet)","var(--gold)"];
         const p=period();
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><span data-scope="bdo-${i}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(d.name)}</span></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Projected</th><th>Team ▲ / ▼</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");const reps=d.reps||[];const hi=reps.filter(r=>r.actual/r.target>=1).length;const lo=reps.filter(r=>r.actual/r.target<.8).length;return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><span data-scope="bdo-${i}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(d.name)}</span></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(d.forecast)}</td><td class="num"><b style="color:var(--jade)">${hi}▲</b> / <b style="color:var(--coral)">${lo}▼</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- executive master view (BDM request) ---------- */
@@ -400,6 +402,60 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
 
       /* ---------- views ---------- */
+      /* ---------- CEO performance analytics (workbook additions) ---------- */
+      function orgStats(){
+        const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
+        const bdes=allPeople().filter(p=>p.role==="BDE");
+        const at100=bdes.filter(p=>p.actual/p.target>=1).length;
+        const below80=bdes.filter(p=>p.actual/p.target<.8).length;
+        const earners=bdes.filter(p=>p.actual/p.target>=.8).length;
+        const sorted=[...bdes].sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
+        const top=sorted[0]||null,low=sorted[sorted.length-1]||null;
+        const worst=[...B.sbus].sort((a,b)=>(a.actual/a.target)-(b.actual/b.target))[0];
+        const gap=Math.max(0,B.target-B.actual);
+        const commNow=B.sbus.reduce((s,d)=>s+d.actual*0.04,0);
+        const commAtTarget=B.sbus.reduce((s,d)=>s+d.target*0.04,0);
+        const sbusOnPace=B.sbus.filter(d=>d.actual>=d.target*(per.elapsed/per.working)).length;
+        return {daysLeft,at100,below80,earners,top,low,worst,gap,commNow,commAtTarget,sbusOnPace,total:bdes.length,dailyReq:daysLeft?gap/daysLeft:0};
+      }
+      function countsStrip(){
+        const s=orgStats();
+        const tiles=[
+          ["Staff at 100%+",s.at100+" / "+s.total,"target achieved","var(--jade)"],
+          ["Staff below 80%",s.below80+" / "+s.total,"need support","var(--coral)"],
+          ["Commission earners",s.earners+" / "+s.total,"past the 80% gate","var(--gold)"],
+          ["SBUs on pace",s.sbusOnPace+" / 5","at / above required pace","var(--slate)"]
+        ];
+        return `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${tiles.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+      }
+      function interventionCentre(){
+        const s=orgStats();
+        const ans=[
+          ["Biggest gap",esc(s.worst.name),kMoney(s.worst.target-s.worst.actual)+" behind · "+pct(s.worst.actual/s.worst.target,0)],
+          ["Top performer",s.top?esc(s.top.name):"—",s.top?pct(s.top.actual/s.top.target,0)+" · "+esc(s.top.sbu):""],
+          ["Lowest performer",s.low?esc(s.low.name):"—",s.low?pct(s.low.actual/s.low.target,0)+" · "+esc(s.low.sbu):""],
+          ["Commission exposure",kMoney(s.commNow),"now · "+kMoney(s.commAtTarget)+" at target"],
+          ["Staff needing support",s.below80+" people","below 80% of target"],
+          ["Daily revenue required",kMoney(s.dailyReq),s.daysLeft+" working days left"]
+        ];
+        return `<div class="card"><div class="chead"><h4>Intervention Centre</h4><span class="chip coral">What needs you</span></div>
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${ans.map(([l,v,sub])=>`<div class="cm"><span>${l}</span><b class="num" style="font-size:16px">${v}</b><div style="font-size:11px;color:var(--muted);margin-top:3px">${sub}</div></div>`).join("")}</div></div>`;
+      }
+      function staffRanking(){
+        const bdes=allPeople().filter(p=>p.role==="BDE").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Staff member</th><th>Department</th><th>Target</th><th>Cleared</th><th>Score</th><th>Status</th></tr></thead><tbody>${bdes.map((p,i)=>{const a=p.actual/p.target;const pc=paceOf(p);const rowbg=i===0?"background:var(--jade-soft)":i===bdes.length-1?"background:var(--coral-soft)":"";return `<tr style="${rowbg}"><td class="num">${i+1}</td><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(p.name))}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.title||"BDE")}</span></div></div></td><td>${esc(p.sbu)}</td><td class="num">${kMoney(p.target)}</td><td class="num">${kMoney(p.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
+      }
+      function productMix(){
+        const lines=[["Leadership programmes",9200000,"#4d8bd6"],["Data & M&E",7400000,"var(--jade)"],["Digital products (Eval360/360)",5100000,"var(--brand)"],["Academic / online",3600000,"var(--violet)"],["Corporate bespoke",6770000,"var(--gold)"]];
+        const total=lines.reduce((a,l)=>a+l[1],0);
+        return `<div class="card"><div class="chead"><h4>Revenue mix by product line</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Where the money comes from this period. Trend arrives with live data.</div></div>`;
+      }
+      function learnerJourney(){
+        const stages=[["Enrolled",4200],["Active",3140],["Completed",1980],["Certified / paid-up",1520]];
+        const dropped=stages[0][1]-stages[stages.length-1][1];const max=stages[0][1];
+        return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip coral">${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/stages[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>`;
+      }
+
       function vCommand(){
         const ps=pace();
         return `${strategyStrip()}
@@ -407,6 +463,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
             <div class="card"><div class="chead"><h4>Enterprise scorecard</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
+
+          <div class="section-tag"><h3>At a glance</h3><span>Headcount performance across the organization</span><div class="rule"></div></div>
+          ${countsStrip()}
+
+          <div class="section-tag"><h3>Intervention Centre — what needs you</h3><span>Plain answers: the gap, the people and the number to hit</span><div class="rule"></div></div>
+          ${interventionCentre()}
 
           <div class="section-tag"><h3>Five-SBU performance</h3><span>The whole picture — click any SBU to drill into that department</span><div class="rule"></div></div>
           ${teamTable()}
@@ -417,6 +479,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
             ${execRevenueBreakdown()}
           </section>
           ${execTopDeals()}
+
+          <div class="section-tag"><h3>Revenue mix &amp; learner journey</h3><span>Where the money comes from, and how learners move through</span><div class="rule"></div></div>
+          <section class="grid-2">
+            ${productMix()}
+            ${learnerJourney()}
+          </section>
 
           <div class="section-tag"><h3>Where to intervene</h3><span>The few things that need leadership, resources or a decision — now</span><div class="rule"></div></div>
           <section class="grid-2">
@@ -431,7 +499,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
+            <div class="card"><div class="chead"><h4>Lead-source ROI</h4><span class="chip slate">Contribution × return</span></div>${B.sources.map(([n,v],i)=>{const roi=[4.2,3.1,5.6,2.4,3.8][i%5];return `<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}% · ${roi}×</b></div>`;}).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Return = cleared revenue per KES of channel spend (illustrative).</div></div>
           </section>
           <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>`;
       }
@@ -506,6 +574,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         return `
           <div class="section-tag"><h3>Leadership scorecard</h3><span>BDM and department heads, ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Role</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
+          <div class="section-tag"><h3>Org-wide staff ranking</h3><span>Every executive scored — top and bottom highlighted</span><div class="rule"></div></div>
+          ${staffRanking()}
           <div class="section-tag"><h3>Departments &amp; executives</h3><span>Every BDE under each department — click to drill into a person</span><div class="rule"></div></div>
           <section class="grid-3">${deptCards}</section>`;
       }
