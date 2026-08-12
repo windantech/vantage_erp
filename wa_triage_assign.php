@@ -321,7 +321,11 @@ function sweep_ai_pick($conn, $provider, $text, $catalog, &$cache, &$calls) {
         . "Reply with ONLY JSON: {\"kind\":\"course|event|program|none\", \"id\":<catalogue id or 0>, "
         . "\"confidence\":<0..1>, \"why\":\"<a few words>\"}";
 
+    // Say so before the call, not after: a cache miss can sit on the provider for
+    // tens of seconds, and silence at that point reads as a hang.
     $calls++;
+    printf("       ... new wording, asking the AI (call %d)\n", $calls);
+    wa_tick();
     $res = wa_ai_complete($provider, $system,
         [['role' => 'user', 'content' => "Customer messages:\n" . $text]],
         ['json' => true, 'max_tokens' => 150, 'timeout' => 30]);
@@ -356,9 +360,26 @@ if ($USE_AI) {
     echo "AI catalogue: " . count($lines) . " item(s); provider $PROVIDER\n";
 }
 
+/** Pad to a visible width. printf's %-Ns counts bytes, so one accented name or an
+ *  em dash silently shifts every column after it. */
+function wa_pad($s, $w) { $n = mb_strlen((string)$s); return $s . str_repeat(' ', max(0, $w - $n)); }
+
+/** Push output to the terminal now. Classifying 800 chats with --ai takes minutes,
+ *  and PHP's buffering made that look like a hang: nothing appeared until the whole
+ *  run had finished. Rows are printed as they are decided instead. */
+function wa_tick() { if (PHP_SAPI !== 'cli') { @ob_flush(); } @flush(); }
+
 /* ------------------------------------------------------------- classify each */
 
+printf("%-6s %-14s %s %s %s %s\n",
+       'CONV', 'NUMBER', wa_pad('NAME', 16), wa_pad('HOW', 16),
+       wa_pad('MATCHED TO', 54), wa_pad('OWNER', 20));
+echo str_repeat('-', 160) . "\n";
+wa_tick();
+
 $plan  = [];
+$done  = 0;
+$began = time();
 $stats = ['event' => 0, 'course' => 0, 'academic' => 0, 'program' => 0,
           'fallback' => 0, 'nomatch' => 0, 'silent' => 0, 'mode_set' => 0,
           'human' => 0, 'norep' => 0, 'rule' => 0, 'ai' => 0];
@@ -517,21 +538,8 @@ foreach ($rows as $r) {
 
     $plan[] = ['row' => $r, 'hit' => $hit, 'mode' => $setMode,
                'text' => $text, 'outbound' => $outbound];
-}
 
-/* ----------------------------------------------------------------- the plan */
-
-/** Pad to a visible width. printf's %-Ns counts bytes, so one accented name or an
- *  em dash silently shifts every column after it. */
-function wa_pad($s, $w) { $n = mb_strlen((string)$s); return $s . str_repeat(' ', max(0, $w - $n)); }
-
-printf("%-6s %-14s %s %s %s %s\n",
-       'CONV', 'NUMBER', wa_pad('NAME', 16), wa_pad('HOW', 16),
-       wa_pad('MATCHED TO', 54), wa_pad('OWNER', 20));
-echo str_repeat('-', 160) . "\n";
-
-foreach ($plan as $p) {
-    $r = $p['row']; $h = $p['hit'];
+    $h = $hit;
     // Say WHAT it matched, not just an id: "event 953" gives you no way to judge
     // whether the route is right, which is the whole point of the dry run.
     if ($h['type'] === null) {
@@ -557,12 +565,12 @@ foreach ($plan as $p) {
     // The message itself on its own line — it is the evidence for the route above,
     // and squeezing it into a column meant seeing none of it.
     printf("       \"%s\"%s\n",
-        mb_substr(preg_replace('/\s+/u', ' ', $p['text']), 0, 110),
-        ($p['outbound'] === 0 ? '   [never answered]' : ''));
+        mb_substr(preg_replace('/\s+/u', ' ', $text), 0, 110),
+        ($outbound === 0 ? '   [never answered]' : ''));
 
     if ($EXPLAIN && $h['type'] === null) {
-        $cc = array_slice(sweep_candidates($p['text'], $courses), 0, 3);
-        $ac = array_slice(sweep_candidates($p['text'], $academics), 0, 3);
+        $cc = array_slice(sweep_candidates($text, $courses), 0, 3);
+        $ac = array_slice(sweep_candidates($text, $academics), 0, 3);
         if (!$cc && !$ac) {
             echo "         why: the message shares no distinctive word with any course or academic title\n";
         } else {
@@ -578,7 +586,19 @@ foreach ($plan as $p) {
             }
         }
     }
+    // A periodic heartbeat, so a long run shows how far along it is and roughly how
+    // much longer it will take, rather than just scrolling.
+    $done++;
+    if ($done % 50 === 0 && $done < count($rows)) {
+        $el = max(1, time() - $began);
+        printf("  --- %d/%d classified, %ds elapsed, ~%ds left%s ---\n",
+               $done, count($rows), $el,
+               (int)round($el / $done * (count($rows) - $done)),
+               $USE_AI ? ', ' . $AI_CALLS . ' AI call(s)' : '');
+    }
+    wa_tick();
 }
+
 
 /* ------------------------------------------------- what the leftovers look like */
 
