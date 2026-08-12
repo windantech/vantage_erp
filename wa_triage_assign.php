@@ -14,9 +14,16 @@
  *   3. ACADEMIC by title      — wa_classify_academic()    -> academic event rep
  *   4. TRAINING PROGRAMME     — wa_program_for_course() / wa_program_match()
  *                                                         -> programme rep
- * Keyword matching is free and deterministic. The AI fallbacks the router uses
- * are OFF unless you pass --ai (they cost tokens, which is what broke these
- * chats in the first place).
+ * Keyword matching is free and deterministic, but it drops a lot: when two titles
+ * tie on the top score the classifiers rate the match 0.35, under their own 0.60
+ * threshold, so messages that plainly name a product ("more info on the Senior
+ * Management Leadership Programme") are reported as no match. --ai adds a step
+ * that READS the conversation and picks from the whole catalogue in one call —
+ * courses, academic courses, events and programmes together — which is what
+ * recovers those. It only runs where keyword matching found nothing, its answer
+ * is rejected unless the id is really in the catalogue, and results are cached by
+ * message text: the backlog is mostly ad referrals repeating one prefilled line,
+ * so hundreds of chats cost a few dozen calls.
  *
  * It also stamps delivery_mode when the customer clearly said onsite/virtual and
  * the router never recorded it — that is what makes the AI stop offering the
@@ -35,7 +42,8 @@
  *   php wa_triage_assign.php                      # dry run — shows what it would do
  *   php wa_triage_assign.php --apply              # route everything it can match
  *   php wa_triage_assign.php --days=90            # look further back than the 30-day window
- *   php wa_triage_assign.php --ai --apply         # also use the AI classifiers (costs tokens)
+ *   php wa_triage_assign.php --ai                 # let the AI read each chat and match it
+ *                                                 # against the full catalogue (costs tokens)
  *   php wa_triage_assign.php --apply --fallback=121,134
  *                                                 # round-robin whatever still has no match
  *                                                 # across these staff ids, so nothing is left
@@ -246,11 +254,106 @@ function sweep_candidates($msg, $items, $minLen = 3) {
 }
 
 $academics = [];
-if ($EXPLAIN) {
-    $ares = mysqli_query($conn,
-        "SELECT event_id AS id, event_title AS name FROM `Event`
-          WHERE status = 1 AND location LIKE 'ACADEMIC#%'");
-    while ($ares && ($a = mysqli_fetch_assoc($ares))) { $academics[] = $a; }
+$ares = mysqli_query($conn,
+    "SELECT event_id AS id, event_title AS name FROM `Event`
+      WHERE status = 1 AND location LIKE 'ACADEMIC#%'");
+while ($ares && ($a = mysqli_fetch_assoc($ares))) { $academics[] = $a; }
+
+/* ------------------------------------------------------- names, not bare ids */
+
+// Every route was being reported as "event_location:953", which tells you nothing
+// about whether the match is right. Resolve the names once, up front.
+$NAME = ['course' => [], 'event' => [], 'program' => []];
+foreach ($courses as $c)   { $NAME['course'][(int)$c['id']] = (string)$c['name']; }
+foreach ($academics as $a) { $NAME['event'][(int)$a['id']]  = (string)$a['name'] . ' [academic]'; }
+$eres = mysqli_query($conn,
+    "SELECT event_id, event_title, location FROM `Event`
+      WHERE status = 1 AND location NOT LIKE 'ACADEMIC#%'");
+while ($eres && ($e = mysqli_fetch_assoc($eres))) {
+    $loc = trim((string)$e['location']);
+    $NAME['event'][(int)$e['event_id']] = (string)$e['event_title'] . ($loc !== '' ? ' — ' . $loc : '');
+}
+$programs = wa_programs_list($conn);
+foreach ($programs as $pg) { $NAME['program'][(int)$pg['id']] = (string)$pg['name']; }
+
+/** Human-readable target for a hit, e.g. "event 953 · Leadership Summit — Nairobi". */
+function sweep_label($NAME, $kind, $id) {
+    $id = (int)$id;
+    $nm = $NAME[$kind][$id] ?? '';
+    return $kind . ' ' . $id . ($nm !== '' ? ' · ' . $nm : ' · (name not found)');
+}
+
+/* ------------------------------------------------------- read the chat with AI */
+
+/**
+ * One AI call that READS the conversation and picks from the whole catalogue at
+ * once — courses, academic courses, in-person events and training programmes.
+ *
+ * This replaces the router's three separate AI classifiers for the sweep. They fire
+ * one after another, each blind to the others' options, and each inherits the same
+ * scoring threshold that already dropped these chats. One call with everything on
+ * the table both costs a third as much and can say "this is the Senior Management
+ * event, not the course with a similar name".
+ *
+ * Results are cached by message text. The backlog is overwhelmingly ad referrals
+ * repeating the same prefilled line, so a few hundred chats collapse into a few
+ * dozen distinct texts — the difference between a handful of calls and 800.
+ */
+function sweep_ai_pick($conn, $provider, $text, $catalog, &$cache, &$calls) {
+    $key = md5(mb_strtolower(trim(preg_replace('/\s+/u', ' ', $text))));
+    if (isset($cache[$key])) { return $cache[$key]; }
+    $none = ['kind' => 'none', 'id' => 0, 'confidence' => 0.0, 'why' => ''];
+
+    $system = "You route WhatsApp enquiries for Vantage Africa School of Leadership.\n"
+        . "Read the customer's messages and decide which ONE catalogue item they are asking about.\n\n"
+        . "CATALOGUE (id and exact title):\n" . $catalog . "\n"
+        . "Notes:\n"
+        . "- Many messages are the prefilled text of a click-to-WhatsApp advert and name the "
+        . "product directly (e.g. 'Can I get more info on the Senior Management ...'). Match those "
+        . "to the item they name, even when several titles share a generic word.\n"
+        . "- Match on MEANING, not exact wording: abbreviations (M&E, CPA, TOT, SLDP, AI), "
+        . "misspellings and other languages (Swahili, Somali, Amharic, French) all count.\n"
+        . "- Prefer a 'program' when the customer names a subject we run in several countries "
+        . "but has not named a city or a specific session.\n"
+        . "- Return kind 'none' when the messages are an auto-reply, another business's bot, "
+        . "spam, a forwarded link, small talk, or simply too vague to tell. Guessing is worse "
+        . "than leaving the chat in triage — a wrong owner means nobody follows up.\n\n"
+        . "Reply with ONLY JSON: {\"kind\":\"course|event|program|none\", \"id\":<catalogue id or 0>, "
+        . "\"confidence\":<0..1>, \"why\":\"<a few words>\"}";
+
+    $calls++;
+    $res = wa_ai_complete($provider, $system,
+        [['role' => 'user', 'content' => "Customer messages:\n" . $text]],
+        ['json' => true, 'max_tokens' => 150, 'timeout' => 30]);
+    if (empty($res['ok'])) { return $cache[$key] = $none; }
+    $d = wa_json_extract((string)($res['text'] ?? ''));
+    if (!is_array($d)) { return $cache[$key] = $none; }
+
+    $kind = strtolower(trim((string)($d['kind'] ?? 'none')));
+    $id   = (int)($d['id'] ?? 0);
+    if (!in_array($kind, ['course', 'event', 'program'], true) || $id < 1) {
+        return $cache[$key] = $none;
+    }
+    return $cache[$key] = ['kind' => $kind, 'id' => $id,
+                           'confidence' => (float)($d['confidence'] ?? 0),
+                           'why' => trim((string)($d['why'] ?? ''))];
+}
+
+$AI_CATALOG = '';
+$AI_CACHE   = [];
+$AI_CALLS   = 0;
+$PROVIDER   = '';
+if ($USE_AI) {
+    $PROVIDER = wa_active_provider($conn);
+    if (!wa_provider_ready($PROVIDER)) {
+        exit("ERROR: --ai was given but the '$PROVIDER' provider has no API key in wa_config.php.\n");
+    }
+    $lines = [];
+    foreach ($NAME['course']  as $id => $nm) { $lines[] = "course  $id: $nm"; }
+    foreach ($NAME['event']   as $id => $nm) { $lines[] = "event   $id: $nm"; }
+    foreach ($NAME['program'] as $id => $nm) { $lines[] = "program $id: $nm"; }
+    $AI_CATALOG = implode("\n", $lines);
+    echo "AI catalogue: " . count($lines) . " item(s); provider $PROVIDER\n";
 }
 
 /* ------------------------------------------------------------- classify each */
@@ -258,7 +361,7 @@ if ($EXPLAIN) {
 $plan  = [];
 $stats = ['event' => 0, 'course' => 0, 'academic' => 0, 'program' => 0,
           'fallback' => 0, 'nomatch' => 0, 'silent' => 0, 'mode_set' => 0,
-          'human' => 0, 'norep' => 0, 'rule' => 0];
+          'human' => 0, 'norep' => 0, 'rule' => 0, 'ai' => 0];
 $rr = 0;
 
 foreach ($rows as $r) {
@@ -294,11 +397,6 @@ foreach ($rows as $r) {
 
     // 1. A specific in-person event named by its location.
     $ev = wa_classify_event($conn, $text);
-    if (($ev['event_id'] === null || $ev['confidence'] < 0.60) && $USE_AI
-        && preg_match('/\b(venue|country|from|based\s+in|attend|travel|located|location|city)\b/i', $text)) {
-        $aiEv = wa_ai_classify_event($conn, $text);
-        if ($aiEv['event_id'] !== null && $aiEv['confidence'] >= 0.60) { $ev = $aiEv; }
-    }
     if ($ev['event_id'] !== null && $ev['confidence'] >= 0.60) {
         $hit = ['type' => 'event', 'id' => (int)$ev['event_id'],
                 'uid' => wa_first_owner($conn, 'event', (int)$ev['event_id']),
@@ -309,10 +407,6 @@ foreach ($rows as $r) {
     // 2. Course by keyword.
     if ($hit['type'] === null && $courses) {
         $g = wa_classify_course($text, $courses);
-        if (($g['course_id'] === null || $g['confidence'] < 0.60) && $USE_AI) {
-            $ai = wa_ai_classify_course($conn, $text, $courses);
-            if ($ai['course_id'] !== null && $ai['confidence'] >= 0.60) { $g = $ai; }
-        }
         if ($g['course_id'] !== null && $g['confidence'] >= 0.60) {
             $courseId = (int)$g['course_id'];
             $hit = ['type' => 'course', 'id' => $courseId,
@@ -341,10 +435,6 @@ foreach ($rows as $r) {
     // 3. Academic / online course named by title (these are Event rows).
     if ($hit['type'] === null) {
         $ac = wa_classify_academic($conn, $text);
-        if (($ac['event_id'] === null || $ac['confidence'] < 0.60) && $USE_AI) {
-            $aiAc = wa_ai_classify_academic($conn, $text);
-            if ($aiAc['event_id'] !== null && $aiAc['confidence'] >= 0.60) { $ac = $aiAc; }
-        }
         if ($ac['event_id'] !== null && $ac['confidence'] >= 0.60) {
             $hit = ['type' => 'event', 'id' => (int)$ac['event_id'],
                     'uid' => wa_first_owner($conn, 'event', (int)$ac['event_id']),
@@ -363,6 +453,34 @@ foreach ($rows as $r) {
                     'uid' => wa_program_first_owner($prog), 'prog' => (int)$prog['id'],
                     'method' => 'program_keyword', 'conf' => 0.60,
                     'label' => (string)($prog['name'] ?? '')];
+        }
+    }
+
+    // 4b. Keyword matching found nothing. Let the AI read the whole conversation and
+    //     pick from the entire catalogue at once — this is what recovers the chats the
+    //     token classifiers drop on a scoring tie.
+    if ($hit['type'] === null && $USE_AI) {
+        $pick = sweep_ai_pick($conn, $PROVIDER, $text, $AI_CATALOG, $AI_CACHE, $AI_CALLS);
+        if ($pick['kind'] !== 'none' && $pick['confidence'] >= 0.60) {
+            $k = $pick['kind'];
+            $id = (int)$pick['id'];
+            // Only trust an id the catalogue actually contains — a hallucinated one
+            // would assign the chat to a topic that does not exist.
+            if (isset($NAME[$k][$id])) {
+                if ($k === 'program') {
+                    $pg = wa_program_get($conn, $id);
+                    $hit = ['type' => 'program', 'id' => null,
+                            'uid' => $pg ? wa_program_first_owner($pg) : null, 'prog' => $id,
+                            'method' => 'ai_read', 'conf' => (float)$pick['confidence'],
+                            'label' => $pick['why']];
+                } else {
+                    $hit = ['type' => $k, 'id' => $id,
+                            'uid' => wa_first_owner($conn, $k, $id), 'prog' => null,
+                            'method' => 'ai_read', 'conf' => (float)$pick['confidence'],
+                            'label' => $pick['why']];
+                }
+                $stats['ai']++;
+            }
         }
     }
 
@@ -407,28 +525,40 @@ foreach ($rows as $r) {
  *  em dash silently shifts every column after it. */
 function wa_pad($s, $w) { $n = mb_strlen((string)$s); return $s . str_repeat(' ', max(0, $w - $n)); }
 
-printf("%-6s %-15s %s %-8s %s %s %s\n",
-       'CONV', 'NUMBER', wa_pad('NAME', 18), 'REPLIES', wa_pad('ROUTE', 26),
-       wa_pad('OWNER', 22), 'FIRST WORDS');
-echo str_repeat('-', 140) . "\n";
+printf("%-6s %-14s %s %s %s %s\n",
+       'CONV', 'NUMBER', wa_pad('NAME', 16), wa_pad('HOW', 16),
+       wa_pad('MATCHED TO', 54), wa_pad('OWNER', 20));
+echo str_repeat('-', 160) . "\n";
 
 foreach ($plan as $p) {
     $r = $p['row']; $h = $p['hit'];
-    $route = $h['type'] === null ? '(no match)'
-        : ($h['type'] === 'unclassified' ? 'unclassified -> pool'
-        : ($h['label'] !== '' ? $h['method'] . ':' . mb_substr($h['label'], 0, 14)
-                              : $h['method'] . ':' . (string)$h['id']));
+    // Say WHAT it matched, not just an id: "event 953" gives you no way to judge
+    // whether the route is right, which is the whole point of the dry run.
+    if ($h['type'] === null) {
+        $target = '(nothing — left in triage)';
+    } elseif ($h['type'] === 'unclassified') {
+        $target = '(unclassified — handed to a rep)';
+    } elseif ($h['type'] === 'program') {
+        $target = sweep_label($NAME, 'program', (int)$h['prog']);
+    } else {
+        $target = sweep_label($NAME, $h['type'], (int)$h['id']);
+        if ($h['prog'] !== null) { $target .= ' + ' . sweep_label($NAME, 'program', (int)$h['prog']); }
+    }
     $owner = $h['uid'] === null
         ? '-- NO REP --'
         : mb_substr((string) wa_user_name($conn, (int)$h['uid']) ?: ('#' . (int)$h['uid']), 0, 20);
-    printf("%-6d %-15s %s %-8s %s %s %s\n",
+    printf("%-6d %-14s %s %s %s %s\n",
         (int)$r['id'],
-        mb_substr((string)$r['wa_id'], 0, 15),
-        wa_pad(mb_substr((string)($r['profile_name'] ?: '(no name)'), 0, 18), 18),
-        $p['outbound'] === 0 ? 'SILENT' : (string)$p['outbound'],
-        wa_pad(mb_substr($route, 0, 26), 26),
-        wa_pad($owner, 22),
-        mb_substr(preg_replace('/\s+/u', ' ', $p['text']), 0, 46));
+        mb_substr((string)$r['wa_id'], 0, 14),
+        wa_pad(mb_substr((string)($r['profile_name'] ?: '(no name)'), 0, 16), 16),
+        wa_pad($h['method'] !== '' ? $h['method'] : '-', 16),
+        wa_pad(mb_substr($target, 0, 54), 54),
+        wa_pad($owner, 20));
+    // The message itself on its own line — it is the evidence for the route above,
+    // and squeezing it into a column meant seeing none of it.
+    printf("       \"%s\"%s\n",
+        mb_substr(preg_replace('/\s+/u', ' ', $p['text']), 0, 110),
+        ($p['outbound'] === 0 ? '   [never answered]' : ''));
 
     if ($EXPLAIN && $h['type'] === null) {
         $cc = array_slice(sweep_candidates($p['text'], $courses), 0, 3);
@@ -532,6 +662,7 @@ printf("  matched an event .......... %d\n", $stats['event']);
 printf("  matched a course .......... %d\n", $stats['course']);
 printf("  matched academic course ... %d\n", $stats['academic']);
 printf("  matched a programme ....... %d\n", $stats['program']);
+if ($stats['ai']) { printf("  matched by AI reading it .. %d\n", $stats['ai']); }
 if ($stats['rule']) { printf("  matched your --match rule ... %d\n", $stats['rule']); }
 printf("  no match -> fallback pool .. %d\n", $stats['fallback']);
 printf("  no match, left in triage ... %d\n", $stats['nomatch']);
@@ -554,5 +685,9 @@ if ($stats['nomatch'] > 0 && !$pool) {
     echo "\nTip: " . $stats['nomatch'] . " chat(s) match no course, event or programme.\n";
     echo "     Either create the missing training programme, or hand them out with\n";
     echo "     --fallback=ID[,ID] (see --staff for the ids).\n";
+}
+if ($USE_AI) {
+    printf("\nAI: %d call(s) for %d distinct message text(s) across %d chat(s).\n",
+           $AI_CALLS, count($AI_CACHE), count($rows));
 }
 echo "\nDone.\n";
