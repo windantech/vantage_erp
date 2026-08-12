@@ -177,7 +177,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>CEO Performance Overview</h1><p>Whole organization → departments → every person, on one screen</p></div></div>
         <div class="controls">
-          <div class="control"><label>View</label><select id="scopeSelect"></select></div>
+          <div class="control"><label>Role view</label><select id="roleSelect">
+            <option value="ceo">CEO / Director</option>
+            <option value="bdm">Business Dev. Manager</option>
+            <option value="bdo">BDO / Head of Dept</option>
+            <option value="bde">BDE / Executive</option>
+          </select></div>
+          <div class="control" id="deptControl" style="display:none"><label>Department</label><select id="deptSelect"></select></div>
+          <div class="control" id="empControl" style="display:none"><label>Employee</label><select id="empSelect"></select></div>
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
           <div class="profile-chip"><span class="a">VA</span><div><b>Office of the CEO</b><span>Chief Executive · Whole organization</span></div></div>
@@ -250,7 +257,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         ]
       };
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command",scope:"org"};
+      const state={p:2,view:"command",role:"ceo",dept:0,emp:0};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -528,25 +535,89 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ${extra}`;
       }
 
-      function populateScope(){
-        const people=allPeople();
-        const opt=p=>`<option value="${p.key}">${esc(p.name)} — ${esc(p.sbu)}</option>`;
-        el("scopeSelect").innerHTML=`<option value="org">Whole organization</option>`
-          +`<optgroup label="Leadership">${people.filter(p=>p.role==="BDM"||p.role==="BDO").map(opt).join("")}</optgroup>`
-          +`<optgroup label="Executives (BDE)">${people.filter(p=>p.role==="BDE").map(opt).join("")}</optgroup>`;
+      /* ---------- role view: CEO opens any role's full dashboard (like the prototype) ---------- */
+      function applyScope(key){
+        if(key==="org"||key==="ceo"){state.role="ceo";state.view="command";}
+        else if(key==="bdm"){state.role="bdm";}
+        else if(key.indexOf("bdo-")===0){state.role="bdo";state.dept=+key.split("-")[1]||0;}
+        else if(key.indexOf("bde-")===0){const a=key.split("-");state.role="bde";state.dept=+a[1]||0;state.emp=+a[2]||0;}
       }
-      function syncScope(){
-        const scoped=state.scope&&state.scope!=="org";
-        el("scopeSelect").value=scoped?state.scope:"org";
-        root.querySelectorAll("#tabNav .tab").forEach(t=>t.classList.toggle("active",!scoped&&t.dataset.v===state.view));
+      function roleBanner(ini,name,sub,pc){
+        return `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <button class="tbtn" data-scope="org" type="button">← Back to CEO view</button>
+          <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(ini)}</span><div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>
+          <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}" style="margin-left:auto"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
+        </div>`;
       }
+      function kpiRow(items){return `<div class="kpis">${items.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;}
+      function repsTable(d,si){
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Collection</th><th>Status</th></tr></thead><tbody>${(d.reps||[]).map((r,ri)=>{const a=r.actual/r.target;const pc=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${si}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${kMoney(r.target)}</td><td class="num">${kMoney(r.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td class="num">${pct(r.collection,0)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
+      }
+      function viewBDM(){
+        const ps=pace();const att=B.actual/B.target;const c=commission();const sbus80=B.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const kpis=[
+          ["Organization target",kMoney(B.target),"All five SBUs","var(--slate)"],
+          ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","var(--jade)"],
+          ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","var(--slate)"],
+          ["BDM personal sales",kMoney(B.personalActual),pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget),"var(--slate)"],
+          ["SBUs at 80%+",sbus80+" / 5","Balanced-SBU gate","var(--gold)"],
+          ["Commission estimate",kMoney(c.current),"Personal + leadership","var(--amber)"]
+        ];
+        return roleBanner(B.bdmInitials,B.bdmName,"BDM · All five SBUs",{st:ps.status,label:ps.label,ratio:ps.ratio})
+          +kpiRow(kpis)
+          +`<div class="section-tag"><h3>Five-SBU performance</h3><span>Consolidated across all departments — click a SBU to drill in</span><div class="rule"></div></div>${teamTable()}${execRevenueBreakdown()}`
+          +`<div class="section-tag"><h3>Top strategic deals</h3><span>Highest-value open deals company-wide</span><div class="rule"></div></div>${execTopDeals()}`
+          +`<div class="section-tag"><h3>Revenue pace &amp; today's execution</h3><span>Month-end trajectory and the interventions in play</span><div class="rule"></div></div><section class="grid-2"><div class="card"><div class="chead"><h4>Revenue pace &amp; forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}</div>${actionsCard()}</section>`;
+      }
+      function viewBDO(){
+        const si=state.dept;const d=B.sbus[si]||B.sbus[0];const pc=paceOf(d);const att=d.actual/d.target;
+        const reps=d.reps||[];const team80=reps.filter(r=>r.actual/r.target>=.8).length;
+        const kpis=[
+          ["Department target",kMoney(d.target),"Approved SBU target","var(--slate)"],
+          ["Cleared revenue",kMoney(d.actual),pct(att)+" attainment","var(--jade)"],
+          ["Month-end forecast",kMoney(d.forecast),pct(d.forecast/d.target)+" projected","var(--slate)"],
+          ["Qualified pipeline",kMoney(d.pipeline),(d.pipeline/d.target).toFixed(1)+"× target","var(--slate)"],
+          ["Team at 80%+",team80+" / "+reps.length,"Balanced performance","var(--gold)"],
+          ["Collection",pct(d.collection,0),"Finance-cleared","var(--brand)"]
+        ];
+        return roleBanner(pInitials(d.leader),d.leader,"BDO · "+d.name+" department",pc)
+          +kpiRow(kpis)
+          +`<div class="section-tag"><h3>Team performance</h3><span>Executives in ${esc(d.name)} — click to open a person</span><div class="rule"></div></div>${repsTable(d,si)}`
+          +`<div class="section-tag"><h3>Where to focus today</h3><span>Department interventions</span><div class="rule"></div></div>${actionsCard()}`;
+      }
+      function viewBDE(){
+        const d=B.sbus[state.dept]||B.sbus[0];const r=(d.reps||[])[state.emp]||(d.reps||[])[0];const pc=paceOf(r);const att=r.actual/r.target;const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
+        const kpis=[
+          ["Monthly target",kMoney(r.target),"Approved personal target","var(--slate)"],
+          ["Cleared revenue",kMoney(r.actual),pct(att)+" of target","var(--jade)"],
+          ["Volume achieved",nf.format(r.units||0),"units this period","var(--slate)"],
+          ["Qualified pipeline",kMoney(r.pipeline),(r.pipeline/r.target).toFixed(1)+"× coverage","var(--slate)"],
+          ["Collection",pct(r.collection,0),"cleared vs invoiced","var(--brand)"],
+          ["Daily pace needed",kMoney(daysLeft?Math.max(0,(r.target-r.actual)/daysLeft):0),daysLeft+" working days left","var(--amber)"]
+        ];
+        return roleBanner(pInitials(r.name),r.name,(r.title||"BDE")+" · "+d.name,pc)
+          +kpiRow(kpis)
+          +`<div class="section-tag"><h3>Today's priorities</h3><span>The nearest commercial next steps</span><div class="rule"></div></div>${actionsCard()}`
+          +`<div class="card" style="margin-top:2px"><div class="chead"><h4>Notes</h4><span class="chip slate">Prototype</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Field activity, deals and the daily report for ${esc(r.name)} appear here once live data is wired. Figures shown are scoped from the organization dataset.</p></div>`;
+      }
+      function roleView(){return state.role==="bdm"?viewBDM():state.role==="bdo"?viewBDO():viewBDE();}
 
+      function populateDept(){el("deptSelect").innerHTML=B.sbus.map((d,i)=>`<option value="${i}" ${i===state.dept?"selected":""}>${esc(d.name)}</option>`).join("");}
+      function populateEmp(){const reps=(B.sbus[state.dept]||B.sbus[0]).reps||[];if(state.emp>=reps.length)state.emp=0;el("empSelect").innerHTML=reps.map((r,i)=>`<option value="${i}" ${i===state.emp?"selected":""}>${esc(r.name)}</option>`).join("");}
+      function syncControls(){
+        el("roleSelect").value=state.role;
+        el("deptControl").style.display=(state.role==="bdo"||state.role==="bde")?"":"none";
+        el("empControl").style.display=(state.role==="bde")?"":"none";
+        el("tabNav").style.display=(state.role==="ceo")?"":"none";
+        if(state.role==="bdo"||state.role==="bde")populateDept();
+        if(state.role==="bde")populateEmp();
+        root.querySelectorAll("#tabNav .tab").forEach(t=>t.classList.toggle("active",t.dataset.v===state.view));
+      }
       function render(){
-        const scoped=(state.scope&&state.scope!=="org")?personByKey(state.scope):null;
-        if(scoped){el("workspace").innerHTML=vPerson(scoped);}
-        else{const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():vPipeline();}
-        syncScope();
-        root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{state.scope=x.getAttribute("data-scope");render();window.scrollTo({top:0,behavior:"smooth"});}));
+        if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():vPipeline();}
+        else{el("workspace").innerHTML=roleView();}
+        syncControls();
+        root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
@@ -563,11 +634,12 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         el("reportPreview").textContent=lines.join("\n");
       }
 
-      populateScope();
-      el("scopeSelect").addEventListener("change",e=>{state.scope=e.target.value;render();window.scrollTo({top:0,behavior:"smooth"});});
+      el("roleSelect").addEventListener("change",e=>{state.role=e.target.value;if(state.role==="ceo")state.view="command";render();window.scrollTo({top:0,behavior:"smooth"});});
+      el("deptSelect").addEventListener("change",e=>{state.dept=+e.target.value;state.emp=0;render();});
+      el("empSelect").addEventListener("change",e=>{state.emp=+e.target.value;render();});
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
       el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
-      root.querySelectorAll("#tabNav .tab[data-v]").forEach(a=>a.addEventListener("click",()=>{state.scope="org";state.view=a.dataset.v;render();}));
+      root.querySelectorAll("#tabNav .tab[data-v]").forEach(a=>a.addEventListener("click",()=>{state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
       render();
