@@ -1,10 +1,7 @@
 <?php
 /**
- * OPTIONAL FALLBACK. The shared secret is normally stored in the DB (app_settings row
- * 'corporate_proposal_secret') so it's shared across environments with no per-machine file.
- * This file is only used if that DB row is empty — copy it to `proposal_config.php` (same
- * folder) ON THE SERVER and set a strong secret. `proposal_config.php` is gitignored and
- * must NEVER be committed.
+ * TEMPLATE — copy this to `proposal_config.php` (same folder) ON THE SERVER and set a
+ * strong secret. `proposal_config.php` is gitignored and must NEVER be committed.
  *
  *   cp includes/proposal_config.sample.php includes/proposal_config.php
  *   # then edit and set a real value, e.g. output of:  openssl rand -hex 32

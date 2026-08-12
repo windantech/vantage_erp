@@ -239,9 +239,9 @@ if (!headers_sent()) {
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link" href="corporate_proposal_settings.php">
-            <i class="bi bi-shield-lock"></i>
-            <span>Proposal Integration</span>
+        <a class="nav-link" href="corporate_proposals.php">
+            <i class="bi bi-inboxes"></i>
+            <span>Corporate Proposals</span>
         </a>
     </li>
 <?php } ?>

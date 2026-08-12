@@ -24,14 +24,10 @@
  *     422  {"success":false,"error":"Please fill in all required fields ..."}
  *     500  {"success":false,"error":"..."}
  *
- * The shared secret lives in the DB (so it's shared across every environment on this DB and
- * there is no per-machine file). Seed it once:
- *   INSERT INTO app_settings (setting_key, setting_value)
- *   VALUES ('corporate_proposal_secret', '<random>')
- *   ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
- * The frontend does NOT read the DB — we simply give it that value once and it sends it in
- * the X-Vantage-Proposal-Secret header. As an optional fallback, a server-only file
- * (includes/proposal_config.php, gitignored) is also honoured if the DB row isn't set.
+ * The shared secret lives in an untracked, server-only file (never committed — same rule
+ * as the Brevo key):  includes/proposal_config.php  ->  <?php $PROPOSAL_SHARED_SECRET='...';
+ * See includes/proposal_config.sample.php. The frontend is given that value out-of-band and
+ * sends it in the X-Vantage-Proposal-Secret header; it never reads our DB.
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -49,21 +45,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     proposal_respond(405, ['success' => false, 'error' => 'method not allowed']);
 }
 
+// ---- Auth: shared secret (server-only file includes/proposal_config.php, gitignored) ----
+$expected_secret = '';
+$cfg = __DIR__ . '/proposal_config.php';
+if (is_file($cfg)) {
+    include $cfg;
+    if (!empty($PROPOSAL_SHARED_SECRET)) {
+        $expected_secret = (string) $PROPOSAL_SHARED_SECRET;
+    }
+}
+$provided_secret = $_SERVER['HTTP_X_VANTAGE_PROPOSAL_SECRET'] ?? '';
+if ($expected_secret === '' || !is_string($provided_secret) || !hash_equals($expected_secret, $provided_secret)) {
+    proposal_respond(401, ['success' => false, 'error' => 'unauthorized']);
+}
+
 // ---- DB ----
 require __DIR__ . '/../../database/conn.php';   // provides $conn (vantage_crm)
 if (!isset($conn) || !$conn) {
     proposal_respond(500, ['success' => false, 'error' => 'database unavailable']);
 }
 
-// ---- Ensure tables exist (self-provisioning; idempotent) ----
-$conn->query(
-    "CREATE TABLE IF NOT EXISTS `app_settings` (
-        `setting_key` VARCHAR(120) NOT NULL,
-        `setting_value` TEXT DEFAULT NULL,
-        `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (`setting_key`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-);
+// ---- Ensure the table exists (self-provisioning; idempotent) ----
 $conn->query(
     "CREATE TABLE IF NOT EXISTS `corporate_proposals` (
         `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -93,29 +95,6 @@ $conn->query(
         KEY `idx_submitted` (`submitted_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
-
-// ---- Auth: shared secret (from DB app_settings; server-only file is an optional fallback) ----
-// The frontend never reads our DB — it only sends the value we hand it, in the header below.
-$expected_secret = '';
-if ($res = $conn->query("SELECT `setting_value` FROM `app_settings` WHERE `setting_key` = 'corporate_proposal_secret' LIMIT 1")) {
-    if ($row = $res->fetch_assoc()) {
-        $expected_secret = trim((string) $row['setting_value']);
-    }
-    $res->free();
-}
-if ($expected_secret === '') {
-    $cfg = __DIR__ . '/proposal_config.php';   // optional fallback if the DB row isn't set
-    if (is_file($cfg)) {
-        include $cfg;
-        if (!empty($PROPOSAL_SHARED_SECRET)) {
-            $expected_secret = (string) $PROPOSAL_SHARED_SECRET;
-        }
-    }
-}
-$provided_secret = $_SERVER['HTTP_X_VANTAGE_PROPOSAL_SECRET'] ?? '';
-if ($expected_secret === '' || !is_string($provided_secret) || !hash_equals($expected_secret, $provided_secret)) {
-    proposal_respond(401, ['success' => false, 'error' => 'unauthorized']);
-}
 
 // ---- Collect + validate ----
 $field = function ($k) {

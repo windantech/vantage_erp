@@ -2,23 +2,11 @@
 -- (corporate-proposal.php), forwarded server-to-server to
 -- includes/receive_corporate_proposal.php.
 --
--- The receiver self-provisions these tables (CREATE TABLE IF NOT EXISTS) on first POST,
+-- The receiver self-provisions this table (CREATE TABLE IF NOT EXISTS) on first POST,
 -- so running this file is optional — it's kept for reference / manual setup.
 --
--- SETUP: seed the shared secret ONCE (replace the value with output of `openssl rand -hex 32`).
--- Both the backend (reads it here) and the frontend (we hand it the value) use the same string;
--- the frontend never queries the DB.
---
---   CREATE TABLE IF NOT EXISTS `app_settings` (
---     `setting_key` VARCHAR(120) NOT NULL,
---     `setting_value` TEXT DEFAULT NULL,
---     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
---     PRIMARY KEY (`setting_key`)
---   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
---
---   INSERT INTO `app_settings` (`setting_key`, `setting_value`)
---   VALUES ('corporate_proposal_secret', 'PASTE_A_LONG_RANDOM_STRING')
---   ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`);
+-- The shared secret is NOT stored here — it lives in the server-only, gitignored file
+-- includes/proposal_config.php (see includes/proposal_config.sample.php).
 
 CREATE TABLE IF NOT EXISTS `corporate_proposals` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
