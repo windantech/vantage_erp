@@ -283,17 +283,18 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
 
       /* ---------- shared blocks ---------- */
-      function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Five-SBU commercial command</div><h2>${esc(B.mandate)}</h2><p>${esc(B.mandateText)}</p></div><div class="focus"><b>Today's strategic focus</b><span>${esc(B.focus)}</span></div></section>`;}
+      function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Office of the CEO · Enterprise view</div><h2>Enterprise intervention dashboard</h2><p>See the entire organization clearly and intervene where leadership, resources or decisions will change the result.</p></div><div class="focus"><b>What this consolidates</b><span>Revenue, forecasts, staff performance, strategic accounts, commissions, collections, product readiness and the few decisions requiring executive attention.</span></div></section>`;}
 
       function kpiBlock(){
-        const att=B.actual/B.target;const c=commission();const sbus80=B.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const att=B.actual/B.target;const sbus80=B.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const commLiability=B.sbus.reduce((s,d)=>s+d.actual*0.04,0);const outstanding=B.sbus.reduce((s,d)=>s+d.actual*(1-d.collection),0);
         const items=[
           ["Organization target",kMoney(B.target),"All five SBUs","flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
           ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
-          ["BDM personal sales",kMoney(B.personalActual),pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget),"up","var(--slate)"],
+          ["Organization collection",pct(B.collection,0),kMoney(outstanding)+" still outstanding","flat","var(--brand)"],
           ["SBUs at 80%+",sbus80+" / 5","Balanced-SBU gate","flat","var(--gold)"],
-          ["Commission estimate",kMoney(c.current),c.current>0?"Personal + leadership":"Not yet unlocked","flat","var(--amber)"]
+          ["Commission liability",kMoney(commLiability),"Estimated across all SBUs","flat","var(--amber)"]
         ];
         const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
         const kIcons=[
@@ -342,7 +343,27 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ["blue","Audit HOD forecasts","Every SBU forecast must be supported by stage, value, probability, owner and next action.","Before weekly review"],
           ["green","Protect balanced performance","Strong results in one SBU must not hide serious underperformance elsewhere.","Ongoing"]
         ];
-        return `<div class="card"><div class="chead"><h4>Today's action centre</h4><span class="chip coral">Action required</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Interventions required</h4><span class="chip coral">Executive</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)}</p></div><span class="due">${esc(d)}</span></div>`).join("")}</div></div>`;
+      }
+      function decisionsCard(){
+        const items=[
+          ["Pricing / discount approval","National Bank L&D — a 12% above-policy discount is requested to close KES 8.4M.","Decision"],
+          ["Resource allocation","International needs one more BDE to hold pace — approve, defer or reallocate.","Decision"],
+          ["Partnership sign-off","Co-delivery MOU with a university for the Academic SBU awaits signature.","Sign-off"],
+          ["Product go / no-go","Eval360 v2 release — confirm the launch date or hold.","Go / No-go"]
+        ];
+        return `<div class="card"><div class="chead"><h4>Decisions requiring executive attention</h4><span class="chip gold">${items.length} pending</span></div><div class="list">${items.map(([t,d,tag])=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(t)}</b><p>${esc(d)}</p></div><span class="chip slate">${esc(tag)}</span></div>`).join("")}</div></div>`;
+      }
+      function healthStrip(){
+        const outstanding=B.sbus.reduce((s,d)=>s+d.actual*(1-d.collection),0);
+        const worst=[...B.sbus].sort((a,b)=>a.collection-b.collection)[0];
+        const commLiability=B.sbus.reduce((s,d)=>s+d.actual*0.04,0);
+        const products=[["Eval360","Stable","green"],["360 Appraisal","Stable","green"],["Virtual LMS","Minor issues","amber"],["Onboarding automation","Needs attention","red"]];
+        return `<section class="grid-3">
+          <div class="card"><div class="chead"><h4>Collections health</h4><span class="chip ${B.collection>=.9?"jade":"amber"}">${pct(B.collection,0)}</span></div><div class="mini3"><div class="cm"><span>Outstanding</span><b class="num">${kMoney(outstanding)}</b></div><div class="cm"><span>Weakest SBU</span><b class="num" style="font-size:13px">${esc(worst.name)}</b></div><div class="cm"><span>Its rate</span><b class="num">${pct(worst.collection,0)}</b></div></div></div>
+          <div class="card"><div class="chead"><h4>Commission exposure</h4><span class="chip gold">Estimated</span></div><div style="font-size:26px;font-weight:850;letter-spacing:-.02em;margin:6px 0 2px" class="num">${kMoney(commLiability)}</div><p style="font-size:12px;color:var(--muted);margin:0;line-height:1.5">Estimated payable across all SBUs at current attainment. Finalised against Finance-verified revenue.</p></div>
+          <div class="card"><div class="chead"><h4>Product readiness</h4><span class="chip slate">${products.filter(p=>p[2]==="green").length}/${products.length} stable</span></div><div class="list">${products.map(([n,s,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(n)}</b></div><span class="chip ${c==="green"?"jade":c==="amber"?"amber":"coral"}">${esc(s)}</span></div>`).join("")}</div></div>
+        </section>`;
       }
       function teamTable(){
         const avatarCols=["var(--slate)","#2f8f88","var(--brand)","var(--violet)","var(--gold)"];
@@ -387,22 +408,28 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         const ps=pace();
         return `${strategyStrip()}
           <section class="hero">
-            <div class="card"><div class="chead"><h4>Organization portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
+            <div class="card"><div class="chead"><h4>Enterprise scorecard</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
 
-          <div class="section-tag"><h3>Five-SBU performance comparison</h3><span>The whole picture — each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Where to intervene</h3><span>The few things that need leadership, resources or a decision — now</span><div class="rule"></div></div>
+          <section class="grid-2">
+            ${actionsCard()}
+            ${decisionsCard()}
+          </section>
+
+          <div class="section-tag"><h3>Five-SBU performance</h3><span>The whole picture — click any SBU to drill into that department</span><div class="rule"></div></div>
           ${teamTable()}
-          ${execRevenueBreakdown()}
 
-          <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
-          ${execTopDeals()}
+          <div class="section-tag"><h3>Organization health</h3><span>Collections, commission exposure and product readiness</span><div class="rule"></div></div>
+          ${healthStrip()}
 
-          <div class="section-tag"><h3>Pace, forecast &amp; today's execution</h3><span>Month-end trajectory and the actions in play now</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Revenue trajectory &amp; strategic accounts</h3><span>Month-end forecast and the highest-value open accounts company-wide</span><div class="rule"></div></div>
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
-            ${actionsCard()}
-          </section>`;
+            ${execRevenueBreakdown()}
+          </section>
+          ${execTopDeals()}`;
       }
 
       function vPipeline(){
