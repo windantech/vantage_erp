@@ -41,6 +41,16 @@
  *                                                 # across these staff ids, so nothing is left
  *   php wa_triage_assign.php --limit=50           # try a small batch first
  *   php wa_triage_assign.php --staff              # just list eligible staff ids and exit
+ *   php wa_triage_assign.php --days=90 --explain  # for every unrouted chat, show which
+ *                                                 # titles it nearly matched and why it
+ *                                                 # was dropped (usually a scoring tie)
+ *   php wa_triage_assign.php --days=90 --apply \\
+ *       --match="senior management" --to=event:123
+ *                                                 # route every unrouted chat whose text
+ *                                                 # contains that phrase. --to accepts
+ *                                                 # course:ID, event:ID, program:ID or
+ *                                                 # user:ID. This is how the ad-referral
+ *                                                 # backlog gets cleared in a few passes.
  *
  * Browser (behind the normal CRM login):
  *   /admin/wa_triage_assign.php?apply=1&days=90&fallback=121,134
@@ -49,7 +59,8 @@
 $IS_CLI = (PHP_SAPI === 'cli');
 
 if ($IS_CLI) {
-    $opt = getopt('', ['apply', 'ai', 'staff', 'days::', 'limit::', 'minchars::', 'fallback::']);
+    $opt = getopt('', ['apply', 'ai', 'staff', 'explain', 'days::', 'limit::',
+                       'minchars::', 'fallback::', 'match::', 'to::']);
     $APPLY    = array_key_exists('apply', $opt);
     $USE_AI   = array_key_exists('ai', $opt);
     $SHOW_STF = array_key_exists('staff', $opt);
@@ -57,6 +68,9 @@ if ($IS_CLI) {
     $LIMIT    = isset($opt['limit'])    ? max(1, (int)$opt['limit'])    : 0;
     $MINCHARS = isset($opt['minchars']) ? max(1, (int)$opt['minchars']) : 8;
     $FALLBACK = isset($opt['fallback']) ? (string)$opt['fallback']      : '';
+    $EXPLAIN  = array_key_exists('explain', $opt);
+    $MATCH    = isset($opt['match']) ? trim((string)$opt['match']) : '';
+    $TOSPEC   = isset($opt['to'])    ? trim((string)$opt['to'])    : '';
 } else {
     $APPLY    = !empty($_GET['apply']);
     $USE_AI   = !empty($_GET['ai']);
@@ -65,6 +79,9 @@ if ($IS_CLI) {
     $LIMIT    = isset($_GET['limit'])    ? max(1, (int)$_GET['limit'])    : 0;
     $MINCHARS = isset($_GET['minchars']) ? max(1, (int)$_GET['minchars']) : 8;
     $FALLBACK = isset($_GET['fallback']) ? (string)$_GET['fallback']      : '';
+    $EXPLAIN  = !empty($_GET['explain']);
+    $MATCH    = isset($_GET['match']) ? trim((string)$_GET['match']) : '';
+    $TOSPEC   = isset($_GET['to'])    ? trim((string)$_GET['to'])    : '';
 }
 
 // wa_triage_sql() bakes these in as constants, so set them BEFORE wa_functions.php
@@ -116,12 +133,59 @@ if ($badIds) {
     exit(1);
 }
 
+/* ------------------------------------------------------- resolve --match/--to */
+
+// --to=course:9 | event:123 | program:4 | user:121. Resolved once, up front, so a
+// bad target fails before it can half-apply across hundreds of chats.
+$TO = null;
+if ($MATCH !== '' || $TOSPEC !== '') {
+    if ($MATCH === '' || $TOSPEC === '') {
+        exit("ERROR: --match and --to must be given together.\n"
+           . "  e.g. --match=\"senior management\" --to=event:123\n");
+    }
+    $bits = explode(':', $TOSPEC, 2);
+    $kind = strtolower(trim($bits[0]));
+    $tid  = isset($bits[1]) ? (int)$bits[1] : 0;
+    if ($tid < 1) { exit("ERROR: --to needs an id, e.g. --to=course:9\n"); }
+
+    if ($kind === 'course' || $kind === 'event') {
+        $uid = wa_first_owner($conn, $kind, $tid);
+        if ($uid === null) {
+            exit("ERROR: $kind $tid has no rep, so assigning chats to it would hide them\n"
+               . "       from everyone. Give it a rep first, or use --to=user:ID.\n");
+        }
+        $TO = ['type' => $kind, 'id' => $tid, 'uid' => $uid, 'prog' => null,
+               'label' => $kind . ' ' . $tid];
+    } elseif ($kind === 'program') {
+        $prog = wa_program_get($conn, $tid);
+        if (!$prog) { exit("ERROR: no training programme with id $tid\n"); }
+        $uid = wa_program_first_owner($prog);
+        if ($uid === null) {
+            exit("ERROR: programme '" . (string)$prog['name'] . "' has no reps assigned.\n"
+               . "       Assign reps to it first, or use --to=user:ID.\n");
+        }
+        $TO = ['type' => 'program', 'id' => null, 'uid' => $uid, 'prog' => $tid,
+               'label' => (string)$prog['name']];
+    } elseif ($kind === 'user') {
+        if (!isset($valid[$tid])) {
+            exit("ERROR: $tid is not WhatsApp staff (ERP role 44). Run --staff for the ids.\n");
+        }
+        $TO = ['type' => 'unclassified', 'id' => null, 'uid' => $tid, 'prog' => null,
+               'label' => $valid[$tid]];
+    } else {
+        exit("ERROR: --to must be course:ID, event:ID, program:ID or user:ID\n");
+    }
+}
+
 /* -------------------------------------------------------------------- header */
 
 echo "=== Triage sweep: route the chats nobody owns ===\n";
 echo $APPLY ? "MODE: APPLY (writing)\n" : "MODE: DRY RUN — nothing is written. Add --apply to commit.\n";
 echo "WINDOW: last {$DAYS} days, inbound message of at least {$MINCHARS} characters\n";
 echo "AI CLASSIFIERS: " . ($USE_AI ? "on (costs tokens)" : "off — keyword matching only") . "\n";
+if ($TO) {
+    echo "RULE: chats containing \"" . $MATCH . "\" -> " . $TOSPEC . " (" . $TO['label'] . ")\n";
+}
 echo "FALLBACK: " . ($pool ? "round-robin across " . implode(', ', array_map(
         function ($id) use ($valid) { return $id . ' (' . $valid[$id] . ')'; }, $pool))
     : "none — unmatched chats are listed but left alone") . "\n\n";
@@ -150,12 +214,51 @@ echo "Found " . count($rows) . " chat(s) in Triage.\n\n";
 
 $courses = wa_active_courses($conn);
 
+/* ------------------------------------------------------------- why-no-match */
+
+/**
+ * Diagnostic scorer. Mirrors the token scoring inside wa_classify_course() /
+ * wa_classify_academic() so --explain can show WHICH titles the message hit and by
+ * how much. It exists because the classifiers return only a verdict: when several
+ * titles tie on the top score they score the match 0.35, which is under the 0.60
+ * threshold, so a message that plainly names a product is reported as "no match"
+ * with no clue why.
+ */
+function sweep_candidates($msg, $items, $minLen = 3) {
+    $stop = wa_stopwords();
+    $hay  = ' ' . wa_normalize($msg) . ' ';
+    $out  = [];
+    foreach ($items as $it) {
+        $hits = [];
+        $tot  = 0;
+        foreach (explode(' ', wa_normalize((string)$it['name'])) as $w) {
+            if (mb_strlen($w) < $minLen || isset($stop[$w])) { continue; }
+            $tot++;
+            if (strpos($hay, ' ' . $w . ' ') !== false) { $hits[] = $w; }
+        }
+        if ($hits) {
+            $out[] = ['id' => (int)$it['id'], 'name' => (string)$it['name'],
+                      'hits' => count($hits), 'of' => $tot, 'words' => $hits];
+        }
+    }
+    usort($out, function ($a, $b) { return $b['hits'] <=> $a['hits']; });
+    return $out;
+}
+
+$academics = [];
+if ($EXPLAIN) {
+    $ares = mysqli_query($conn,
+        "SELECT event_id AS id, event_title AS name FROM `Event`
+          WHERE status = 1 AND location LIKE 'ACADEMIC#%'");
+    while ($ares && ($a = mysqli_fetch_assoc($ares))) { $academics[] = $a; }
+}
+
 /* ------------------------------------------------------------- classify each */
 
 $plan  = [];
 $stats = ['event' => 0, 'course' => 0, 'academic' => 0, 'program' => 0,
           'fallback' => 0, 'nomatch' => 0, 'silent' => 0, 'mode_set' => 0,
-          'human' => 0, 'norep' => 0];
+          'human' => 0, 'norep' => 0, 'rule' => 0];
 $rr = 0;
 
 foreach ($rows as $r) {
@@ -263,7 +366,19 @@ foreach ($rows as $r) {
         }
     }
 
-    // 5. Still nothing to go on — hand it to a human from the pool so it stops rotting.
+    // 5. A rule you supplied on the command line: --match=<text> --to=<target>. This is
+    //    how the ad-referral backlog gets cleared — hundreds of chats whose whole first
+    //    message is the ad's prefilled text ("Hi! Can I get more info on the X"), which
+    //    the token classifiers tie on and therefore drop.
+    if ($hit['type'] === null && $MATCH !== '' && $TO !== null
+        && mb_stripos($text, $MATCH) !== false) {
+        $hit = ['type' => $TO['type'], 'id' => $TO['id'], 'uid' => $TO['uid'],
+                'prog' => $TO['prog'], 'method' => 'manual_rule', 'conf' => 1.0,
+                'label' => $TO['label']];
+        $stats['rule']++;
+    }
+
+    // 6. Still nothing to go on — hand it to a human from the pool so it stops rotting.
     if ($hit['type'] === null && $pool) {
         $hit = ['type' => 'unclassified', 'id' => null, 'uid' => $pool[$rr % count($pool)],
                 'prog' => null, 'method' => 'triage_fallback', 'conf' => 0.0, 'label' => ''];
@@ -314,6 +429,56 @@ foreach ($plan as $p) {
         wa_pad(mb_substr($route, 0, 26), 26),
         wa_pad($owner, 22),
         mb_substr(preg_replace('/\s+/u', ' ', $p['text']), 0, 46));
+
+    if ($EXPLAIN && $h['type'] === null) {
+        $cc = array_slice(sweep_candidates($p['text'], $courses), 0, 3);
+        $ac = array_slice(sweep_candidates($p['text'], $academics), 0, 3);
+        if (!$cc && !$ac) {
+            echo "         why: the message shares no distinctive word with any course or academic title\n";
+        } else {
+            foreach ([['course', $cc], ['academic', $ac]] as $pair) {
+                list($what, $list) = $pair;
+                foreach ($list as $i => $cand) {
+                    printf("         why: %-8s #%-5d %-38s %d/%d hit(s) on: %s%s\n",
+                        $what, $cand['id'], mb_substr($cand['name'], 0, 38),
+                        $cand['hits'], $cand['of'], implode(', ', $cand['words']),
+                        ($i === 0 && isset($list[1]) && $list[1]['hits'] === $cand['hits'])
+                            ? '   <- TIED with the next one, so scored 0.35 and dropped' : '');
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------- what the leftovers look like */
+
+// Hundreds of unmatched rows are not hundreds of decisions. Nearly all of them are
+// click-to-WhatsApp ad referrals whose entire first message is the ad's prefilled
+// text, so grouping by that text turns the backlog into a short list you can map
+// with --match/--to one line at a time.
+$patterns = [];
+foreach ($plan as $p) {
+    if ($p['hit']['type'] !== null && $p['hit']['method'] !== 'triage_fallback') { continue; }
+    $first = trim(preg_replace('/\s+/u', ' ', explode(' | ', $p['text'])[0]));
+    $key   = mb_strtolower(mb_substr($first, 0, 55));
+    if ($key === '') { $key = '(empty)'; }
+    if (!isset($patterns[$key])) { $patterns[$key] = ['n' => 0, 'sample' => $first]; }
+    $patterns[$key]['n']++;
+}
+if ($patterns) {
+    uasort($patterns, function ($a, $b) { return $b['n'] <=> $a['n']; });
+    echo "\n=== What the unrouted chats actually say (top 20 opening lines) ===\n";
+    $shown = 0;
+    foreach ($patterns as $pat) {
+        if ($shown++ >= 20) { break; }
+        printf("  %5d x  %s\n", $pat['n'], mb_substr($pat['sample'], 0, 95));
+    }
+    if (count($patterns) > 20) {
+        printf("  ... and %d more distinct opening line(s)\n", count($patterns) - 20);
+    }
+    echo "\n  Map a whole group in one go, e.g.:\n";
+    echo "    php wa_triage_assign.php --days=90 --match=\"senior management\" --to=event:123 --apply\n";
+    echo "  Run --explain to see which titles each message nearly matched.\n";
 }
 
 /* --------------------------------------------------------------- write them */
@@ -367,6 +532,7 @@ printf("  matched an event .......... %d\n", $stats['event']);
 printf("  matched a course .......... %d\n", $stats['course']);
 printf("  matched academic course ... %d\n", $stats['academic']);
 printf("  matched a programme ....... %d\n", $stats['program']);
+if ($stats['rule']) { printf("  matched your --match rule ... %d\n", $stats['rule']); }
 printf("  no match -> fallback pool .. %d\n", $stats['fallback']);
 printf("  no match, left in triage ... %d\n", $stats['nomatch']);
 if ($stats['human'] || $stats['norep']) {
