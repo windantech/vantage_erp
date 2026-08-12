@@ -4432,6 +4432,12 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
               . "genuinely need to narrow a large country to a venue, ask for the CITY only — once, and only if it "
               . "actually changes your answer. If THEY name a different country or city themselves, believe them "
               . "over the phone number and switch to that.\n"
+              . "  * This OVERRIDES the KNOWLEDGE below. Our FAQ text was written for people who phoned in, so it "
+              . "says things like 'the team confirms which country/cohort you want' — that step is already done. "
+              . "Never turn a line of KNOWLEDGE into a question about where they are.\n"
+              . "  * Instead of asking, state it and move on: 'Since you're in " . trim((string) $country) . ", the "
+              . "session that applies to you is …'. If nothing runs there, say that plainly and give the nearest "
+              . "one — still without asking them to confirm their country.\n"
             : "- WHERE THEY ARE: their number gives us no country, so for an in-person request ask once, warmly, "
               . "which country or city they're in — e.g. 'Which country are you in, so I can check the sessions "
               . "available to you?' — then match the session from the TRAINING PROGRAMMES list.\n")
@@ -4707,6 +4713,27 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
             : "(No knowledge base has been added for this one yet — so you have NO specific facts about it. Do NOT "
             . "invent any. Answer only from the programme/course lists above, otherwise say you'll confirm the "
             . "details with the team and escalate.)") . "\n\n"
+
+        // The KNOWLEDGE above is the last thing read and carries the most weight, and it
+        // was written for phone enquiries — so it asks for the country and describes the
+        // online course. Restate the two hard rules AFTER it, or they get overridden.
+        . (($onsite || $knowsWhere)
+            ? "BEFORE YOU WRITE — RE-CHECK THE KNOWLEDGE YOU JUST READ:\n"
+              . ($knowsWhere
+                  ? "- It was written for people who phoned in, so parts of it assume we still have to establish "
+                    . "where the customer is. We do not: they are in " . trim((string) $country) . ". Do not ask "
+                    . "them to confirm it, and do not repeat any KNOWLEDGE line that asks for their country, "
+                    . "location or cohort.\n"
+                  : "")
+              . ($onsite
+                  ? "- Parts of it describe the ONLINE version (its fee, its registration link, e-learning access, "
+                    . "rolling intakes, weekly online sessions). This customer is coming IN PERSON. Use the "
+                    . "KNOWLEDGE only for what the training itself covers; take every fee, date, venue and link "
+                    . "from the in-person session instead, and say nothing about the online version existing.\n"
+                  : "")
+              . "\n"
+            : "")
+
         . "Respond with ONLY JSON: {\"reply\": \"<the WhatsApp message to send>\", \"escalate\": <true|false>, "
         . "\"handoff\": \"<staff-only note when escalating, else empty>\"}.";
 }
