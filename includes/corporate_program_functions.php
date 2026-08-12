@@ -48,9 +48,44 @@ if (!function_exists('corporate_get_all_programs')) {
         return $rows;
     }
 
+    /**
+     * Self-heal: older installs predate columns added by later features (the day-grouped
+     * outline's `day_label` / `day_subtitle`). On PHP 8.1+ mysqli THROWS on a missing
+     * column, which 500s the edit form and silently breaks saves. Add them idempotently.
+     * Runs at most once per request; safely no-ops if the table isn't there yet.
+     */
+    function corporate_ensure_schema($conn)
+    {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+        try {
+            $cols = [];
+            $r = mysqli_query($conn, "SHOW COLUMNS FROM `corporate_curriculum`");
+            if ($r) {
+                while ($c = mysqli_fetch_assoc($r)) {
+                    $cols[$c['Field']] = true;
+                }
+            }
+            if ($cols) {
+                if (!isset($cols['day_label'])) {
+                    mysqli_query($conn, "ALTER TABLE `corporate_curriculum` ADD COLUMN `day_label` VARCHAR(255) NULL");
+                }
+                if (!isset($cols['day_subtitle'])) {
+                    mysqli_query($conn, "ALTER TABLE `corporate_curriculum` ADD COLUMN `day_subtitle` VARCHAR(255) NULL");
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('corporate_ensure_schema: ' . $e->getMessage());
+        }
+    }
+
     function corporate_get_program($conn, $id)
     {
         $id = (int) $id;
+        corporate_ensure_schema($conn);
         $res = mysqli_query($conn, "SELECT * FROM `corporate_programs` WHERE `id` = $id LIMIT 1");
         if (!$res || mysqli_num_rows($res) === 0) {
             return null;
@@ -79,6 +114,7 @@ if (!function_exists('corporate_get_all_programs')) {
     function corporate_save_curriculum($conn, $program_id, $rows_in)
     {
         $program_id = (int) $program_id;
+        corporate_ensure_schema($conn);
         mysqli_query($conn, "DELETE FROM `corporate_curriculum` WHERE `program_id` = $program_id");
         $sort = 0;
         $stmt = $conn->prepare("INSERT INTO `corporate_curriculum` (`program_id`, `day_label`, `day_subtitle`, `module_name`, `sort_order`) VALUES (?, ?, ?, ?, ?)");
