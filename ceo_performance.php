@@ -251,7 +251,7 @@ try {
         <button class="tab" data-v="admin"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Admin</button>
       </nav>
       <main id="workspace"></main>
-      <div class="ops-modal" id="opsModal"><div class="ops-modal-box"><div class="ops-modal-head"><h4 id="opsModalTitle"></h4><button type="button" class="tbtn" onclick="closeOpsModal()">✕ Close</button></div><div class="ops-modal-body" id="opsModalBody"></div></div></div>
+      <div class="ops-modal" id="opsModal"><div class="ops-modal-box"><div class="ops-modal-head"><h4 id="opsModalTitle"></h4><button type="button" class="tbtn" data-close>✕ Close</button></div><div class="ops-modal-body" id="opsModalBody"></div></div></div>
     </div>
 
     <script>
@@ -756,9 +756,9 @@ try {
         const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
         const deptMax=Math.max(1,...HR.by_dept.map(d=>d.count));
         const deptCard=`<div class="card"><div class="chead"><h4>Staff by department</h4><span class="chip slate">Active</span></div>${HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No data.</p>'}</div>`;
-        const attCard=`<div class="card" style="cursor:pointer" onclick="showClockins()"><div class="chead"><h4>Attendance today</h4><span class="chip jade">View list ↗</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Present</span><b class="num">${nf.format(HR.att_present||0)}</b></div><div class="cm"><span>Punches</span><b class="num">${nf.format(HR.att_punches||0)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Click to see who clocked in and at what time.</div></div>`;
+        const attCard=`<div class="card" style="cursor:pointer" data-modal="clockins"><div class="chead"><h4>Attendance today</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View list →</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Present</span><b class="num">${nf.format(HR.att_present||0)}</b></div><div class="cm"><span>Punches</span><b class="num">${nf.format(HR.att_punches||0)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Click to see who clocked in and at what time.</div></div>`;
         const p=HR.payroll;
-        const payCard=`<div class="card" style="cursor:pointer" onclick="showPayslips()"><div class="chead"><h4>Payroll — latest period</h4><span class="chip ${p&&p.status==='pending_approval'?'amber':'slate'}">${p?esc(String(p.status).replace(/_/g,' ')):'—'}</span></div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Click to see each employee's payslip.</div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
+        const payCard=`<div class="card" ${p?'style="cursor:pointer" data-modal="payslips"':''}><div class="chead"><h4>Payroll — latest period</h4><span class="chip ${p&&p.status==='pending_approval'?'amber':'slate'}">${p?esc(String(p.status).replace(/_/g,' ')):'—'}</span></div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div><div style="margin-top:10px"><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View payslips →</span></div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
         const statusChip=st=>{const m={active:"jade",approved:"jade",pending:"amber",under_review:"slate",suspended:"coral",terminated:"coral",rejected:"coral"};return `<span class="chip ${m[st]||"slate"}">${esc(String(st).replace(/_/g," "))}</span>`;};
         const rows=HR.staff.length?HR.staff.map(pp=>`<tr><td><b>${esc(pp.staff_id)}</b></td><td>${esc(pp.name)}<div style="font-size:11px;color:var(--muted)">${esc(pp.title||"—")}</div></td><td>${esc(pp.email)}<div style="font-size:11px;color:var(--muted)">${esc(pp.phone)}</div></td><td>${esc(pp.dept||"—")}</td><td>${statusChip(pp.status)}</td><td class="num">${esc(pp.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
         return `
@@ -795,6 +795,7 @@ try {
         else{el("workspace").innerHTML=roleView();}
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
+        root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();}));
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
@@ -818,6 +819,7 @@ try {
       el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
       root.querySelectorAll("#tabNav .tab[data-v]").forEach(a=>a.addEventListener("click",()=>{state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
+      el("opsModal").addEventListener("click",e=>{ if(e.target.id==="opsModal" || (e.target.closest && e.target.closest("[data-close]"))) closeOpsModal(); });
 
       render();
     })();
