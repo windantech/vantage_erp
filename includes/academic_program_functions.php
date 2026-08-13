@@ -34,7 +34,7 @@ if (!function_exists('academic_get_all_programs')) {
      * @param int $id
      * @return array|null
      */
-    /** Idempotent: adds program_curriculum.unit_id if an older install is missing it. */
+    /** Idempotent: adds program_curriculum.course_id / free_lesson_id if an install lacks them. */
     function academic_ensure_schema($conn)
     {
         static $done = false;
@@ -43,9 +43,11 @@ if (!function_exists('academic_get_all_programs')) {
         }
         $done = true;
         try {
-            $r = mysqli_query($conn, "SHOW COLUMNS FROM `program_curriculum` LIKE 'unit_id'");
-            if ($r && mysqli_num_rows($r) === 0) {
-                mysqli_query($conn, "ALTER TABLE `program_curriculum` ADD COLUMN `unit_id` VARCHAR(64) NULL AFTER `module_name`");
+            foreach (array('course_id', 'free_lesson_id') as $col) {
+                $r = mysqli_query($conn, "SHOW COLUMNS FROM `program_curriculum` LIKE '$col'");
+                if ($r && mysqli_num_rows($r) === 0) {
+                    mysqli_query($conn, "ALTER TABLE `program_curriculum` ADD COLUMN `$col` VARCHAR(64) NULL AFTER `module_name`");
+                }
             }
         } catch (\Throwable $e) {
             error_log('academic_ensure_schema: ' . $e->getMessage());
@@ -63,7 +65,7 @@ if (!function_exists('academic_get_all_programs')) {
         $program = mysqli_fetch_assoc($res);
 
         $program['curriculum_rows'] = [];
-        $cr = mysqli_query($conn, "SELECT `id`, `module_name`, `unit_id`, `curriculum_tier`, `sort_order` FROM `program_curriculum` WHERE `program_id` = $id ORDER BY FIELD(`curriculum_tier`, 'foundational', 'intermediate', 'advanced'), `sort_order` ASC, `id` ASC");
+        $cr = mysqli_query($conn, "SELECT `id`, `module_name`, `course_id`, `free_lesson_id`, `curriculum_tier`, `sort_order` FROM `program_curriculum` WHERE `program_id` = $id ORDER BY FIELD(`curriculum_tier`, 'foundational', 'intermediate', 'advanced'), `sort_order` ASC, `id` ASC");
         if ($cr) {
             while ($r = mysqli_fetch_assoc($cr)) {
                 $program['curriculum_rows'][] = $r;
@@ -101,13 +103,14 @@ if (!function_exists('academic_get_all_programs')) {
         academic_ensure_schema($conn);
         mysqli_query($conn, "DELETE FROM `program_curriculum` WHERE `program_id` = $program_id");
         $sort = 0;
-        $stmt = $conn->prepare("INSERT INTO `program_curriculum` (`program_id`, `module_name`, `unit_id`, `curriculum_tier`, `sort_order`) VALUES (?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO `program_curriculum` (`program_id`, `module_name`, `course_id`, `free_lesson_id`, `curriculum_tier`, `sort_order`) VALUES (?, ?, ?, ?, ?, ?)");
         if (!$stmt) {
             return false;
         }
         foreach ($module_rows as $row) {
             $name = isset($row['module_name']) ? trim((string) $row['module_name']) : '';
-            $unit = isset($row['unit_id']) ? trim((string) $row['unit_id']) : '';
+            $course = isset($row['course_id']) ? trim((string) $row['course_id']) : '';
+            $free = isset($row['free_lesson_id']) ? trim((string) $row['free_lesson_id']) : '';
             $tier = isset($row['curriculum_tier']) ? trim((string) $row['curriculum_tier']) : 'foundational';
             if ($name === '') {
                 continue;
@@ -116,7 +119,7 @@ if (!function_exists('academic_get_all_programs')) {
                 $tier = 'foundational';
             }
             $sort++;
-            $stmt->bind_param('isssi', $program_id, $name, $unit, $tier, $sort);
+            $stmt->bind_param('issssi', $program_id, $name, $course, $free, $tier, $sort);
             $stmt->execute();
         }
         $stmt->close();
@@ -467,7 +470,8 @@ if (!function_exists('academic_get_all_programs')) {
         }
         $modules = $_POST['curriculum'];
         $tiers = isset($_POST['curriculum_tier']) && is_array($_POST['curriculum_tier']) ? $_POST['curriculum_tier'] : array();
-        $unitIds = isset($_POST['curriculum_unit_id']) && is_array($_POST['curriculum_unit_id']) ? $_POST['curriculum_unit_id'] : array();
+        $courseIds = isset($_POST['curriculum_course_id']) && is_array($_POST['curriculum_course_id']) ? $_POST['curriculum_course_id'] : array();
+        $freeIds = isset($_POST['curriculum_free_lesson_id']) && is_array($_POST['curriculum_free_lesson_id']) ? $_POST['curriculum_free_lesson_id'] : array();
         $rows = array();
 
         foreach ($modules as $idx => $moduleName) {
@@ -481,7 +485,8 @@ if (!function_exists('academic_get_all_programs')) {
             }
             $rows[] = array(
                 'module_name' => $name,
-                'unit_id' => isset($unitIds[$idx]) ? trim((string) $unitIds[$idx]) : '',
+                'course_id' => isset($courseIds[$idx]) ? trim((string) $courseIds[$idx]) : '',
+                'free_lesson_id' => isset($freeIds[$idx]) ? trim((string) $freeIds[$idx]) : '',
                 'curriculum_tier' => $tier
             );
         }

@@ -163,7 +163,8 @@ if ($program) {
     foreach ($program['curriculum_rows'] as $row) {
         $curriculumValues[] = array(
             'module_name' => isset($row['module_name']) ? $row['module_name'] : '',
-            'unit_id' => isset($row['unit_id']) ? $row['unit_id'] : '',
+            'course_id' => isset($row['course_id']) ? $row['course_id'] : '',
+            'free_lesson_id' => isset($row['free_lesson_id']) ? $row['free_lesson_id'] : '',
             'curriculum_tier' => isset($row['curriculum_tier']) ? $row['curriculum_tier'] : 'foundational'
         );
     }
@@ -186,7 +187,8 @@ if (empty($curriculumValues)) {
     $curriculumValues = array(
         array(
             'module_name' => '',
-            'unit_id' => '',
+            'course_id' => '',
+            'free_lesson_id' => '',
             'curriculum_tier' => 'foundational'
         )
     );
@@ -368,7 +370,8 @@ if (empty($lecturerValues)) {
                                     <option value="intermediate" <?php echo ((isset($mod['curriculum_tier']) ? $mod['curriculum_tier'] : '') === 'intermediate') ? 'selected' : ''; ?>>Intermediate level</option>
                                     <option value="advanced" <?php echo ((isset($mod['curriculum_tier']) ? $mod['curriculum_tier'] : '') === 'advanced') ? 'selected' : ''; ?>>Advanced level</option>
                                 </select>
-                                <input type="text" name="curriculum_unit_id[]" class="form-control rounded-0" style="max-width: 130px;" value="<?php echo htmlspecialchars(isset($mod['unit_id']) ? $mod['unit_id'] : ''); ?>" placeholder="Unit ID">
+                                <input type="text" name="curriculum_course_id[]" class="form-control rounded-0" style="max-width: 120px;" value="<?php echo htmlspecialchars(isset($mod['course_id']) ? $mod['course_id'] : ''); ?>" placeholder="Course ID">
+                                <input type="text" name="curriculum_free_lesson_id[]" class="form-control rounded-0" style="max-width: 130px;" value="<?php echo htmlspecialchars(isset($mod['free_lesson_id']) ? $mod['free_lesson_id'] : ''); ?>" placeholder="Free lesson ID">
                                 <input type="text" name="curriculum[]" class="form-control rounded-0" value="<?php echo htmlspecialchars(isset($mod['module_name']) ? $mod['module_name'] : ''); ?>" placeholder="Module name">
                                 <button type="button" class="btn btn-outline-danger rounded-0 remove-curriculum">&times;</button>
                             </div>
@@ -456,7 +459,8 @@ if (empty($lecturerValues)) {
             <option value="intermediate">Intermediate level</option>
             <option value="advanced">Advanced level</option>
         </select>
-        <input type="text" name="curriculum_unit_id[]" class="form-control rounded-0" style="max-width: 130px;" value="" placeholder="Unit ID">
+        <input type="text" name="curriculum_course_id[]" class="form-control rounded-0" style="max-width: 120px;" value="" placeholder="Course ID">
+        <input type="text" name="curriculum_free_lesson_id[]" class="form-control rounded-0" style="max-width: 130px;" value="" placeholder="Free lesson ID">
         <input type="text" name="curriculum[]" class="form-control rounded-0" value="" placeholder="Module name">
         <button type="button" class="btn btn-outline-danger rounded-0 remove-curriculum">&times;</button>
     </div>
