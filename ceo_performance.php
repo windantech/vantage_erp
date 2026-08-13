@@ -65,6 +65,109 @@ try {
 } catch (\Throwable $e) {
     error_log('CEO HR fetch: ' . $e->getMessage());
 }
+
+// ---- Finance tab: native analytics (mirrors ceo_dashboard finance pages). USD sources normalised to KES. ----
+$q = function ($sql) use ($conn) { try { return @mysqli_query($conn, $sql); } catch (\Throwable $e) { return false; } };
+$finance = [
+    'rate' => 129.0,
+    'income' => ['virtual' => 0, 'intl' => 0, 'custom' => 0, 'total' => 0],
+    'expenses' => ['total' => 0, 'count' => 0, 'by_cat' => []],
+    'fees' => ['expected' => 0, 'collected' => 0, 'outstanding' => 0, 'clients' => 0, 'paid' => 0, 'partial' => 0],
+    'payroll' => $hr['payroll'],
+    'remit' => ['overdue' => 0, 'pending' => 0, 'paid' => 0, 'overdue_amt' => 0, 'pending_amt' => 0],
+    'commission' => ['eligible' => 0, 'pending' => 0, 'approved' => 0, 'paid' => 0],
+];
+try {
+    $res = $q("SELECT setting_value FROM `commission_settings` WHERE setting_key='commission_conversion_rate' LIMIT 1");
+    if ($res && ($row = mysqli_fetch_assoc($res)) && (float) $row['setting_value'] > 0) { $finance['rate'] = (float) $row['setting_value']; }
+    $rate = $finance['rate'];
+
+    $res = $q("SELECT category, SUM(amount) t, COUNT(*) c FROM `expenses` GROUP BY category ORDER BY t DESC");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        $amt = (float) $row['t'] * $rate;
+        $finance['expenses']['by_cat'][] = ['name' => (string) (($row['category'] ?? '') !== '' ? $row['category'] : 'Uncategorised'), 'amount' => $amt, 'count' => (int) $row['c']];
+        $finance['expenses']['total'] += $amt;
+        $finance['expenses']['count'] += (int) $row['c'];
+    }
+
+    $res = $q("SELECT COALESCE(SUM(TransactionAmount),0) t FROM `dpo_payment` WHERE status=2 AND TransactionAmount>0");
+    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['virtual'] = (float) $row['t'] * $rate; }
+    $res = $q("SELECT COALESCE(SUM(t.amount),0) t FROM `ticket_congress` t WHERE t.status=2 AND t.amount>0 AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=t.confirmation AND dp.status=2)");
+    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['intl'] = (float) $row['t'] * $rate; }
+    $res = $q("SELECT COALESCE(SUM(amount),0) t FROM `custom_income` WHERE amount>0");
+    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['custom'] = (float) $row['t'] * $rate; }
+    $finance['income']['total'] = $finance['income']['virtual'] + $finance['income']['intl'] + $finance['income']['custom'];
+
+    $res = $q("SELECT COUNT(*) clients, COALESCE(SUM(fee),0) expected, COALESCE(SUM(paid),0) collected,
+        SUM(CASE WHEN paid>=fee THEN 1 ELSE 0 END) paid_full, SUM(CASE WHEN paid>0 AND paid<fee THEN 1 ELSE 0 END) partial
+      FROM (SELECT r.entry_id, c.price_usd fee, SUM(d.TransactionAmount) paid
+            FROM `register` r JOIN `intake` i ON r.intake_id=i.intake_id JOIN `course` c ON i.course_id=c.course_id
+            JOIN `dpo_payment` d ON d.app_id=r.entry_id AND d.status=2 GROUP BY r.entry_id, c.price_usd) v");
+    if ($res && ($row = mysqli_fetch_assoc($res))) {
+        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'] * $rate;
+        $finance['fees']['collected'] += (float) $row['collected'] * $rate; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
+    }
+    $res = $q("SELECT COUNT(*) clients, COALESCE(SUM(e.early_amount),0) expected, COALESCE(SUM(t.amount),0) collected,
+        SUM(CASE WHEN t.amount>=e.early_amount THEN 1 ELSE 0 END) paid_full, SUM(CASE WHEN t.amount>0 AND t.amount<e.early_amount THEN 1 ELSE 0 END) partial
+      FROM `ticket_congress` t JOIN `Event` e ON t.event_id=e.event_id WHERE t.status=2 AND t.amount>0");
+    if ($res && ($row = mysqli_fetch_assoc($res))) {
+        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'] * $rate;
+        $finance['fees']['collected'] += (float) $row['collected'] * $rate; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
+    }
+    $finance['fees']['outstanding'] = max(0, $finance['fees']['expected'] - $finance['fees']['collected']);
+
+    $res = $q("SELECT SUM(CASE WHEN status!='paid' AND due_date>=CURDATE() THEN 1 ELSE 0 END) pending,
+        SUM(CASE WHEN status!='paid' AND due_date<CURDATE() THEN 1 ELSE 0 END) overdue,
+        SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) paid,
+        SUM(CASE WHEN status!='paid' AND due_date>=CURDATE() THEN total_amount ELSE 0 END) pending_amt,
+        SUM(CASE WHEN status!='paid' AND due_date<CURDATE() THEN total_amount ELSE 0 END) overdue_amt FROM `payroll_remittances`");
+    if ($res && ($row = mysqli_fetch_assoc($res))) {
+        $finance['remit'] = ['overdue' => (int) $row['overdue'], 'pending' => (int) $row['pending'], 'paid' => (int) $row['paid'], 'overdue_amt' => (float) $row['overdue_amt'], 'pending_amt' => (float) $row['pending_amt']];
+    }
+
+    $res = $q("SELECT SUM(commission_amount) eligible,
+        SUM(CASE WHEN status IN ('pending','pending_approval') THEN commission_amount ELSE 0 END) pending,
+        SUM(CASE WHEN status='approved' THEN commission_amount ELSE 0 END) approved,
+        SUM(CASE WHEN status='paid' THEN commission_amount ELSE 0 END) paid FROM `commission_records` WHERE is_eligible=1");
+    if ($res && ($row = mysqli_fetch_assoc($res))) {
+        $finance['commission'] = ['eligible' => (float) $row['eligible'] * $rate, 'pending' => (float) $row['pending'] * $rate, 'approved' => (float) $row['approved'] * $rate, 'paid' => (float) $row['paid'] * $rate];
+    }
+} catch (\Throwable $e) { error_log('CEO Finance fetch: ' . $e->getMessage()); }
+
+// ---- Admin tab: native analytics (service requests + intake/event assignments) ----
+$admin = ['req' => ['pending' => 0, 'progress' => 0, 'completed' => 0, 'rejected' => 0, 'pending_amt' => 0, 'list' => []], 'intakes' => [], 'events' => []];
+try {
+    $res = $q("SELECT SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) pending,
+        SUM(CASE WHEN status='In Progress' THEN 1 ELSE 0 END) progress,
+        SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) completed,
+        SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) rejected,
+        SUM(CASE WHEN status='Pending' THEN amount ELSE 0 END) pending_amt FROM `service_requests`");
+    if ($res && ($row = mysqli_fetch_assoc($res))) {
+        $admin['req']['pending'] = (int) $row['pending']; $admin['req']['progress'] = (int) $row['progress'];
+        $admin['req']['completed'] = (int) $row['completed']; $admin['req']['rejected'] = (int) $row['rejected']; $admin['req']['pending_amt'] = (float) $row['pending_amt'];
+    }
+    $res = $q("SELECT request_id, request_title, request_type, status, priority, amount, staff_name, date_submitted FROM `service_requests` ORDER BY CASE status WHEN 'Pending' THEN 1 WHEN 'In Progress' THEN 2 WHEN 'Completed' THEN 3 ELSE 4 END, date_submitted DESC LIMIT 60");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        $admin['req']['list'][] = ['id' => (int) $row['request_id'], 'title' => (string) $row['request_title'], 'type' => (string) ($row['request_type'] ?? ''), 'status' => (string) $row['status'], 'priority' => (string) ($row['priority'] ?? ''), 'amount' => (float) $row['amount'], 'staff' => (string) ($row['staff_name'] ?? ''), 'date' => !empty($row['date_submitted']) ? date('M j, Y', strtotime($row['date_submitted'])) : ''];
+    }
+    $res = $q("SELECT i.id, i.description, i.start_date, i.minimum_clients, i.commission_rate, i.assigned_to, ru.fullname assignee, c.course,
+        (SELECT COUNT(*) FROM `register` r WHERE r.intake_id=i.intake_id) registered,
+        (SELECT COUNT(DISTINCT r2.entry_id) FROM `register` r2 JOIN `dpo_payment` d ON d.app_id=r2.entry_id AND d.status=2 WHERE r2.intake_id=i.intake_id) paying
+      FROM `intake` i LEFT JOIN `course` c ON i.course_id=c.course_id LEFT JOIN `registered_users` ru ON i.assigned_to=ru.id
+      WHERE i.status=1 ORDER BY i.start_date DESC LIMIT 40");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        $configured = ((int) $row['minimum_clients'] > 0 && (float) $row['commission_rate'] > 0);
+        $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
+    }
+    $res = $q("SELECT e.event_id, e.event_title, e.location, e.start_on, e.minimum_clients, e.commission_rate, e.assigned_to, ru.fullname assignee,
+        (SELECT COUNT(*) FROM `ticket_congress` t WHERE t.event_id=e.event_id) registered,
+        (SELECT COUNT(*) FROM `ticket_congress` t WHERE t.event_id=e.event_id AND t.status=2 AND t.amount>0) paying
+      FROM `Event` e LEFT JOIN `registered_users` ru ON e.assigned_to=ru.id WHERE e.status=1 ORDER BY e.start_on DESC LIMIT 40");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        $configured = ((int) $row['minimum_clients'] > 0 && (float) $row['commission_rate'] > 0);
+        $admin['events'][] = ['name' => (string) (($row['event_title'] ?? '') !== '' ? $row['event_title'] : 'Event'), 'location' => (string) ($row['location'] ?? ''), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
+    }
+} catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -269,6 +372,8 @@ try {
       "use strict";
       const root=document.getElementById("bdeApp");
       const HR = <?php echo json_encode($hr, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+      const FIN = <?php echo json_encode($finance, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+      const ADM = <?php echo json_encode($admin, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
@@ -746,13 +851,7 @@ try {
         if(state.role==="bde")populateEmp();
         root.querySelectorAll("#tabNav .tab").forEach(t=>t.classList.toggle("active",t.dataset.v===state.view));
       }
-      /* ---------- back-office tabs: embed the real ops pages inline (no redirect) ---------- */
-      function opsFrame(links){
-        const first = links[0][1];
-        const btns = links.map((lk, i) => `<button type="button" class="tab${i === 0 ? " active" : ""}" data-src="${lk[1]}" onclick="var f=document.getElementById('opsFrame');f.src=this.dataset.src;var p=this.parentNode;p.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});this.classList.add('active');">${esc(lk[0])}</button>`).join("");
-        return `<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px">${btns}</div>
-          <iframe id="opsFrame" src="${first}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:12px;background:#fff;display:block" title="Operations"></iframe>`;
-      }
+      /* ---------- back-office tabs: native analytics (HR / Finance / Admin) ---------- */
       function hrDonut(segments,centerTop,centerBot){
         const total=segments.reduce((a,s)=>a+s[1],0)||1;
         const cx=68,cy=68,R=52,sw=20,C=2*Math.PI*R;let off=0;
@@ -777,13 +876,52 @@ try {
           <div class="section-tag"><h3>Active staff</h3><span>${nf.format(HR.staff.length)} people · newest first</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
+      const finPalette=["var(--brand)","var(--jade)","var(--slate)","var(--violet)","var(--gold)","#2f8f88","var(--coral)","#4d8bd6"];
+      function bar(label,val,max,color){return `<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${label}</span><b>${kMoney(val)}</b></div><div style="height:9px;border-radius:99px;background:var(--surface3)"><div style="width:${clamp(max?val/max*100:0,0,100)}%;height:100%;border-radius:99px;background:${color}"></div></div></div>`;}
       function vFinance(){
-        return `<div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions — live</span><div class="rule"></div></div>
-          ${opsFrame([["Expenses","ceo_dashboard/expenses.php"],["Fee balances","ceo_dashboard/fee_balances.php"],["Payroll periods","ceo_dashboard/payroll_periods.php"],["Payroll reports","ceo_dashboard/payroll_reports.php"],["Remittances","ceo_dashboard/payroll_remittances.php"],["Commission reports","ceo_dashboard/commission_reports.php"]])}`;
+        const F=FIN,inc=F.income,exp=F.expenses,fee=F.fees,rem=F.remit,com=F.commission,pay=F.payroll;
+        const net=inc.total-exp.total,inOutMax=Math.max(inc.total,exp.total,1);
+        const incCard=`<div class="card"><div class="chead"><h4>Income collected</h4><span class="chip jade">Live</span></div><div class="mini3"><div class="cm"><span>Virtual</span><b class="num">${kMoney(inc.virtual)}</b></div><div class="cm"><span>International</span><b class="num">${kMoney(inc.intl)}</b></div><div class="cm"><span>Custom</span><b class="num">${kMoney(inc.custom)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Total in: <b style="color:var(--ink)">${kMoney(inc.total)}</b> · settled receipts only</div></div>`;
+        const expCard=`<div class="card" ${exp.by_cat.length?'style="cursor:pointer" data-modal="expcat"':''}><div class="chead"><h4>Expenses</h4>${exp.by_cat.length?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">By category →</span>':'<span class="chip slate">Live</span>'}</div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Total spend</span><b class="num" style="color:var(--coral)">${kMoney(exp.total)}</b></div><div class="cm"><span>Transactions</span><b class="num">${nf.format(exp.count)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">${nf.format(exp.by_cat.length)} categories · click for the breakdown</div></div>`;
+        const posCard=`<div class="card"><div class="chead"><h4>Net position</h4><span class="chip ${net>=0?'jade':'coral'}">${net>=0?'Surplus':'Deficit'}</span></div><div style="font-size:30px;font-weight:850;line-height:1.1;color:${net>=0?'var(--jade)':'var(--coral)'}">${kMoney(net)}</div><div style="font-size:11px;color:var(--muted);margin:4px 0 14px">Income minus expenses, all sources</div><div style="display:flex;flex-direction:column;gap:10px">${bar('Income',inc.total,inOutMax,'var(--jade)')}${bar('Expenses',exp.total,inOutMax,'var(--coral)')}</div></div>`;
+        const feeRate=fee.expected?Math.round(fee.collected/fee.expected*100):0;
+        const feeCard=`<div class="card"><div class="chead"><h4>Fee collection</h4><span class="chip slate">${nf.format(fee.clients)} paying clients</span></div><div class="mini3"><div class="cm"><span>Expected</span><b class="num">${kMoney(fee.expected)}</b></div><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${kMoney(fee.collected)}</b></div><div class="cm"><span>Outstanding</span><b class="num" style="color:${fee.outstanding>0?'var(--amber)':'var(--ink)'}">${kMoney(fee.outstanding)}</b></div></div><div style="margin-top:16px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px"><span>Collection rate</span><b style="color:var(--ink)">${feeRate}%</b></div><div style="height:11px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(feeRate,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div><div style="display:flex;gap:8px;margin-top:12px"><span class="chip jade">${nf.format(fee.paid)} fully paid</span><span class="chip amber">${nf.format(fee.partial)} partial</span></div></div>`;
+        const esegs=exp.by_cat.slice(0,8).map((d,i)=>[d.name,d.amount,finPalette[i%finPalette.length]]);
+        const elegend=exp.by_cat.length?exp.by_cat.slice(0,8).map((d,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${finPalette[i%finPalette.length]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${esc(d.name)}</span><b class="num" style="font-size:12.5px">${kMoney(d.amount)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No expenses recorded.</p>';
+        const expDonut=`<div class="card"><div class="chead"><h4>Expenses by category</h4><span class="chip slate">Top ${Math.min(8,exp.by_cat.length)}</span></div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(esegs,kMoney(exp.total).replace('KES ',''),"KES spent")}</div><div style="flex:1;min-width:180px">${elegend}</div></div></div>`;
+        const payCard=pay?`<div class="card" style="cursor:pointer" data-modal="payslips"><div class="chead"><h4>Payroll — latest</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">Payslips →</span></div><div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(pay.gross)}</b></div><div class="cm"><span>Net</span><b class="num" style="color:var(--jade)">${kMoney(pay.net)}</b></div><div class="cm"><span>Staff</span><b class="num">${nf.format(pay.employees)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Period ${pay.month}/${pay.year} · ${esc(String(pay.status||'—').replace(/_/g,' '))}</div></div>`:`<div class="card"><div class="chead"><h4>Payroll — latest</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p></div>`;
+        const remOut=rem.pending_amt+rem.overdue_amt;
+        const remCard=`<div class="card"><div class="chead"><h4>Statutory remittances</h4>${rem.overdue?`<span class="chip coral">${nf.format(rem.overdue)} overdue</span>`:'<span class="chip jade">On track</span>'}</div><div class="mini3"><div class="cm"><span>Overdue</span><b class="num" style="color:${rem.overdue?'var(--coral)':'var(--ink)'}">${nf.format(rem.overdue)}</b></div><div class="cm"><span>Pending</span><b class="num">${nf.format(rem.pending)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${nf.format(rem.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Outstanding: <b style="color:${remOut>0?'var(--amber)':'var(--ink)'}">${kMoney(remOut)}</b></div></div>`;
+        const comCard=`<div class="card"><div class="chead"><h4>Commissions</h4><span class="chip slate">Eligible</span></div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${kMoney(com.pending)}</b></div><div class="cm"><span>Approved</span><b class="num">${kMoney(com.approved)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${kMoney(com.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Total eligible: <b style="color:var(--ink)">${kMoney(com.eligible)}</b></div></div>`;
+        return `
+          <div class="section-tag"><h3>Finance &amp; Accounting</h3><span>All figures in KES · converted at 1 USD = ${nf.format(F.rate)} where applicable</span><div class="rule"></div></div>
+          <section class="grid-3">${incCard}${expCard}${posCard}</section>
+          <div class="section-tag"><h3>Fee collection &amp; expense mix</h3><span>Student &amp; delegate fees against recorded spend</span><div class="rule"></div></div>
+          <section class="grid-2">${feeCard}${expDonut}</section>
+          <div class="section-tag"><h3>Payroll, remittances &amp; commissions</h3><span>Staff cost, statutory obligations and sales commissions</span><div class="rule"></div></div>
+          <section class="grid-3">${payCard}${remCard}${comCard}</section>`;
       }
       function vAdmin(){
-        return `<div class="section-tag"><h3>Admin &amp; Requests</h3><span>Approvals, assets and assignments — live</span><div class="rule"></div></div>
-          ${opsFrame([["Approve requests","ceo_dashboard/approve_requests.php"],["Assets","ceo_dashboard/assets_list.php"],["Assigned assets","ceo_dashboard/assets_assigned.php"],["Intake assignments","ceo_dashboard/intake_assignments.php"],["Event assignments","ceo_dashboard/event_assignments.php"]])}`;
+        const A=ADM,rq=A.req,total=rq.pending+rq.progress+rq.completed+rq.rejected;
+        const rlist=[["Pending",rq.pending,"var(--amber)"],["In progress",rq.progress,"var(--slate)"],["Completed",rq.completed,"var(--jade)"],["Rejected",rq.rejected,"var(--coral)"]];
+        const rsegs=rlist.filter(s=>s[1]>0);
+        const rlegend=total?rlist.map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${s[2]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${s[0]}</span><b class="num" style="font-size:13px">${nf.format(s[1])}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No requests.</p>';
+        const reqDonut=`<div class="card"><div class="chead"><h4>Requests by status</h4><span class="chip slate">${nf.format(total)} total</span></div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(rsegs,nf.format(total),"requests")}</div><div style="flex:1;min-width:180px">${rlegend}</div></div></div>`;
+        const pendCard=`<div class="card" ${rq.list.length?'style="cursor:pointer" data-modal="requests"':''}><div class="chead"><h4>Open requests</h4>${rq.list.length?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View all →</span>':'<span class="chip slate">Live</span>'}</div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${nf.format(rq.pending)}</b></div><div class="cm"><span>In progress</span><b class="num">${nf.format(rq.progress)}</b></div><div class="cm"><span>Completed</span><b class="num" style="color:var(--jade)">${nf.format(rq.completed)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Pending value: <b style="color:var(--ink)">${kMoney(rq.pending_amt)}</b> · click for the full queue</div></div>`;
+        const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
+        const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
+        const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
+        const intakeRows=A.intakes.length?A.intakes.map(it=>`<tr><td><b>${esc(it.name)}</b></td><td>${esc(it.assignee||'—')}</td><td class="num">${nf.format(it.registered)}</td><td class="num">${nf.format(it.paying)}</td><td>${stateChip(it.state)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No active intakes.</td></tr>';
+        const eventRows=A.events.length?A.events.map(ev=>`<tr><td><b>${esc(ev.name)}</b>${ev.location?`<div style="font-size:11px;color:var(--muted)">${esc(ev.location)}</div>`:''}</td><td>${esc(ev.assignee||'—')}</td><td class="num">${nf.format(ev.registered)}</td><td class="num">${nf.format(ev.paying)}</td><td>${stateChip(ev.state)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No active events.</td></tr>';
+        return `
+          <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests, course intakes and event assignments — live</span><div class="rule"></div></div>
+          <section class="grid-2">${pendCard}${reqDonut}</section>
+          <div class="section-tag"><h3>Recent requests</h3><span>Newest first · open queue on top</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
+          <div class="section-tag"><h3>Course intake assignments</h3><span>Active virtual intakes · registrations and paying clients</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Intake</th><th>Assignee</th><th>Registered</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${intakeRows}</tbody></table></div></div>
+          <div class="section-tag"><h3>Event assignments</h3><span>Active international events · tickets and paying delegates</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Event</th><th>Assignee</th><th>Tickets</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${eventRows}</tbody></table></div></div>`;
       }
 
       /* ---------- detail modals (attendance clock-ins, payroll payslips) ---------- */
@@ -798,13 +936,22 @@ try {
         const per=HR.payroll?(" · period "+HR.payroll.month+"/"+HR.payroll.year):"";
         openOpsModal("Payslips"+per+" · "+nf.format(HR.payslips.length)+" staff",`<div class="table-wrap"><table><thead><tr><th>Staff</th><th>Department</th><th>Gross</th><th>Net</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
+      function showExpcat(){
+        const rows=FIN.expenses.by_cat.length?FIN.expenses.by_cat.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${kMoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses.</td></tr>';
+        openOpsModal("Expenses by category · "+kMoney(FIN.expenses.total),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      }
+      function showRequests(){
+        const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
+        const rows=ADM.req.list.length?ADM.req.list.map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}${r.priority?' · '+esc(r.priority):''}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
+        openOpsModal("Service requests · "+nf.format(ADM.req.list.length)+" shown",`<div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+      }
 
       function render(){
         if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():v==="hr"?vHR():v==="finance"?vFinance():v==="admin"?vAdmin():vPipeline();}
         else{el("workspace").innerHTML=roleView();}
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
-        root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();}));
+        root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();}));
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
