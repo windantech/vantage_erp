@@ -9,6 +9,37 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+
+// ---- HR tab: render the real HR content natively (no iframe). Defensive against PHP 8.1 mysqli. ----
+$hr = ['stats' => ['total'=>0,'active'=>0,'pending'=>0,'under_review'=>0,'approved'=>0,'suspended'=>0,'terminated'=>0,'rejected'=>0], 'by_dept' => [], 'staff' => [], 'payroll_pending' => 0];
+try {
+    $r = @mysqli_query($conn, "SELECT onboarding_status, COUNT(*) c FROM `staff` GROUP BY onboarding_status");
+    while ($r && ($row = mysqli_fetch_assoc($r))) {
+        $hr['stats'][(string) $row['onboarding_status']] = (int) $row['c'];
+        $hr['stats']['total'] += (int) $row['c'];
+    }
+    $r = @mysqli_query($conn, "SELECT d.department_name, COUNT(s.id) c FROM `departments` d LEFT JOIN `staff` s ON d.id = s.department_id AND s.onboarding_status = 'active' GROUP BY d.id, d.department_name ORDER BY c DESC LIMIT 12");
+    while ($r && ($row = mysqli_fetch_assoc($r))) {
+        $hr['by_dept'][] = ['name' => (string) $row['department_name'], 'count' => (int) $row['c']];
+    }
+    $r = @mysqli_query($conn, "SELECT s.staff_id, s.full_name, s.email, s.phone, s.job_title, s.onboarding_status, s.created_at, d.department_name FROM `staff` s LEFT JOIN `departments` d ON s.department_id = d.id ORDER BY s.created_at DESC LIMIT 60");
+    while ($r && ($row = mysqli_fetch_assoc($r))) {
+        $hr['staff'][] = [
+            'staff_id' => (string) $row['staff_id'],
+            'name'     => (string) $row['full_name'],
+            'email'    => (string) $row['email'],
+            'phone'    => (string) $row['phone'],
+            'title'    => (string) ($row['job_title'] ?? ''),
+            'dept'     => (string) ($row['department_name'] ?? ''),
+            'status'   => (string) $row['onboarding_status'],
+            'created'  => !empty($row['created_at']) ? date('M j, Y', strtotime($row['created_at'])) : '',
+        ];
+    }
+    $r = @mysqli_query($conn, "SELECT COUNT(*) c FROM `payroll_periods` WHERE status = 'pending_approval'");
+    if ($r && ($row = mysqli_fetch_assoc($r))) { $hr['payroll_pending'] = (int) $row['c']; }
+} catch (\Throwable $e) {
+    error_log('CEO HR fetch: ' . $e->getMessage());
+}
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -205,6 +236,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     (() => {
       "use strict";
       const root=document.getElementById("bdeApp");
+      const HR = <?php echo json_encode($hr, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
@@ -690,8 +722,28 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           <iframe id="opsFrame" src="${first}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:12px;background:#fff;display:block" title="Operations"></iframe>`;
       }
       function vHR(){
-        return `<div class="section-tag"><h3>Human Resources</h3><span>People, attendance, payroll and leave — the live HR pages, in this tab</span><div class="rule"></div></div>
-          ${opsFrame([["HR dashboard","ceo_dashboard/hr_dashboard.php"],["Staff list","ceo_dashboard/staff_list.php"],["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]])}`;
+        const s=HR.stats;
+        const kpis=[
+          ["Total staff",nf.format(s.total),"employees","var(--slate)"],
+          ["Active",nf.format(s.active||0),"onboarded","var(--jade)"],
+          ["Pending",nf.format(s.pending||0),"awaiting review","var(--amber)"],
+          ["Under review",nf.format(s.under_review||0),"in progress","var(--slate)"],
+          ["Approved",nf.format(s.approved||0),"cleared to active","var(--jade)"],
+          ["Payroll approvals",nf.format(HR.payroll_pending||0),"periods pending","var(--coral)"]
+        ];
+        const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        const deptMax=Math.max(1,...HR.by_dept.map(d=>d.count));
+        const deptRows=HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No department data.</p>';
+        const statusChip=st=>{const m={active:"jade",approved:"jade",pending:"amber",under_review:"slate",suspended:"coral",terminated:"coral",rejected:"coral"};return `<span class="chip ${m[st]||"slate"}">${esc(String(st).replace(/_/g," "))}</span>`;};
+        const rows=HR.staff.length?HR.staff.map(p=>`<tr><td><b>${esc(p.staff_id)}</b></td><td>${esc(p.name)}<div style="font-size:11px;color:var(--muted)">${esc(p.title||"—")}</div></td><td>${esc(p.email)}<div style="font-size:11px;color:var(--muted)">${esc(p.phone)}</div></td><td>${esc(p.dept||"—")}</td><td>${statusChip(p.status)}</td><td class="num">${esc(p.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
+        return `
+          <div class="section-tag"><h3>Human Resources</h3><span>People, onboarding and payroll — live from the HR records</span><div class="rule"></div></div>
+          ${kpiRow}
+          <div class="section-tag"><h3>Active staff by department</h3><span>Headcount per department</span><div class="rule"></div></div>
+          <div class="card">${deptRows}</div>
+          <div class="section-tag"><h3>Staff</h3><span>${nf.format(HR.staff.length)} shown · newest first</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+          <div class="card"><div class="chead"><h4>More HR detail</h4><span class="chip slate">Full pages</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${[["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]].map(([l,h])=>`<a class="tbtn" href="${h}">${esc(l)}</a>`).join("")}</div></div>`;
       }
       function vFinance(){
         return `<div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions — live</span><div class="rule"></div></div>
