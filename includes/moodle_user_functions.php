@@ -85,22 +85,48 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         }
 
         $year = date('Y');
-        $username = strtolower(preg_replace('/\s+/', '', $firstname . $lastname));
-        $plain_password = $username . '@' . $year;
-        $password_hash = password_hash($plain_password, PASSWORD_DEFAULT);
-
         $table = 'mdl_user';
-        $user_esc = mysqli_real_escape_string($moodle_conn, $username);
         $email_esc = mysqli_real_escape_string($moodle_conn, $email);
-        $check = mysqli_query($moodle_conn, "SELECT id FROM $table WHERE username = '$user_esc' OR email = '$email_esc' LIMIT 1");
-        if ($check && mysqli_num_rows($check) > 0) {
+
+        // ------------------------------------------------------------------
+        // "Same person?" is decided on EMAIL ONLY. A username collision (a
+        // DIFFERENT person with the same name -> same firstnamelastname) must
+        // NOT flag a genuinely new registrant as existing — that was sending new
+        // users the reset-password email showing someone else's username.
+        // ------------------------------------------------------------------
+        $existing = mysqli_query($moodle_conn, "SELECT id, username FROM $table WHERE email = '$email_esc' AND deleted = 0 LIMIT 1");
+        if ($existing && mysqli_num_rows($existing) > 0) {
+            $exrow = mysqli_fetch_assoc($existing);
+            $existing_username = (string) $exrow['username'];
+            error_log('[moodle] existing user found (email=' . $email . ', username=' . $existing_username . ') -> reset-password email');
             $email_sent = false;
             if ($send_email && function_exists('send_moodle_existing_user_reset_email')) {
                 $recipient_name = trim($firstname . ' ' . $lastname);
-                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $username, $portalOverride);
+                // Show the account's REAL username, not the recomputed one.
+                $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $existing_username, $portalOverride);
             }
-            return ['success' => false, 'username' => $username, 'password' => $plain_password, 'error' => 'already_created', 'email_sent' => $email_sent];
+            return ['success' => false, 'username' => $existing_username, 'password' => '', 'error' => 'already_created', 'email_sent' => $email_sent];
         }
+
+        // New user: generate a UNIQUE username (append a number on name collision).
+        $base = strtolower(preg_replace('/[^a-z0-9]/i', '', $firstname . $lastname));
+        if ($base === '') { $base = 'user'; }
+        $username = $base;
+        $collision = 1;
+        while (true) {
+            $u_esc = mysqli_real_escape_string($moodle_conn, $username);
+            $u_q = mysqli_query($moodle_conn, "SELECT id FROM $table WHERE username = '$u_esc' LIMIT 1");
+            if (!$u_q || mysqli_num_rows($u_q) === 0) {
+                break;
+            }
+            $collision++;
+            if ($collision > 999) { $username = $base . time(); break; }
+            $username = $base . $collision;
+        }
+        $plain_password = $username . '@' . $year;
+        $password_hash = password_hash($plain_password, PASSWORD_DEFAULT);
+        $user_esc = mysqli_real_escape_string($moodle_conn, $username);
+        error_log('[moodle] creating new user (username=' . $username . ', email=' . $email . ')');
 
         $country_code = strlen($country) === 2 ? $country : substr(preg_replace('/[^A-Za-z]/', '', $country), 0, 2);
         if ($country_code === '') {
@@ -147,9 +173,11 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             if ($has_override) {
                 $login_url   = $portalOverride['login_url'];
                 $login_label = parse_url($login_url, PHP_URL_HOST) ?: $login_url;
+                $reset_url   = (parse_url($login_url, PHP_URL_SCHEME) ?: 'https') . '://' . (parse_url($login_url, PHP_URL_HOST) ?: '') . '/login/forgot_password.php';
             } else {
                 $login_url   = 'https://vantageafricaleaders.com/moodle/login/index.php';
                 $login_label = 'vantageafricaleaders.com/moodle/login';
+                $reset_url   = 'https://vantageafricaleaders.com/moodle/login/forgot_password.php';
             }
             $subject = $portal_title . ' - Vantage Africa School of Leadership';
             $support_phone = '+254796393864';
@@ -168,6 +196,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
                     <p style="margin: 5px 0;"><strong>🌐 Portal URL:</strong> <a href="' . htmlspecialchars($login_url) . '" style="color: #2B5470; font-weight: bold;">' . htmlspecialchars($login_label) . '</a></p>
                     <p style="margin: 5px 0;"><strong>👤 Username:</strong> ' . htmlspecialchars($username) . '</p>
                     <p style="margin: 5px 0;"><strong>🔑 Password:</strong> ' . htmlspecialchars($plain_password) . '</p>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #6b5b47;">Forgot your password later? <a href="' . htmlspecialchars($reset_url) . '" style="color:#8B4513;">Reset it here</a>.</p>
                 </div>
                 <div style="background-color: #fff3cd; padding: 15px; border: 1px solid #ffc107; margin: 15px 0; border-radius: 5px;">
                     <p style="margin: 0; font-weight: bold; color: #856404;">🔒 Please change your password after your first login for security.</p>
