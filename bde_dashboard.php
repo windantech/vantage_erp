@@ -9,6 +9,16 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+require_once 'includes/bde_metrics.php';
+
+// Real data (phase 1): the BDE sees their OWN attributed figures. Admins can preview any
+// person's real numbers with ?as=<registered_users.id>. Date range is all-time for this first
+// slice (period filtering comes next), so the figure matches the raw attribution query.
+$bde_ru_id = (int) ($_SESSION['login_id'] ?? 0);
+if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role)) {
+    $bde_ru_id = (int) $_GET['as'];
+}
+$bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01', date('Y-m-d')) : null;
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -189,6 +199,17 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
+      <?php if ($bde_metrics): ?>
+      <section class="card" style="margin-top:14px">
+        <div class="chead"><h4>Live from Finance<?php echo $bde_metrics['name'] !== '' ? ' — ' . htmlspecialchars($bde_metrics['name']) : ''; ?></h4><span class="chip jade">Real data · to date</span></div>
+        <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> attributed to you</div></div>
+          <div class="kpi" style="--acc:var(--slate)"><div class="lab">Paid clients</div><div class="val num"><?php echo (int) $bde_metrics['paid_clients']; ?></div><div class="meta">of <?php echo (int) $bde_metrics['total_regs']; ?> registrations</div></div>
+          <div class="kpi" style="--acc:var(--brand)"><div class="lab">Attributed via</div><div class="val num" style="font-size:15px"><?php echo htmlspecialchars($bde_metrics['dept'] !== '' ? $bde_metrics['dept'] : 'intakes assigned to you'); ?></div><div class="meta">intake.assigned_to → cleared payments</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">Real cleared payments (Finance-verified, converted USD→KES). The cards below are still illustrative until targets and pipeline are wired.</div>
+      </section>
+      <?php endif; ?>
       <main id="workspace"></main>
       <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
     </div>
