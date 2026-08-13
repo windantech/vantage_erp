@@ -754,28 +754,18 @@ try {
           <iframe id="opsFrame" src="${first}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:12px;background:#fff;display:block" title="Operations"></iframe>`;
       }
       function vHR(){
-        const s=HR.stats;
-        const kpis=[
-          ["Total staff",nf.format(s.total),"employees","var(--slate)"],
-          ["Active",nf.format(s.active||0),"onboarded","var(--jade)"],
-          ["Pending",nf.format(s.pending||0),"awaiting review","var(--amber)"],
-          ["Under review",nf.format(s.under_review||0),"in progress","var(--slate)"],
-          ["Approved",nf.format(s.approved||0),"cleared to active","var(--jade)"],
-          ["Payroll approvals",nf.format(HR.payroll_pending||0),"periods pending","var(--coral)"]
-        ];
-        const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        const totalActive=HR.stats.active||HR.staff.length||0;
         const deptMax=Math.max(1,...HR.by_dept.map(d=>d.count));
-        const deptCard=`<div class="card"><div class="chead"><h4>Staff by department</h4><span class="chip slate">Active</span></div>${HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No data.</p>'}</div>`;
+        const deptCard=`<div class="card"><div class="chead"><h4>Staff by department</h4><span class="chip slate">${nf.format(totalActive)} active staff</span></div>${HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No data.</p>'}</div>`;
         const attCard=`<div class="card" style="cursor:pointer" data-modal="clockins"><div class="chead"><h4>Attendance today</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View list →</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Present</span><b class="num">${nf.format(HR.att_present||0)}</b></div><div class="cm"><span>Punches</span><b class="num">${nf.format(HR.att_punches||0)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Click to see who clocked in and at what time.</div></div>`;
         const p=HR.payroll;
         const payCard=`<div class="card" ${p?'style="cursor:pointer" data-modal="payslips"':''}><div class="chead"><h4>Payroll — latest period</h4>${p?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View payslips →</span>':''}</div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
         const statusChip=st=>{const m={active:"jade",approved:"jade",pending:"amber",under_review:"slate",suspended:"coral",terminated:"coral",rejected:"coral"};return `<span class="chip ${m[st]||"slate"}">${esc(String(st).replace(/_/g," "))}</span>`;};
         const rows=HR.staff.length?HR.staff.map(pp=>`<tr><td><b>${esc(pp.staff_id)}</b></td><td>${esc(pp.name)}<div style="font-size:11px;color:var(--muted)">${esc(pp.title||"—")}</div></td><td>${esc(pp.email)}<div style="font-size:11px;color:var(--muted)">${esc(pp.phone)}</div></td><td>${esc(pp.dept||"—")}</td><td>${statusChip(pp.status)}</td><td class="num">${esc(pp.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
         return `
-          <div class="section-tag"><h3>Human Resources</h3><span>People, attendance and payroll — live from the HR records</span><div class="rule"></div></div>
-          ${kpiRow}
+          <div class="section-tag"><h3>Human Resources</h3><span>${nf.format(totalActive)} active staff · attendance and payroll, live</span><div class="rule"></div></div>
           <section class="grid-3">${deptCard}${attCard}${payCard}</section>
-          <div class="section-tag"><h3>Staff</h3><span>${nf.format(HR.staff.length)} shown · newest first</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Active staff</h3><span>${nf.format(HR.staff.length)} people · newest first</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
       function vFinance(){
