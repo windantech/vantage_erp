@@ -9,28 +9,6 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
-
-// ---- Operations tab: real headline numbers from the ops portal.
-// Defensive: any missing table/column returns 0 rather than throwing (PHP 8.1 mysqli). ----
-$ops_scalar = static function ($conn, $sql) {
-    try {
-        $r = @mysqli_query($conn, $sql);
-        if ($r && ($row = mysqli_fetch_row($r))) {
-            return $row[0];
-        }
-    } catch (\Throwable $e) {
-        // table/column absent in this install — fall through to 0
-    }
-    return 0;
-};
-$ops = [
-    'staff'            => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `staff`"),
-    'departments'     => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `departments`"),
-    'payroll_pending' => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `payroll_periods` WHERE `status` = 'pending_approval'"),
-    'expenses_total'  => (float) $ops_scalar($conn, "SELECT COALESCE(SUM(`amount`),0) FROM `expenses`"),
-    'requests_pending' => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `service_requests` WHERE `status` = 'Pending'"),
-    'leave_pending'   => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `leave_requests` WHERE `status` = 'Pending'"),
-];
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -227,7 +205,6 @@ $ops = [
     (() => {
       "use strict";
       const root=document.getElementById("bdeApp");
-      const OPS = <?php echo json_encode($ops, JSON_UNESCAPED_SLASHES); ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
@@ -705,43 +682,24 @@ $ops = [
         if(state.role==="bde")populateEmp();
         root.querySelectorAll("#tabNav .tab").forEach(t=>t.classList.toggle("active",t.dataset.v===state.view));
       }
-      /* ---------- back-office tabs (real data from the ops portal; each links to detail) ---------- */
-      function opsLinks(links){return `<div style="display:flex;flex-wrap:wrap;gap:8px">${links.map(([l,h])=>`<a class="tbtn" href="${h}">${esc(l)}</a>`).join("")}</div>`;}
+      /* ---------- back-office tabs: embed the real ops pages inline (no redirect) ---------- */
+      function opsFrame(links){
+        const first = links[0][1];
+        const btns = links.map((lk, i) => `<button type="button" class="tab${i === 0 ? " active" : ""}" data-src="${lk[1]}" onclick="var f=document.getElementById('opsFrame');f.src=this.dataset.src;var p=this.parentNode;p.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});this.classList.add('active');">${esc(lk[0])}</button>`).join("");
+        return `<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px">${btns}</div>
+          <iframe id="opsFrame" src="${first}" style="width:100%;height:80vh;border:1px solid var(--line);border-radius:12px;background:#fff;display:block" title="Operations"></iframe>`;
+      }
       function vHR(){
-        return `
-          <div class="section-tag"><h3>Human Resources</h3><span>People, attendance, payroll and leave — live from the operations portal</span><div class="rule"></div></div>
-          <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
-            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Staff</div><div class="val num">${nf.format(OPS.staff)}</div><div class="meta">total employees</div></div>
-            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Departments</div><div class="val num">${nf.format(OPS.departments)}</div><div class="meta">across the org</div></div>
-            <div class="kpi" style="--acc:var(--amber)"><div class="lab">Payroll approvals</div><div class="val num">${nf.format(OPS.payroll_pending)}</div><div class="meta">pending sign-off</div></div>
-            <div class="kpi" style="--acc:var(--brand)"><div class="lab">Leave requests</div><div class="val num">${nf.format(OPS.leave_pending)}</div><div class="meta">pending</div></div>
-          </div>
-          <div class="card"><div class="chead"><h4>Open in the HR portal</h4><span class="chip jade">Live</span></div>${opsLinks([
-            ["HR dashboard","ceo_dashboard/hr_dashboard.php"],["Staff list","ceo_dashboard/staff_list.php"],["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]
-          ])}</div>`;
+        return `<div class="section-tag"><h3>Human Resources</h3><span>People, attendance, payroll and leave — the live HR pages, in this tab</span><div class="rule"></div></div>
+          ${opsFrame([["HR dashboard","ceo_dashboard/hr_dashboard.php"],["Staff list","ceo_dashboard/staff_list.php"],["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]])}`;
       }
       function vFinance(){
-        return `
-          <div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions</span><div class="rule"></div></div>
-          <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-            <div class="kpi" style="--acc:var(--coral)"><div class="lab">Expenses (recorded)</div><div class="val num">${kMoney(OPS.expenses_total)}</div><div class="meta">total logged</div></div>
-            <div class="kpi" style="--acc:var(--amber)"><div class="lab">Payroll to approve</div><div class="val num">${nf.format(OPS.payroll_pending)}</div><div class="meta">periods pending</div></div>
-            <div class="kpi" style="--acc:var(--jade)"><div class="lab">Org collection</div><div class="val num">${pct(B.collection,0)}</div><div class="meta">from the revenue view</div></div>
-          </div>
-          <div class="card"><div class="chead"><h4>Open in the finance portal</h4><span class="chip jade">Live</span></div>${opsLinks([
-            ["Expenses","ceo_dashboard/expenses.php"],["Fee balances","ceo_dashboard/fee_balances.php"],["Payroll periods","ceo_dashboard/payroll_periods.php"],["Payroll reports","ceo_dashboard/payroll_reports.php"],["Remittances","ceo_dashboard/payroll_remittances.php"],["Commission reports","ceo_dashboard/commission_reports.php"]
-          ])}</div>`;
+        return `<div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions — live</span><div class="rule"></div></div>
+          ${opsFrame([["Expenses","ceo_dashboard/expenses.php"],["Fee balances","ceo_dashboard/fee_balances.php"],["Payroll periods","ceo_dashboard/payroll_periods.php"],["Payroll reports","ceo_dashboard/payroll_reports.php"],["Remittances","ceo_dashboard/payroll_remittances.php"],["Commission reports","ceo_dashboard/commission_reports.php"]])}`;
       }
       function vAdmin(){
-        return `
-          <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Approvals, assets and assignments</span><div class="rule"></div></div>
-          <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-            <div class="kpi" style="--acc:var(--coral)"><div class="lab">Requests pending</div><div class="val num">${nf.format(OPS.requests_pending)}</div><div class="meta">awaiting approval</div></div>
-            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Departments</div><div class="val num">${nf.format(OPS.departments)}</div><div class="meta">organizational units</div></div>
-          </div>
-          <div class="card"><div class="chead"><h4>Open in the admin portal</h4><span class="chip jade">Live</span></div>${opsLinks([
-            ["Approve requests","ceo_dashboard/approve_requests.php"],["Assets","ceo_dashboard/assets_list.php"],["Assigned assets","ceo_dashboard/assets_assigned.php"],["Intake assignments","ceo_dashboard/intake_assignments.php"],["Event assignments","ceo_dashboard/event_assignments.php"]
-          ])}</div>`;
+        return `<div class="section-tag"><h3>Admin &amp; Requests</h3><span>Approvals, assets and assignments — live</span><div class="rule"></div></div>
+          ${opsFrame([["Approve requests","ceo_dashboard/approve_requests.php"],["Assets","ceo_dashboard/assets_list.php"],["Assigned assets","ceo_dashboard/assets_assigned.php"],["Intake assignments","ceo_dashboard/intake_assignments.php"],["Event assignments","ceo_dashboard/event_assignments.php"]])}`;
       }
 
       function render(){
