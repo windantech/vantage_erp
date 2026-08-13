@@ -361,7 +361,7 @@ if (!headers_sent()) {
                 </a>
             </li>
         <?php }
-         if(in_array(55, $role) || in_array(777, $role)) {
+         if(in_array(55, $role) || in_array(66, $role) || in_array(777, $role)) {
         ?>
     <hr class="sidebar-divider">
     <div class="sidebar-heading">Academic Programs</div>
