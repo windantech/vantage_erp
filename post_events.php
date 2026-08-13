@@ -246,7 +246,7 @@ require_once 'header.php';
                                 <i class="bi bi-x-lg btn p-0" data-bs-dismiss="modal" aria-label="Close"></i>
                             </div>
                             <div class="modal-body">
-                    <form action="#" method="POST" enctype="multipart/form-data">
+                    <form id="addEventForm" action="#" method="POST" enctype="multipart/form-data">
                         <!-- step 1 -->
                         <div class="step_one">
                             <div class="d-flex">
@@ -541,21 +541,21 @@ require_once 'header.php';
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Starts On</span>
                                 </div>
-                                <input name="advance_start_on" required type="datetime-local" class="form-control" aria-describedby="basic-addon1">
+                                <input name="advance_start_on" type="datetime-local" class="form-control" aria-describedby="basic-addon1">
                             </div>
 
                             <div class="input-group mb-3 mt-2">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Ends On</span>
                                 </div>
-                                <input required name="advance_end_on"  type="datetime-local" class="form-control" aria-describedby="basic-addon1">
+                                <input name="advance_end_on"  type="datetime-local" class="form-control" aria-describedby="basic-addon1">
                             </div>
 
                             <div class="input-group mb-3 mt-2">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Amount(USD)</span>
                                 </div>
-                                <input required name="advance_amount" type="number" class="form-control" placeholder="Enter amount here" aria-label="amount" aria-describedby="basic-addon1">
+                                <input name="advance_amount" type="number" class="form-control" placeholder="Enter amount here" aria-label="amount" aria-describedby="basic-addon1">
                             </div>
 
                             <hr>
@@ -609,21 +609,21 @@ require_once 'header.php';
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Starts On</span>
                                 </div>
-                                <input required name="gate_start_on" type="datetime-local" class="form-control" aria-describedby="basic-addon1">
+                                <input name="gate_start_on" type="datetime-local" class="form-control" aria-describedby="basic-addon1">
                             </div>
 
                             <div class="input-group mb-3 mt-2">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Ends On</span>
                                 </div>
-                                <input required name="gate_end_on" type="datetime-local" class="form-control" aria-describedby="basic-addon1">
+                                <input name="gate_end_on" type="datetime-local" class="form-control" aria-describedby="basic-addon1">
                             </div>
 
                             <div class="input-group mb-3 mt-2">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text rounded-0 rounded-start" style="width: 15vh !important; background: #ff8531;" id="basic-addon1">Amount(USD)</span>
                                 </div>
-                                <input required name="gate_amount" type="number" class="form-control" placeholder="Enter amount here" aria-label="amount" aria-describedby="basic-addon1">
+                                <input name="gate_amount" type="number" class="form-control" placeholder="Enter amount here" aria-label="amount" aria-describedby="basic-addon1">
                             </div>
 
                             <hr>
@@ -940,6 +940,25 @@ else {
             $(".step_four2").addClass("d-none");
             $(".step_four3").removeClass("d-none");
         }
+
+        // A required field inside a hidden wizard step makes the browser silently refuse to
+        // submit (it can't focus a hidden control). Reveal the offending step so the user sees
+        // exactly what's missing instead of "nothing happening".
+        (function () {
+            var f = document.getElementById("addEventForm");
+            if (!f) { return; }
+            var stepSel = ".step_one,.step_two,.step_three,.step_four,.step_four1,.step_four2,.step_four3";
+            var handled = false;
+            f.addEventListener("invalid", function (e) {
+                if (handled) { return; }
+                handled = true; setTimeout(function () { handled = false; }, 0);
+                var step = e.target.closest && e.target.closest("[class*='step_']");
+                if (step) {
+                    f.querySelectorAll(stepSel).forEach(function (s) { s.classList.add("d-none"); });
+                    step.classList.remove("d-none");
+                }
+            }, true);
+        })();
     </script>
     <script>
 function copyFunction() {

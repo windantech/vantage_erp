@@ -1771,6 +1771,25 @@ echo $formattedDateTime;
             $(".step_four2").addClass("d-none");
             $(".step_four3").removeClass("d-none");
         }
+
+        // If a required field ever sits inside a hidden wizard step, the browser silently refuses
+        // to submit (it can't focus a hidden control). Reveal the offending step so the missing
+        // field is shown instead of the form appearing to "do nothing".
+        (function () {
+            var stepSel = ".step_one,.step_two,.step_three,.step_four,.step_four1,.step_four2,.step_four3";
+            document.querySelectorAll("form[action='update_event.php']").forEach(function (f) {
+                var handled = false;
+                f.addEventListener("invalid", function (e) {
+                    if (handled) { return; }
+                    handled = true; setTimeout(function () { handled = false; }, 0);
+                    var step = e.target.closest && e.target.closest("[class*='step_']");
+                    if (step) {
+                        f.querySelectorAll(stepSel).forEach(function (s) { s.classList.add("d-none"); });
+                        step.classList.remove("d-none");
+                    }
+                }, true);
+            });
+        })();
     </script>
 <script>
     $(document).ready(function() {
