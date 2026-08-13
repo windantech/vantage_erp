@@ -80,6 +80,23 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         if ($email === '') {
             return ['success' => false, 'username' => '', 'password' => '', 'error' => 'Email required.'];
         }
+        // If the login link points at the system.vantageafricaleaders.com LMS, the account
+        // MUST be created in that LMS's database (vantage_system) — not whatever connection
+        // the caller passed — otherwise credentials arrive but login fails (account in the
+        // wrong Moodle). This keeps account-DB and login-URL in sync.
+        if (is_array($portalOverride) && !empty($portalOverride['login_url'])
+            && stripos($portalOverride['login_url'], 'system.vantageafricaleaders.com') !== false) {
+            if (!function_exists('moodle_system_connect')) {
+                @require_once __DIR__ . '/moodle_system_conn.php';
+            }
+            if (function_exists('moodle_system_connect')) {
+                $sys_conn = moodle_system_connect();
+                if ($sys_conn) {
+                    $moodle_conn = $sys_conn;
+                }
+            }
+        }
+
         if (!$moodle_conn || mysqli_connect_error()) {
             return ['success' => false, 'username' => '', 'password' => '', 'error' => 'E-learning database unavailable.'];
         }
