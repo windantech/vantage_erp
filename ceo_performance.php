@@ -178,16 +178,16 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         <div class="brand"><div class="mark">VA</div><div><h1>CEO Performance Overview</h1><p>Whole organization → departments → every person, on one screen</p></div></div>
         <div class="controls">
           <div class="control"><label>Role view</label><select id="roleSelect">
-            <option value="ceo">CEO / Director</option>
-            <option value="bdm">Business Dev. Manager</option>
-            <option value="bdo">BDO / Head of Dept</option>
-            <option value="bde">BDE / Executive</option>
+            <option value="ceo">CEO</option>
+            <option value="bdm">BDM</option>
+            <option value="bdo">BDO</option>
+            <option value="bde">BDE</option>
           </select></div>
           <div class="control" id="deptControl" style="display:none"><label>Department</label><select id="deptSelect"></select></div>
           <div class="control" id="empControl" style="display:none"><label>Employee</label><select id="empSelect"></select></div>
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
-          <div class="profile-chip"><span class="a">VA</span><div><b>Office of the CEO</b><span>Chief Executive · Whole organization</span></div></div>
+          <div class="profile-chip"><span class="a">BK</span><div><b>Chief Executive</b><span>Whole organization</span></div></div>
         </div>
       </header>
       <nav class="tabs" aria-label="Dashboard sections" id="tabNav">
@@ -567,10 +567,10 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
       function vPeople(){
         const people=allPeople();
-        const leaders=people.filter(p=>p.role==="BDM"||p.role==="BDO").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
+        const leaders=people.filter(p=>p.role==="BDO").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
         const lead=leaders.map((p,i)=>{const a=p.actual/p.target;const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.sbu)}</span></div></div></td><td><span class="chip slate">${p.role}</span></td><td class="num">${kMoney(p.target)}</td><td class="num">${kMoney(p.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
         return `
-          <div class="section-tag"><h3>Leadership scorecard</h3><span>BDM and department heads, ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Leadership scorecard</h3><span>Department heads (BDOs), ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Role</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
           <div class="section-tag"><h3>Org-wide staff ranking</h3><span>Every executive scored — click a name to open their view; top and bottom highlighted</span><div class="rule"></div></div>
           ${staffRanking()}`;
