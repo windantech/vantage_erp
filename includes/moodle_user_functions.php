@@ -66,7 +66,7 @@ if (!function_exists('send_moodle_existing_user_reset_email')) {
 }
 
 if (!function_exists('create_moodle_user_and_send_email')) {
-    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true, $portalOverride = null) {
+    function create_moodle_user_and_send_email($moodle_conn, $email, $firstname, $lastname, $phone = '', $country = '', $organization = '', $send_email = true, $portalOverride = null, $selection = null) {
         $firstname = trim((string) $firstname);
         $lastname = trim((string) $lastname);
         $email = trim((string) $email);
@@ -84,6 +84,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         // MUST be created in that LMS's database (vantage_system) — not whatever connection
         // the caller passed — otherwise credentials arrive but login fails (account in the
         // wrong Moodle). This keeps account-DB and login-URL in sync.
+        $using_system_lms = false;
         if (is_array($portalOverride) && !empty($portalOverride['login_url'])
             && stripos($portalOverride['login_url'], 'system.vantageafricaleaders.com') !== false) {
             if (!function_exists('moodle_system_connect')) {
@@ -93,6 +94,7 @@ if (!function_exists('create_moodle_user_and_send_email')) {
                 $sys_conn = moodle_system_connect();
                 if ($sys_conn) {
                     $moodle_conn = $sys_conn;
+                    $using_system_lms = true;
                 }
             }
         }
@@ -121,6 +123,10 @@ if (!function_exists('create_moodle_user_and_send_email')) {
                 $recipient_name = trim($firstname . ' ' . $lastname);
                 // Show the account's REAL username, not the recomputed one.
                 $email_sent = send_moodle_existing_user_reset_email($email, $recipient_name, $existing_username, $portalOverride);
+            }
+            // Record the (possibly new) academic selection for the LMS, even for a returning learner.
+            if ($using_system_lms && is_array($selection) && !empty($selection) && function_exists('vasl_learner_ledger_write')) {
+                vasl_learner_ledger_write($moodle_conn, (int) $exrow['id'], $email, $selection);
             }
             return ['success' => false, 'username' => $existing_username, 'password' => '', 'error' => 'already_created', 'email_sent' => $email_sent];
         }
@@ -179,6 +185,12 @@ if (!function_exists('create_moodle_user_and_send_email')) {
 
         if (!mysqli_query($moodle_conn, $sql)) {
             return ['success' => false, 'username' => $username, 'password' => $plain_password, 'error' => mysqli_error($moodle_conn)];
+        }
+
+        // Record the learner's academic selection (course/level/units/total) in the LMS DB.
+        $new_uid = (int) mysqli_insert_id($moodle_conn);
+        if ($using_system_lms && is_array($selection) && !empty($selection) && function_exists('vasl_learner_ledger_write')) {
+            vasl_learner_ledger_write($moodle_conn, $new_uid, $email, $selection);
         }
 
         $email_sent = false;
