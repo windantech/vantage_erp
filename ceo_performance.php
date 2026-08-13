@@ -11,7 +11,7 @@ session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
 // ---- HR tab: render the real HR content natively (no iframe). Defensive against PHP 8.1 mysqli. ----
-$hr = ['stats' => ['total'=>0,'active'=>0,'pending'=>0,'under_review'=>0,'approved'=>0,'suspended'=>0,'terminated'=>0,'rejected'=>0], 'by_dept' => [], 'staff' => [], 'payroll_pending' => 0];
+$hr = ['stats' => ['total'=>0,'active'=>0,'pending'=>0,'under_review'=>0,'approved'=>0,'suspended'=>0,'terminated'=>0,'rejected'=>0], 'by_dept' => [], 'staff' => [], 'payroll_pending' => 0, 'att_present' => 0, 'att_punches' => 0, 'payroll' => null];
 try {
     $r = @mysqli_query($conn, "SELECT onboarding_status, COUNT(*) c FROM `staff` GROUP BY onboarding_status");
     while ($r && ($row = mysqli_fetch_assoc($r))) {
@@ -37,6 +37,10 @@ try {
     }
     $r = @mysqli_query($conn, "SELECT COUNT(*) c FROM `payroll_periods` WHERE status = 'pending_approval'");
     if ($r && ($row = mysqli_fetch_assoc($r))) { $hr['payroll_pending'] = (int) $row['c']; }
+    $r = @mysqli_query($conn, "SELECT COUNT(DISTINCT staff_id) present, COUNT(*) punches FROM `attendance_logs` WHERE DATE(punch_time) = CURDATE()");
+    if ($r && ($row = mysqli_fetch_assoc($r))) { $hr['att_present'] = (int) $row['present']; $hr['att_punches'] = (int) $row['punches']; }
+    $r = @mysqli_query($conn, "SELECT period_month, period_year, total_gross, total_net, total_employees, status FROM `payroll_periods` ORDER BY period_year DESC, period_month DESC LIMIT 1");
+    if ($r && ($row = mysqli_fetch_assoc($r))) { $hr['payroll'] = ['month'=>(int)$row['period_month'],'year'=>(int)$row['period_year'],'gross'=>(float)$row['total_gross'],'net'=>(float)$row['total_net'],'employees'=>(int)$row['total_employees'],'status'=>(string)$row['status']]; }
 } catch (\Throwable $e) {
     error_log('CEO HR fetch: ' . $e->getMessage());
 }
@@ -733,17 +737,18 @@ try {
         ];
         const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
         const deptMax=Math.max(1,...HR.by_dept.map(d=>d.count));
-        const deptRows=HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No department data.</p>';
+        const deptCard=`<div class="card"><div class="chead"><h4>Staff by department</h4><span class="chip slate">Active</span></div>${HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No data.</p>'}</div>`;
+        const attCard=`<div class="card"><div class="chead"><h4>Attendance today</h4><span class="chip jade">Live</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Present</span><b class="num">${nf.format(HR.att_present||0)}</b></div><div class="cm"><span>Punches</span><b class="num">${nf.format(HR.att_punches||0)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Distinct staff with a biometric punch today.</div></div>`;
+        const p=HR.payroll;
+        const payCard=`<div class="card"><div class="chead"><h4>Payroll — latest period</h4><span class="chip ${p&&p.status==='pending_approval'?'amber':'slate'}">${p?esc(String(p.status).replace(/_/g,' ')):'—'}</span></div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
         const statusChip=st=>{const m={active:"jade",approved:"jade",pending:"amber",under_review:"slate",suspended:"coral",terminated:"coral",rejected:"coral"};return `<span class="chip ${m[st]||"slate"}">${esc(String(st).replace(/_/g," "))}</span>`;};
-        const rows=HR.staff.length?HR.staff.map(p=>`<tr><td><b>${esc(p.staff_id)}</b></td><td>${esc(p.name)}<div style="font-size:11px;color:var(--muted)">${esc(p.title||"—")}</div></td><td>${esc(p.email)}<div style="font-size:11px;color:var(--muted)">${esc(p.phone)}</div></td><td>${esc(p.dept||"—")}</td><td>${statusChip(p.status)}</td><td class="num">${esc(p.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
+        const rows=HR.staff.length?HR.staff.map(pp=>`<tr><td><b>${esc(pp.staff_id)}</b></td><td>${esc(pp.name)}<div style="font-size:11px;color:var(--muted)">${esc(pp.title||"—")}</div></td><td>${esc(pp.email)}<div style="font-size:11px;color:var(--muted)">${esc(pp.phone)}</div></td><td>${esc(pp.dept||"—")}</td><td>${statusChip(pp.status)}</td><td class="num">${esc(pp.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
         return `
-          <div class="section-tag"><h3>Human Resources</h3><span>People, onboarding and payroll — live from the HR records</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Human Resources</h3><span>People, attendance and payroll — live from the HR records</span><div class="rule"></div></div>
           ${kpiRow}
-          <div class="section-tag"><h3>Active staff by department</h3><span>Headcount per department</span><div class="rule"></div></div>
-          <div class="card">${deptRows}</div>
+          <section class="grid-3">${deptCard}${attCard}${payCard}</section>
           <div class="section-tag"><h3>Staff</h3><span>${nf.format(HR.staff.length)} shown · newest first</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>
-          <div class="card"><div class="chead"><h4>More HR detail</h4><span class="chip slate">Full pages</span></div><div style="display:flex;flex-wrap:wrap;gap:8px">${[["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]].map(([l,h])=>`<a class="tbtn" href="${h}">${esc(l)}</a>`).join("")}</div></div>`;
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
       function vFinance(){
         return `<div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions — live</span><div class="rule"></div></div>
