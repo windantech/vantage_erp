@@ -22,7 +22,7 @@ try {
     while ($r && ($row = mysqli_fetch_assoc($r))) {
         $hr['by_dept'][] = ['name' => (string) $row['department_name'], 'count' => (int) $row['c']];
     }
-    $r = @mysqli_query($conn, "SELECT s.staff_id, s.full_name, s.email, s.phone, s.job_title, s.onboarding_status, s.created_at, d.department_name FROM `staff` s LEFT JOIN `departments` d ON s.department_id = d.id ORDER BY s.created_at DESC LIMIT 60");
+    $r = @mysqli_query($conn, "SELECT s.staff_id, s.full_name, s.email, s.phone, s.job_title, s.onboarding_status, s.created_at, d.department_name FROM `staff` s LEFT JOIN `departments` d ON s.department_id = d.id WHERE s.onboarding_status = 'active' ORDER BY s.created_at DESC LIMIT 200");
     while ($r && ($row = mysqli_fetch_assoc($r))) {
         $hr['staff'][] = [
             'staff_id' => (string) $row['staff_id'],
@@ -48,9 +48,19 @@ try {
             $hr['payslips'][] = ['name'=>(string)$prow['staff_name'],'dept'=>(string)($prow['department_name'] ?? ''),'gross'=>(float)$prow['gross_pay'],'net'=>(float)$prow['net_pay']];
         }
     }
-    $r = @mysqli_query($conn, "SELECT s.full_name, a.punch_time, a.punch_type FROM `attendance_logs` a LEFT JOIN `staff` s ON s.staff_id = a.staff_id WHERE DATE(a.punch_time) = CURDATE() ORDER BY a.punch_time ASC");
+    $r = @mysqli_query($conn, "SELECT a.staff_id, s.full_name, a.punch_time FROM `attendance_logs` a LEFT JOIN `staff` s ON s.staff_id = a.staff_id WHERE DATE(a.punch_time) = CURDATE() ORDER BY a.punch_time ASC");
+    $byp = [];
     while ($r && ($row = mysqli_fetch_assoc($r))) {
-        $hr['clockins'][] = ['name'=>(string)($row['full_name'] ?? '—'),'time'=>!empty($row['punch_time']) ? date('g:i A', strtotime($row['punch_time'])) : '','type'=>(string)($row['punch_type'] ?? '')];
+        if (empty($row['punch_time'])) { continue; }
+        $key = !empty($row['staff_id']) ? 'S' . $row['staff_id'] : 'N' . (string) ($row['full_name'] ?? '');
+        $t = strtotime($row['punch_time']);
+        $name = trim((string) ($row['full_name'] ?? '')) !== '' ? (string) $row['full_name'] : 'Unmapped device user';
+        if (!isset($byp[$key])) { $byp[$key] = ['name'=>$name, 'in'=>$t, 'out'=>$t]; }
+        else { if ($t < $byp[$key]['in']) { $byp[$key]['in'] = $t; } if ($t > $byp[$key]['out']) { $byp[$key]['out'] = $t; } }
+    }
+    foreach ($byp as $pp) {
+        $late = ((int) date('Hi', $pp['in']) > 820);   // clock-in after 08:20 = late
+        $hr['clockins'][] = ['name'=>$pp['name'], 'in'=>date('g:i A', $pp['in']), 'out'=>($pp['out'] > $pp['in']) ? date('g:i A', $pp['out']) : '—', 'late'=>$late];
     }
 } catch (\Throwable $e) {
     error_log('CEO HR fetch: ' . $e->getMessage());
@@ -758,7 +768,7 @@ try {
         const deptCard=`<div class="card"><div class="chead"><h4>Staff by department</h4><span class="chip slate">Active</span></div>${HR.by_dept.length?HR.by_dept.map(d=>`<div class="src"><label>${esc(d.name)}</label><div class="sb"><div style="width:${d.count/deptMax*100}%"></div></div><b>${nf.format(d.count)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No data.</p>'}</div>`;
         const attCard=`<div class="card" style="cursor:pointer" data-modal="clockins"><div class="chead"><h4>Attendance today</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View list →</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Present</span><b class="num">${nf.format(HR.att_present||0)}</b></div><div class="cm"><span>Punches</span><b class="num">${nf.format(HR.att_punches||0)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Click to see who clocked in and at what time.</div></div>`;
         const p=HR.payroll;
-        const payCard=`<div class="card" ${p?'style="cursor:pointer" data-modal="payslips"':''}><div class="chead"><h4>Payroll — latest period</h4><span class="chip ${p&&p.status==='pending_approval'?'amber':'slate'}">${p?esc(String(p.status).replace(/_/g,' ')):'—'}</span></div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div><div style="margin-top:10px"><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View payslips →</span></div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
+        const payCard=`<div class="card" ${p?'style="cursor:pointer" data-modal="payslips"':''}><div class="chead"><h4>Payroll — latest period</h4>${p?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">View payslips →</span>':''}</div>`+(p?`<div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(p.gross)}</b></div><div class="cm"><span>Net</span><b class="num">${kMoney(p.net)}</b></div><div class="cm"><span>Employees</span><b class="num">${nf.format(p.employees)}</b></div></div>`:'<p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p>')+`</div>`;
         const statusChip=st=>{const m={active:"jade",approved:"jade",pending:"amber",under_review:"slate",suspended:"coral",terminated:"coral",rejected:"coral"};return `<span class="chip ${m[st]||"slate"}">${esc(String(st).replace(/_/g," "))}</span>`;};
         const rows=HR.staff.length?HR.staff.map(pp=>`<tr><td><b>${esc(pp.staff_id)}</b></td><td>${esc(pp.name)}<div style="font-size:11px;color:var(--muted)">${esc(pp.title||"—")}</div></td><td>${esc(pp.email)}<div style="font-size:11px;color:var(--muted)">${esc(pp.phone)}</div></td><td>${esc(pp.dept||"—")}</td><td>${statusChip(pp.status)}</td><td class="num">${esc(pp.created)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No staff found.</td></tr>';
         return `
@@ -781,8 +791,8 @@ try {
       function openOpsModal(title, html){ el("opsModalTitle").innerHTML=title; el("opsModalBody").innerHTML=html; el("opsModal").classList.add("open"); }
       function closeOpsModal(){ el("opsModal").classList.remove("open"); }
       function showClockins(){
-        const rows=HR.clockins.length?HR.clockins.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${esc(c.time)}</td><td><span class="chip ${/out/i.test(c.type)?"amber":"jade"}">${esc(c.type||"—")}</span></td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No clock-ins recorded today.</td></tr>';
-        openOpsModal("Clocked in today · "+nf.format(HR.clockins.length)+" punches",`<div class="table-wrap"><table><thead><tr><th>Staff</th><th>Time</th><th>Type</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+        const rows=HR.clockins.length?HR.clockins.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num" style="${c.late?"color:var(--coral);font-weight:800":""}">${esc(c.in)}${c.late?' <span class="chip coral" style="font-size:9px;padding:2px 6px;margin-left:4px">Late</span>':''}</td><td class="num">${esc(c.out)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No clock-ins recorded today.</td></tr>';
+        openOpsModal("Clocked in today · "+nf.format(HR.clockins.length)+" staff",`<div class="table-wrap"><table><thead><tr><th>Staff</th><th>Clock in</th><th>Clock out</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showPayslips(){
         const rows=HR.payslips.length?HR.payslips.map(p=>`<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.dept||"—")}</td><td class="num">${kMoney(p.gross)}</td><td class="num">${kMoney(p.net)}</td></tr>`).join(""):'<tr><td colspan="4" style="text-align:center;color:var(--muted)">No payslips for this period.</td></tr>';
