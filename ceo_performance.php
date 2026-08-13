@@ -9,6 +9,28 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+
+// ---- Operations tab: real headline numbers from the ops portal.
+// Defensive: any missing table/column returns 0 rather than throwing (PHP 8.1 mysqli). ----
+$ops_scalar = static function ($conn, $sql) {
+    try {
+        $r = @mysqli_query($conn, $sql);
+        if ($r && ($row = mysqli_fetch_row($r))) {
+            return $row[0];
+        }
+    } catch (\Throwable $e) {
+        // table/column absent in this install — fall through to 0
+    }
+    return 0;
+};
+$ops = [
+    'staff'            => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `staff`"),
+    'departments'     => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `departments`"),
+    'payroll_pending' => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `payroll_periods` WHERE `status` = 'pending_approval'"),
+    'expenses_total'  => (float) $ops_scalar($conn, "SELECT COALESCE(SUM(`amount`),0) FROM `expenses`"),
+    'requests_pending' => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `service_requests` WHERE `status` = 'Pending'"),
+    'leave_pending'   => (int) $ops_scalar($conn, "SELECT COUNT(*) FROM `leave_requests` WHERE `status` = 'Pending'"),
+];
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -194,6 +216,9 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Organization</button>
         <button class="tab" data-v="people"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>Departments &amp; People</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
+        <button class="tab" data-v="hr"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>HR</button>
+        <button class="tab" data-v="finance"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Finance</button>
+        <button class="tab" data-v="admin"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Admin</button>
       </nav>
       <main id="workspace"></main>
     </div>
@@ -202,6 +227,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
     (() => {
       "use strict";
       const root=document.getElementById("bdeApp");
+      const OPS = <?php echo json_encode($ops, JSON_UNESCAPED_SLASHES); ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
@@ -679,8 +705,47 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         if(state.role==="bde")populateEmp();
         root.querySelectorAll("#tabNav .tab").forEach(t=>t.classList.toggle("active",t.dataset.v===state.view));
       }
+      /* ---------- back-office tabs (real data from the ops portal; each links to detail) ---------- */
+      function opsLinks(links){return `<div style="display:flex;flex-wrap:wrap;gap:8px">${links.map(([l,h])=>`<a class="tbtn" href="${h}">${esc(l)}</a>`).join("")}</div>`;}
+      function vHR(){
+        return `
+          <div class="section-tag"><h3>Human Resources</h3><span>People, attendance, payroll and leave — live from the operations portal</span><div class="rule"></div></div>
+          <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Staff</div><div class="val num">${nf.format(OPS.staff)}</div><div class="meta">total employees</div></div>
+            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Departments</div><div class="val num">${nf.format(OPS.departments)}</div><div class="meta">across the org</div></div>
+            <div class="kpi" style="--acc:var(--amber)"><div class="lab">Payroll approvals</div><div class="val num">${nf.format(OPS.payroll_pending)}</div><div class="meta">pending sign-off</div></div>
+            <div class="kpi" style="--acc:var(--brand)"><div class="lab">Leave requests</div><div class="val num">${nf.format(OPS.leave_pending)}</div><div class="meta">pending</div></div>
+          </div>
+          <div class="card"><div class="chead"><h4>Open in the HR portal</h4><span class="chip jade">Live</span></div>${opsLinks([
+            ["HR dashboard","ceo_dashboard/hr_dashboard.php"],["Staff list","ceo_dashboard/staff_list.php"],["Attendance report","ceo_dashboard/attendance_report.php"],["Daily attendance","ceo_dashboard/attendance_daily.php"],["Leave requests","ceo_dashboard/leave_requests.php"],["Leave calendar","ceo_dashboard/leave_calendar.php"],["Payslips","ceo_dashboard/payslips.php"]
+          ])}</div>`;
+      }
+      function vFinance(){
+        return `
+          <div class="section-tag"><h3>Finance &amp; Accounting</h3><span>Expenses, fee balances, payroll and commissions</span><div class="rule"></div></div>
+          <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            <div class="kpi" style="--acc:var(--coral)"><div class="lab">Expenses (recorded)</div><div class="val num">${kMoney(OPS.expenses_total)}</div><div class="meta">total logged</div></div>
+            <div class="kpi" style="--acc:var(--amber)"><div class="lab">Payroll to approve</div><div class="val num">${nf.format(OPS.payroll_pending)}</div><div class="meta">periods pending</div></div>
+            <div class="kpi" style="--acc:var(--jade)"><div class="lab">Org collection</div><div class="val num">${pct(B.collection,0)}</div><div class="meta">from the revenue view</div></div>
+          </div>
+          <div class="card"><div class="chead"><h4>Open in the finance portal</h4><span class="chip jade">Live</span></div>${opsLinks([
+            ["Expenses","ceo_dashboard/expenses.php"],["Fee balances","ceo_dashboard/fee_balances.php"],["Payroll periods","ceo_dashboard/payroll_periods.php"],["Payroll reports","ceo_dashboard/payroll_reports.php"],["Remittances","ceo_dashboard/payroll_remittances.php"],["Commission reports","ceo_dashboard/commission_reports.php"]
+          ])}</div>`;
+      }
+      function vAdmin(){
+        return `
+          <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Approvals, assets and assignments</span><div class="rule"></div></div>
+          <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+            <div class="kpi" style="--acc:var(--coral)"><div class="lab">Requests pending</div><div class="val num">${nf.format(OPS.requests_pending)}</div><div class="meta">awaiting approval</div></div>
+            <div class="kpi" style="--acc:var(--slate)"><div class="lab">Departments</div><div class="val num">${nf.format(OPS.departments)}</div><div class="meta">organizational units</div></div>
+          </div>
+          <div class="card"><div class="chead"><h4>Open in the admin portal</h4><span class="chip jade">Live</span></div>${opsLinks([
+            ["Approve requests","ceo_dashboard/approve_requests.php"],["Assets","ceo_dashboard/assets_list.php"],["Assigned assets","ceo_dashboard/assets_assigned.php"],["Intake assignments","ceo_dashboard/intake_assignments.php"],["Event assignments","ceo_dashboard/event_assignments.php"]
+          ])}</div>`;
+      }
+
       function render(){
-        if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():vPipeline();}
+        if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():v==="hr"?vHR():v==="finance"?vFinance():v==="admin"?vAdmin():vPipeline();}
         else{el("workspace").innerHTML=roleView();}
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
