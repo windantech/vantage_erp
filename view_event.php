@@ -1785,6 +1785,30 @@ echo $formattedDateTime;
     });
 </script>
 
+<!-- Delete event confirmation (target of the Delete button) -->
+<div class="modal fade" id="deleteEventModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-0">
+      <form method="POST" action="delete_event.php">
+        <input type="hidden" name="delete_event" value="1">
+        <input type="hidden" name="event_id" value="<?php echo (int) $event_id; ?>">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title">Delete event</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Permanently delete <strong><?php echo htmlspecialchars(event_detail($conn, $event_id, "event_title")); ?></strong>?</p>
+          <p class="text-muted small mb-0">This removes the event from the list. Existing registrations and payment records are kept for history. This cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary rounded-0" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger rounded-0"><i class="fa fa-trash"></i> Delete permanently</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <?php
 require_once 'footer.php';
 ?>
