@@ -21,7 +21,7 @@ if (!isset($role) || !is_array($role) || !in_array(777, $role)) {
 require_once 'includes/moodle_system_conn.php';
 require_once 'includes/moodle_enrol_functions.php';
 
-header('Content-Type: text/plain; charset=utf-8');
+echo '<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:12px 18px;color:#0e1726;background:#fff">';
 
 $sys = function_exists('moodle_system_connect') ? moodle_system_connect() : null;
 if (!$sys) {
