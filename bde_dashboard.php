@@ -105,10 +105,10 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
     .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
-    /* ---- scoreboard: separate colour-tinted boxes ---- */
+    /* ---- scoreboard: clean white cards (colour lives in the icon + number) ---- */
     .bde-app .results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    .bde-app .result{position:relative;border-radius:16px;padding:20px 22px;overflow:hidden;transition:transform .16s,box-shadow .22s;border:1px solid var(--line);border-color:color-mix(in srgb,var(--acc,var(--brand)) 26%,var(--line));background:var(--surface2);background:linear-gradient(160deg,color-mix(in srgb,var(--acc,var(--brand)) 13%,var(--surface)) 0%,var(--surface) 74%)}
-    .bde-app .result:hover{transform:translateY(-3px);box-shadow:0 16px 32px -20px var(--acc,var(--brand))}
+    .bde-app .result{position:relative;border-radius:16px;padding:20px 22px;border:1px solid var(--line);background:var(--surface);overflow:hidden;transition:transform .16s,box-shadow .22s}
+    .bde-app .result:hover{transform:translateY(-3px);box-shadow:0 16px 32px -22px rgba(18,34,58,.35)}
     .bde-app .result .ricon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:var(--acc,var(--brand));color:#fff;margin-bottom:15px;box-shadow:0 10px 22px -9px var(--acc,var(--brand))}
     .bde-app .result .ricon svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .result .rlab{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800}
