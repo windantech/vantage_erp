@@ -259,24 +259,23 @@ try {
     while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['enq'] = (int) $row['enq']; } }
     $res = $q("SELECT DATE_FORMAT(tc.date_sent,'%Y-%m') ym, COUNT(*) cli FROM `ticket_congress` tc WHERE tc.status=2 AND tc.date_sent>='$since' GROUP BY DATE_FORMAT(tc.date_sent,'%Y-%m')");
     while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['cli'] = (int) $row['cli']; } }
-    $res = $q("SELECT DATE_FORMAT(dp.datee,'%Y-%m') ym, SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END) collected FROM `dpo_payment` dp INNER JOIN `event_config` ec ON ec.event_id=dp.purpose WHERE dp.datee>='$since' GROUP BY DATE_FORMAT(dp.datee,'%Y-%m')");
+    $res = $q("SELECT DATE_FORMAT(tc.date_sent,'%Y-%m') ym, SUM(tc.amount) collected FROM `ticket_congress` tc WHERE tc.status=2 AND tc.amount>0 AND tc.date_sent>='$since' AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=tc.confirmation AND dp.status=2) GROUP BY DATE_FORMAT(tc.date_sent,'%Y-%m')");
     while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['collected'] = (float) $row['collected']; } }
     $reports['international']['months'] = array_values($im);
 
-    // ---- INTERNATIONAL per-location: revenue (collected) + fee balance (paid tickets * early - collected) ----
+    // ---- INTERNATIONAL per-location: revenue (collected) + fee balance (paid tickets * early - collected). Source = ticket_congress (event_config is unused). ----
     $loc = [];
-    $res = $q("SELECT e.location loc, COALESCE(SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END),0) revenue
-               FROM `event_config` ec INNER JOIN `Event` e ON ec.event_id=e.event_id
-               LEFT JOIN `dpo_payment` dp ON dp.purpose=ec.event_id AND dp.status=2
-               GROUP BY e.location");
-    while ($res && ($row = mysqli_fetch_assoc($res))) { $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown'); if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; } $loc[$k]['revenue'] += (float) $row['revenue']; }
-    $res = $q("SELECT e.location loc, COALESCE(e.early_amount,0) ea, COUNT(CASE WHEN tc.status=2 THEN tc.id END) paidn,
-               COALESCE(SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END),0) paid
-               FROM `event_config` ec INNER JOIN `Event` e ON ec.event_id=e.event_id
-               LEFT JOIN `ticket_congress` tc ON ec.event_id=tc.event_id
-               LEFT JOIN `dpo_payment` dp ON tc.ticket_id=dp.app_id
+    $res = $q("SELECT e.location loc, COALESCE(e.early_amount,0) ea,
+               COUNT(CASE WHEN tc.status=2 AND tc.amount>0 THEN tc.id END) paidn,
+               COALESCE(SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END),0) collected
+               FROM `ticket_congress` tc INNER JOIN `Event` e ON tc.event_id=e.event_id
                GROUP BY e.location, e.early_amount");
-    while ($res && ($row = mysqli_fetch_assoc($res))) { $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown'); if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; } $loc[$k]['balance'] += max(0, ((int) $row['paidn'] * (float) $row['ea']) - (float) $row['paid']); }
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown');
+        if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; }
+        $loc[$k]['revenue'] += (float) $row['collected'];
+        $loc[$k]['balance'] += max(0, ((int) $row['paidn'] * (float) $row['ea']) - (float) $row['collected']);
+    }
     usort($loc, function ($a, $b) { return ($b['revenue'] + $b['balance']) <=> ($a['revenue'] + $a['balance']); });
     $reports['international']['loc'] = array_slice(array_values($loc), 0, 10);
 
@@ -284,7 +283,7 @@ try {
     $cm = $seed;
     $res = $q("SELECT DATE_FORMAT(submitted_at,'%Y-%m') ym, COUNT(*) enq, SUM(CASE WHEN status='won' THEN 1 ELSE 0 END) cli FROM `corporate_proposals` WHERE submitted_at>='$since' GROUP BY DATE_FORMAT(submitted_at,'%Y-%m')");
     while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($cm[$row['ym']])) { $cm[$row['ym']]['enq'] = (int) $row['enq']; $cm[$row['ym']]['cli'] = (int) $row['cli']; } }
-    $res = $q("SELECT DATE_FORMAT(dp.datee,'%Y-%m') ym, SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END) collected FROM `dpo_payment` dp WHERE dp.datee>='$since' AND dp.purpose IN (SELECT event_id FROM `corporate_programs`) GROUP BY DATE_FORMAT(dp.datee,'%Y-%m')");
+    $res = $q("SELECT DATE_FORMAT(tc.date_sent,'%Y-%m') ym, SUM(tc.amount) collected FROM `ticket_congress` tc WHERE tc.status=2 AND tc.amount>0 AND tc.date_sent>='$since' AND tc.event_id IN (SELECT event_id FROM `corporate_programs`) GROUP BY DATE_FORMAT(tc.date_sent,'%Y-%m')");
     while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($cm[$row['ym']])) { $cm[$row['ym']]['collected'] = (float) $row['collected']; } }
     $reports['corporate']['months'] = array_values($cm);
 } catch (\Throwable $e) { error_log('CEO Reports fetch: ' . $e->getMessage()); }
