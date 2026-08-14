@@ -484,10 +484,10 @@ try {
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Organization</button>
         <button class="tab" data-v="people"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>Departments &amp; People</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
+        <button class="tab" data-v="reports"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Analytics</button>
         <button class="tab" data-v="hr"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>HR</button>
         <button class="tab" data-v="finance"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Finance</button>
         <button class="tab" data-v="admin"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Admin</button>
-        <button class="tab" data-v="reports"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reports</button>
       </nav>
       <main id="workspace"></main>
       <div class="ops-modal" id="opsModal"><div class="ops-modal-box"><div class="ops-modal-head"><h4 id="opsModalTitle"></h4><button type="button" class="tbtn" data-close>✕ Close</button></div><div class="ops-modal-body" id="opsModalBody"></div></div></div>
@@ -1190,7 +1190,7 @@ try {
         const cMon=chart("Corporate · fee collected","",[{name:"Collected",color:"var(--jade)",vals:cm.map(m=>m.collected)}],cm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected in this period.");
         return `
           <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Reports</h3><span>Enrolment &amp; revenue trends by department — last 6 months</span></div>
+            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Analytics</h3><span>Enrolment &amp; revenue trends by department — last 6 months</span></div>
             <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
           </div><div class="rule" style="margin:0 0 4px"></div>
           <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment and fees</span><div class="rule"></div></div>
