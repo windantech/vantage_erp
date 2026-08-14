@@ -111,7 +111,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .result .ricon svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .result .rlab{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800}
     .bde-app .result .rval{font-size:38px;font-weight:850;letter-spacing:-.025em;line-height:1.02;margin:6px 0 5px;color:var(--acc,var(--brand))}
-    .bde-app .result .rmeta{font-size:12px;color:var(--muted)}
+    .bde-app .result .rmeta{font-size:13.5px;color:var(--muted)}
     @media(max-width:820px){.bde-app .results{grid-template-columns:1fr}}
     .bde-app .kpi .kicon{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)} .bde-app .kpi .kicon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .kpi .lab{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;padding-right:34px}
