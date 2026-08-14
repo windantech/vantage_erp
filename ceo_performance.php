@@ -1153,24 +1153,25 @@ try {
 
       /* ---------- Reports tab: native grouped-bar charts (virtual + international) ---------- */
       function barsSVG(labels,series,fmt){
-        if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return '<p style="color:var(--muted);font-size:12.5px;margin:16px 4px">No data in this period.</p>';
-        const W=920,H=280,padL=68,padR=14,padT=14,padB=48,iw=W-padL-padR,ih=H-padT-padB;
+        if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return '<p style="color:var(--muted);font-size:13px;margin:20px 4px">No data in this period.</p>';
+        const W=920,H=340,padL=74,padR=18,padT=34,padB=54,iw=W-padL-padR,ih=H-padT-padB;
         const rawMax=Math.max(1,...series.flatMap(s=>s.vals.map(v=>Math.abs(v||0))));
         const niceMax=(function(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const u=x/p;const f=u<=1?1:u<=2?2:u<=5?5:10;return f*p;})(rawMax);
-        const n=labels.length,gw=iw/n,ns=series.length,bw=Math.max(6,Math.min(42,(gw*0.62)/ns));
-        let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="1"/><text x="${padL-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:10px;fill:var(--muted)">${fmt(val)}</text>`;}
+        const n=labels.length,gw=iw/n,ns=series.length,bw=Math.max(12,Math.min(56,(gw*0.72)/ns));
+        let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="${g===4?1.5:1}"/><text x="${padL-10}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:12px;fill:var(--muted);font-weight:600">${fmt(val)}</text>`;}
         let bars="",xl="";
         labels.forEach((lab,i)=>{const cx=padL+gw*i+gw/2,groupW=bw*ns;
-          series.forEach((s,si)=>{const v=Math.max(0,s.vals[i]||0),x=cx-groupW/2+si*bw,h=(v/niceMax)*ih,y=padT+ih-h;
-            bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-3).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="2" fill="${s.color}"><title>${esc(lab)} · ${esc(s.name)}: ${fmt(v)}</title></rect>`;});
-          xl+=`<text x="${cx.toFixed(1)}" y="${H-padB+18}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${esc(lab)}</text>`;});
+          series.forEach((s,si)=>{const v=Math.max(0,s.vals[i]||0),x=cx-groupW/2+si*bw,h=(v/niceMax)*ih,y=padT+ih-h,bx=x+(bw-4)/2;
+            bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="3" fill="${s.color}"><title>${esc(lab)} · ${esc(s.name)}: ${fmt(v)}</title></rect>`;
+            if(v>0)bars+=`<text x="${bx.toFixed(1)}" y="${(y-7).toFixed(1)}" text-anchor="middle" style="font-size:11.5px;font-weight:800;fill:${s.color}">${fmt(v)}</text>`;});
+          xl+=`<text x="${cx.toFixed(1)}" y="${H-padB+22}" text-anchor="middle" style="font-size:12.5px;font-weight:700;fill:var(--ink)">${esc(lab)}</text>`;});
         return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}${xl}</svg>`;
       }
-      function repLegend(series){return `<div style="display:flex;gap:14px;font-size:11px;flex-wrap:wrap">${series.map(s=>`<span style="display:flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:${s.color}"></span>${esc(s.name)}</span>`).join("")}</div>`;}
+      function repLegend(series){return `<div style="display:flex;gap:16px;font-size:12.5px;font-weight:600;flex-wrap:wrap">${series.map(s=>`<span style="display:flex;align-items:center;gap:7px"><span style="width:13px;height:13px;border-radius:3px;background:${s.color}"></span>${esc(s.name)}</span>`).join("")}</div>`;}
       function vReports(){
         const V=REP.virtual||{months:[]},I=REP.international||{months:[],loc:[]};
         const cnt=v=>nf.format(Math.round(v||0));
-        const vm=V.months||[],im=I.months||[],locs=I.loc||[],short=s=>{s=String(s||"—");return s.length>13?s.slice(0,12)+"…":s;};
+        const vm=V.months||[],im=I.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
         const chart=(title,chip,series,vals,fmt,legend)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt)}</div>`;
         const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]));
         const vMon=chart("Virtual · fee collected vs balance","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)},{name:"Balance",color:"var(--amber)",vals:vm.map(m=>Math.max(0,(m.due||0)-(m.collected||0)))}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"},{name:"Balance",color:"var(--amber)"}]));
