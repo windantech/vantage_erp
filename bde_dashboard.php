@@ -81,8 +81,8 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .tab:hover{color:var(--ink);border-color:var(--brand)}
     .bde-app .tab.active{background:linear-gradient(120deg,var(--brand),var(--brand-deep));color:#fff;border-color:var(--brand);box-shadow:0 8px 18px rgba(236,110,45,.3)}
     .bde-app #workspace{display:grid;gap:18px;margin-top:18px}
-    .bde-app .section-tag{display:flex;align-items:center;gap:12px;margin:8px 2px 0}
-    .bde-app .section-tag h3{margin:0;font-size:16px;letter-spacing:-.01em} .bde-app .section-tag>span{font-size:12.5px;color:var(--muted)} .bde-app .section-tag .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+    .bde-app .section-tag{display:flex;align-items:baseline;gap:12px;margin:8px 2px 0}
+    .bde-app .section-tag h3{margin:0;font-size:16px;letter-spacing:-.01em} .bde-app .section-tag>span{font-size:12.5px;color:var(--muted)} .bde-app .section-tag .rule{flex:1;height:1px;align-self:center;background:linear-gradient(90deg,var(--line),transparent)}
 
     .bde-app .strategy{border-radius:var(--radius);background:linear-gradient(120deg,var(--sidebar1),#1c3a52);color:#fff;padding:20px 22px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.7fr);gap:18px;align-items:center;box-shadow:var(--shadow)}
     .bde-app .strategy .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#9fd0ea;font-weight:800}
@@ -102,13 +102,11 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .pr{color:var(--coral);background:var(--coral-soft);border-color:color-mix(in srgb,var(--coral) 32%,transparent)} .bde-app .pr .dot{background:var(--coral)}
 
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-    .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
-    .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+    .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;cursor:default}
     .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     /* ---- scoreboard: clean white cards (colour lives in the icon + number) ---- */
     .bde-app .results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    .bde-app .result{position:relative;border-radius:16px;padding:20px 22px;border:1px solid var(--line);background:var(--surface);overflow:hidden;transition:transform .16s,box-shadow .22s}
-    .bde-app .result:hover{transform:translateY(-3px);box-shadow:0 16px 32px -22px rgba(18,34,58,.35)}
+    .bde-app .result{position:relative;border-radius:16px;padding:20px 22px;border:1px solid var(--line);background:var(--surface);overflow:hidden;cursor:default}
     .bde-app .result .ricon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:var(--acc,var(--brand));color:#fff;margin-bottom:15px;box-shadow:0 10px 22px -9px var(--acc,var(--brand))}
     .bde-app .result .ricon svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .result .rlab{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800}
