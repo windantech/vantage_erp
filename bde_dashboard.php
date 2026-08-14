@@ -24,6 +24,7 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
     $parts = preg_split('/\s+/', trim($bde_metrics['name']));
     $bdeInitials = strtoupper(substr($parts[0], 0, 1) . (isset($parts[1]) ? substr($parts[1], 0, 1) : ''));
 }
+$bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_metrics($conn, $bde_ru_id, '2020-01-01', date('Y-m-d')) : [];
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -208,7 +209,7 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
       <section class="card" style="margin-top:14px">
         <div class="chead"><h4>Live from Finance<?php echo $bde_metrics['name'] !== '' ? ' — ' . htmlspecialchars($bde_metrics['name']) : ''; ?></h4><span class="chip jade">Real data · to date</span></div>
         <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> attributed to you</div></div>
+          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Your cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> — only intakes &amp; events assigned to you</div></div>
           <div class="kpi" style="--acc:var(--slate)"><div class="lab">Paid clients</div><div class="val num"><?php echo (int) $bde_metrics['paid_clients']; ?></div><div class="meta">of <?php echo (int) $bde_metrics['total_regs']; ?> registrations</div></div>
           <div class="kpi" style="--acc:var(--brand)"><div class="lab">Attributed via</div><div class="val num" style="font-size:15px"><?php echo htmlspecialchars($bde_metrics['dept'] !== '' ? $bde_metrics['dept'] : 'intakes assigned to you'); ?></div><div class="meta">intake.assigned_to → cleared payments</div></div>
         </div>
@@ -291,6 +292,7 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
         stale: <?php echo (int) $bde_metrics['stale']; ?>,
         commissionKes: <?php echo (float) $bde_metrics['commission_kes']; ?>
       });
+      B.team = <?php echo json_encode(!empty($bde_team) ? $bde_team : [['name' => ($bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'You'), 'title' => ($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE'), 'actual' => (float) $bde_metrics['revenue_kes'], 'clients' => (int) $bde_metrics['paid_clients'], 'me' => true]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -413,7 +415,8 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
       }
       function teamTable(){
         const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(t.pipeline)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        const total=B.team.reduce((s,t)=>s+(t.actual||0),0)||1;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Cleared revenue</th><th>Paid clients</th><th>Share of team</th></tr></thead><tbody>${B.team.map((t,i)=>{const share=(t.actual||0)/total;const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title||"BDE")}</span></div></div></td><td class="num">${kMoney(t.actual||0)}</td><td class="num">${t.clients!=null?nf.format(t.clients):"—"}</td><td><span class="mini-track"><div style="width:${clamp(share*100,0,100)}%;background:var(--brand)"></div></span> <b class="num" style="font-size:11.5px">${pct(share,0)}</b></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- views ---------- */
@@ -429,19 +432,19 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
-          <div class="section-tag"><h3>Your department context</h3><span>Every figure drills into the underlying leads, payments and evidence</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Your department team</h3><span>Sellers in your department, ranked by cleared revenue (targets are the next slice)</span><div class="rule"></div></div>
           ${teamTable()}`;
       }
 
       function vPipeline(){
-        const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
+        const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
         const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
         const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
         const cross=["Training client → Eval360 / 360 opportunity","Corporate demo → multi-department rollout","Academic employer → staff appraisal cohort","Alumnus → institutional sponsorship"];
         return `
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
+            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?(B.funnel[i-1][1]>0?Math.round(n/B.funnel[i-1][1]*100)+"%":"—"):"100%"}</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No lead-source data yet.</p>'}</div>
           </section>
           <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>

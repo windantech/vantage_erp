@@ -109,30 +109,37 @@ if (!function_exists('bde_fetch_metrics')) {
         $now = time();
         if (!empty($intakeIds)) {
             $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, $intakeIds));
-            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.payment_status, r.source, r.last_contact_date, c.price_usd
-                FROM register r JOIN intake i ON r.intake_id = i.intake_id LEFT JOIN course c ON i.course_id = c.course_id
+            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.last_contact_date, c.price_usd,
+                    COALESCE(NULLIF(es.name,''), NULLIF(r.source,''), 'Unknown') AS src_name
+                FROM register r JOIN intake i ON r.intake_id = i.intake_id
+                LEFT JOIN course c ON i.course_id = c.course_id
+                LEFT JOIN enquiry_sources es ON es.id = r.source
                 WHERE r.intake_id IN ($in) AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
             while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
                 $out['total_regs']++;
                 $fLeads++;
                 $ls = strtolower(trim((string) ($rr['lead_status'] ?? '')));
                 $lastc = trim((string) ($rr['last_contact_date'] ?? ''));
-                $contacted = in_array($ls, ['contacted', 'qualified', 'enrolled'], true) || ($lastc !== '' && $lastc !== '0000-00-00' && strtotime($lastc));
-                if ($contacted) { $fCont++; }
-                if (in_array($ls, ['qualified', 'enrolled'], true)) { $fQual++; }
-                if ($ls === 'enrolled') { $fEnr++; }
+                $hasContact = ($lastc !== '' && $lastc !== '0000-00-00' && strtotime($lastc));
                 if (!empty($rr['price_usd'])) { $out['expected_usd'] += (float) $rr['price_usd']; }
                 $amt = isset($paid[$rr['entry_id']]) ? $paid[$rr['entry_id']] : 0;
                 $cleared = $amt > 0;
+                // Funnel is CUMULATIVE: a paid/enrolled client necessarily passed the earlier stages,
+                // even when lead_status was never updated. Downstream always implies upstream.
+                $isEnrolled  = $cleared || $ls === 'enrolled';
+                $isQualified = $isEnrolled || $ls === 'qualified';
+                $isContacted = $isQualified || $ls === 'contacted' || $hasContact;
+                if ($isContacted) { $fCont++; }
+                if ($isQualified) { $fQual++; }
+                if ($isEnrolled) { $fEnr++; }
                 if ($cleared) {
                     $fPaid++; $out['paid_clients']++;
                     $out['revenue_usd'] += $amt; $out['rev_virtual_usd'] += $amt;
-                } else if ($ls !== 'enrolled') {
-                    $stale = ($lastc === '' || $lastc === '0000-00-00' || !strtotime($lastc)) || (strtotime($lastc) < $now - 7 * 86400);
+                } else if (!$isEnrolled) {
+                    $stale = !$hasContact || (strtotime($lastc) < $now - 7 * 86400);
                     if ($stale) { $out['stale']++; }
                 }
-                $src = trim((string) ($rr['source'] ?? ''));
-                $srcLabel = $src === '' ? 'Unknown' : $src;
+                $srcLabel = trim((string) ($rr['src_name'] ?? '')) !== '' ? (string) $rr['src_name'] : 'Unknown';
                 $sources[$srcLabel] = ($sources[$srcLabel] ?? 0) + 1;
             }
         }
@@ -152,7 +159,8 @@ if (!function_exists('bde_fetch_metrics')) {
                 $out['total_regs'] += $regs; $out['paid_clients'] += $pc;
                 $out['revenue_usd'] += $rev; $out['rev_events_usd'] += $rev;
                 $out['expected_usd'] += $regs * ($events[(int) $t2['event_id']] ?? 0);
-                $fLeads += $regs; $fPaid += $pc;   // events: leads + paid (no lead_status stages)
+                // events have no lead_status stages; paid delegates count cumulatively as leads→…→paid
+                $fLeads += $regs; $fCont += $pc; $fQual += $pc; $fEnr += $pc; $fPaid += $pc;
             }
         }
 
@@ -178,5 +186,47 @@ if (!function_exists('bde_fetch_metrics')) {
         }
 
         return $out;
+    }
+}
+
+if (!function_exists('bde_team_metrics')) {
+    /** The BDE's own department team: each seller's attributed cleared revenue + paid clients. */
+    function bde_team_metrics($conn, $ruId, $start_date, $end_date)
+    {
+        $ruId = (int) $ruId;
+        $team = [];
+        if ($ruId <= 0) { return $team; }
+        $s = mysqli_real_escape_string($conn, $start_date);
+        $e = mysqli_real_escape_string($conn, $end_date);
+        $rate = bde_usd_to_kes($conn);
+
+        $deptId = 0;
+        $dq = @mysqli_query($conn, "SELECT s.department_id FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE ru.id = $ruId LIMIT 1");
+        if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $deptId = (int) $dr['department_id']; }
+        if ($deptId <= 0) { return $team; }
+
+        $members = [];
+        $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE s.department_id = $deptId ORDER BY ru.fullname");
+        while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+        if (empty($members)) { return $team; }
+        $ids = implode(',', array_map('intval', array_keys($members)));
+
+        $vq = @mysqli_query($conn, "SELECT i.assigned_to ru_id, COALESCE(SUM(p.paid),0) rev, COUNT(p.paid) clients
+            FROM intake i JOIN register r ON r.intake_id = i.intake_id
+            JOIN (SELECT app_id, SUM(TransactionAmount) paid FROM dpo_payment WHERE status = 2 GROUP BY app_id) p ON p.app_id = r.entry_id
+            WHERE i.assigned_to IN ($ids) AND r.datee BETWEEN '$s' AND '$e 23:59:59' GROUP BY i.assigned_to");
+        while ($vq && ($vr = mysqli_fetch_assoc($vq))) { $id = (int) $vr['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $vr['rev']; $members[$id]['clients'] += (int) $vr['clients']; } }
+
+        $eq = @mysqli_query($conn, "SELECT e.assigned_to ru_id, SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END) rev,
+            SUM(CASE WHEN tc.status=2 AND tc.amount>0 THEN 1 ELSE 0 END) clients
+            FROM Event e JOIN ticket_congress tc ON tc.event_id = e.event_id
+            WHERE e.assigned_to IN ($ids) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.assigned_to");
+        while ($eq && ($er = mysqli_fetch_assoc($eq))) { $id = (int) $er['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $er['rev']; $members[$id]['clients'] += (int) $er['clients']; } }
+
+        foreach ($members as $mid => $info) {
+            $team[] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => $info['rev'] * $rate, 'clients' => $info['clients'], 'me' => ($mid === $ruId)];
+        }
+        usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
+        return $team;
     }
 }
