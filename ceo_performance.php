@@ -66,71 +66,140 @@ try {
     error_log('CEO HR fetch: ' . $e->getMessage());
 }
 
-// ---- Finance tab: native analytics (mirrors ceo_dashboard finance pages). USD sources normalised to KES. ----
+// ---- Finance tab: full native analytics (revenue, collection, expenses, payroll, statutory, commissions). All money stored USD; JS toggles USD/KES. ----
 $q = function ($sql) use ($conn) { try { return @mysqli_query($conn, $sql); } catch (\Throwable $e) { return false; } };
 $finance = [
     'rate' => 129.0,
-    'income' => ['virtual' => 0, 'intl' => 0, 'custom' => 0, 'total' => 0],
+    'years' => [],
+    'rev' => ['months' => [], 'courses' => [], 'events' => []],
     'expenses' => ['total' => 0, 'count' => 0, 'by_cat' => []],
     'fees' => ['expected' => 0, 'collected' => 0, 'outstanding' => 0, 'clients' => 0, 'paid' => 0, 'partial' => 0],
-    'payroll' => $hr['payroll'],
+    'payroll' => null,
+    'statutory' => ['paye' => 0, 'nssf_emp' => 0, 'nssf_er' => 0, 'shif' => 0, 'housing' => 0],
+    'disburse' => ['paid_n' => 0, 'paid_amt' => 0, 'pend_n' => 0, 'pend_amt' => 0, 'total_emp' => 0, 'total_net' => 0],
     'remit' => ['overdue' => 0, 'pending' => 0, 'paid' => 0, 'overdue_amt' => 0, 'pending_amt' => 0],
     'commission' => ['eligible' => 0, 'pending' => 0, 'approved' => 0, 'paid' => 0],
 ];
 try {
     $res = $q("SELECT setting_value FROM `commission_settings` WHERE setting_key='commission_conversion_rate' LIMIT 1");
     if ($res && ($row = mysqli_fetch_assoc($res)) && (float) $row['setting_value'] > 0) { $finance['rate'] = (float) $row['setting_value']; }
-    $rate = $finance['rate'];
+    $rate = $finance['rate'] > 0 ? $finance['rate'] : 129.0;
 
+    // ===== Revenue: monthly series (virtual/international/custom) — collected, expected, counts =====
+    $months = [];
+    $seed = function ($ym, $y, $m) use (&$months) {
+        if (!isset($months[$ym])) { $months[$ym] = ['ym' => $ym, 'y' => (int) $y, 'm' => (int) $m, 'v' => 0, 'i' => 0, 'c' => 0, 'vexp' => 0, 'iexp' => 0, 'vn' => 0, 'in' => 0]; }
+    };
+    $res = $q("SELECT YEAR(d.datee) y, MONTH(d.datee) m, SUM(d.TransactionAmount) rev, COUNT(*) n, SUM(c.price_usd) exp
+               FROM `dpo_payment` d JOIN `course` c ON d.purpose=c.course_id
+               WHERE d.status=2 AND d.TransactionAmount>0 GROUP BY YEAR(d.datee), MONTH(d.datee)");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $ym = sprintf('%04d-%02d', $row['y'], $row['m']); $seed($ym, $row['y'], $row['m']);
+        $months[$ym]['v'] = (float) $row['rev']; $months[$ym]['vn'] = (int) $row['n']; $months[$ym]['vexp'] = (float) $row['exp'];
+    }
+    $res = $q("SELECT YEAR(t.date_sent) y, MONTH(t.date_sent) m, SUM(t.amount) rev, COUNT(*) n, SUM(e.early_amount) exp
+               FROM `ticket_congress` t LEFT JOIN `Event` e ON t.event_id=e.event_id
+               WHERE t.status=2 AND t.amount>0 AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=t.confirmation AND dp.status=2)
+               GROUP BY YEAR(t.date_sent), MONTH(t.date_sent)");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $ym = sprintf('%04d-%02d', $row['y'], $row['m']); $seed($ym, $row['y'], $row['m']);
+        $months[$ym]['i'] = (float) $row['rev']; $months[$ym]['in'] = (int) $row['n']; $months[$ym]['iexp'] = (float) $row['exp'];
+    }
+    $res = $q("SELECT YEAR(income_date) y, MONTH(income_date) m, SUM(amount) rev FROM `custom_income` WHERE amount>0 GROUP BY YEAR(income_date), MONTH(income_date)");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $ym = sprintf('%04d-%02d', $row['y'], $row['m']); $seed($ym, $row['y'], $row['m']);
+        $months[$ym]['c'] = (float) $row['rev'];
+    }
+    ksort($months);
+    $finance['rev']['months'] = array_values($months);
+    $ys = [];
+    foreach ($months as $mm) { $ys[$mm['y']] = true; }
+    krsort($ys);
+    $finance['years'] = array_map('strval', array_keys($ys));
+
+    // Top courses / events per year (JS aggregates to selected year)
+    $res = $q("SELECT YEAR(d.datee) y, c.course name, SUM(d.TransactionAmount) rev, COUNT(*) n
+               FROM `dpo_payment` d JOIN `course` c ON d.purpose=c.course_id
+               WHERE d.status=2 AND d.TransactionAmount>0 GROUP BY YEAR(d.datee), c.course");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $finance['rev']['courses'][] = ['y' => (int) $row['y'], 'name' => (string) (($row['name'] ?? '') !== '' ? $row['name'] : 'Unknown course'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
+    }
+    $res = $q("SELECT YEAR(t.date_sent) y, COALESCE(e.location,'Unknown Event') loc, SUM(t.amount) rev, COUNT(*) n
+               FROM `ticket_congress` t LEFT JOIN `Event` e ON t.event_id=e.event_id
+               WHERE t.status=2 AND t.amount>0 AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=t.confirmation AND dp.status=2)
+               GROUP BY YEAR(t.date_sent), e.location");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $finance['rev']['events'][] = ['y' => (int) $row['y'], 'loc' => (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown Event'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
+    }
+
+    // ===== Expenses by category (USD) =====
     $res = $q("SELECT category, SUM(amount) t, COUNT(*) c FROM `expenses` GROUP BY category ORDER BY t DESC");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
-        $amt = (float) $row['t'] * $rate;
-        $finance['expenses']['by_cat'][] = ['name' => (string) (($row['category'] ?? '') !== '' ? $row['category'] : 'Uncategorised'), 'amount' => $amt, 'count' => (int) $row['c']];
-        $finance['expenses']['total'] += $amt;
+        $finance['expenses']['by_cat'][] = ['name' => (string) (($row['category'] ?? '') !== '' ? $row['category'] : 'Uncategorised'), 'amount' => (float) $row['t'], 'count' => (int) $row['c']];
+        $finance['expenses']['total'] += (float) $row['t'];
         $finance['expenses']['count'] += (int) $row['c'];
     }
 
-    $res = $q("SELECT COALESCE(SUM(TransactionAmount),0) t FROM `dpo_payment` WHERE status=2 AND TransactionAmount>0");
-    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['virtual'] = (float) $row['t'] * $rate; }
-    $res = $q("SELECT COALESCE(SUM(t.amount),0) t FROM `ticket_congress` t WHERE t.status=2 AND t.amount>0 AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=t.confirmation AND dp.status=2)");
-    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['intl'] = (float) $row['t'] * $rate; }
-    $res = $q("SELECT COALESCE(SUM(amount),0) t FROM `custom_income` WHERE amount>0");
-    if ($res && ($row = mysqli_fetch_assoc($res))) { $finance['income']['custom'] = (float) $row['t'] * $rate; }
-    $finance['income']['total'] = $finance['income']['virtual'] + $finance['income']['intl'] + $finance['income']['custom'];
-
+    // ===== Fee collection (virtual + international), USD =====
     $res = $q("SELECT COUNT(*) clients, COALESCE(SUM(fee),0) expected, COALESCE(SUM(paid),0) collected,
         SUM(CASE WHEN paid>=fee THEN 1 ELSE 0 END) paid_full, SUM(CASE WHEN paid>0 AND paid<fee THEN 1 ELSE 0 END) partial
       FROM (SELECT r.entry_id, c.price_usd fee, SUM(d.TransactionAmount) paid
             FROM `register` r JOIN `intake` i ON r.intake_id=i.intake_id JOIN `course` c ON i.course_id=c.course_id
             JOIN `dpo_payment` d ON d.app_id=r.entry_id AND d.status=2 GROUP BY r.entry_id, c.price_usd) v");
     if ($res && ($row = mysqli_fetch_assoc($res))) {
-        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'] * $rate;
-        $finance['fees']['collected'] += (float) $row['collected'] * $rate; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
+        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'];
+        $finance['fees']['collected'] += (float) $row['collected']; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
     }
     $res = $q("SELECT COUNT(*) clients, COALESCE(SUM(e.early_amount),0) expected, COALESCE(SUM(t.amount),0) collected,
         SUM(CASE WHEN t.amount>=e.early_amount THEN 1 ELSE 0 END) paid_full, SUM(CASE WHEN t.amount>0 AND t.amount<e.early_amount THEN 1 ELSE 0 END) partial
       FROM `ticket_congress` t JOIN `Event` e ON t.event_id=e.event_id WHERE t.status=2 AND t.amount>0");
     if ($res && ($row = mysqli_fetch_assoc($res))) {
-        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'] * $rate;
-        $finance['fees']['collected'] += (float) $row['collected'] * $rate; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
+        $finance['fees']['clients'] += (int) $row['clients']; $finance['fees']['expected'] += (float) $row['expected'];
+        $finance['fees']['collected'] += (float) $row['collected']; $finance['fees']['paid'] += (int) $row['paid_full']; $finance['fees']['partial'] += (int) $row['partial'];
     }
     $finance['fees']['outstanding'] = max(0, $finance['fees']['expected'] - $finance['fees']['collected']);
 
+    // ===== Payroll latest period (KES → USD) + statutory split + disbursement =====
+    if (!empty($hr['payroll'])) {
+        $pp = $hr['payroll']; $pid = (int) $pp['id'];
+        $finance['payroll'] = ['gross' => (float) $pp['gross'] / $rate, 'net' => (float) $pp['net'] / $rate, 'employees' => (int) $pp['employees'], 'month' => (int) $pp['month'], 'year' => (int) $pp['year'], 'status' => (string) $pp['status']];
+        $res = $q("SELECT COALESCE(SUM(paye),0) paye, COALESCE(SUM(nssf_employee),0) nssf_emp, COALESCE(SUM(nssf_employer),0) nssf_er, COALESCE(SUM(shif_amount),0) shif, COALESCE(SUM(housing_levy_employee),0)+COALESCE(SUM(housing_levy_employer),0) housing FROM `payroll_records` WHERE period_id=$pid");
+        if ($res && ($row = mysqli_fetch_assoc($res))) {
+            $finance['statutory'] = ['paye' => (float) $row['paye'] / $rate, 'nssf_emp' => (float) $row['nssf_emp'] / $rate, 'nssf_er' => (float) $row['nssf_er'] / $rate, 'shif' => (float) $row['shif'] / $rate, 'housing' => (float) $row['housing'] / $rate];
+        }
+        $res = $q("SELECT SUM(CASE WHEN pp.status='completed' THEN 1 ELSE 0 END) paid_n,
+            SUM(CASE WHEN pp.status='completed' THEN pr.net_pay ELSE 0 END) paid_amt,
+            SUM(CASE WHEN pp.status IS NULL OR pp.status!='completed' THEN 1 ELSE 0 END) pend_n,
+            SUM(CASE WHEN pp.status IS NULL OR pp.status!='completed' THEN pr.net_pay ELSE 0 END) pend_amt,
+            COUNT(*) total_emp, COALESCE(SUM(pr.net_pay),0) total_net
+          FROM `payroll_records` pr LEFT JOIN `payroll_payments` pp ON pr.id=pp.payroll_record_id WHERE pr.period_id=$pid");
+        if ($res && ($row = mysqli_fetch_assoc($res))) {
+            $finance['disburse'] = ['paid_n' => (int) $row['paid_n'], 'paid_amt' => (float) $row['paid_amt'] / $rate, 'pend_n' => (int) $row['pend_n'], 'pend_amt' => (float) $row['pend_amt'] / $rate, 'total_emp' => (int) $row['total_emp'], 'total_net' => (float) $row['total_net'] / $rate];
+        }
+    }
+
+    // ===== Statutory remittances aging (KES → USD) =====
     $res = $q("SELECT SUM(CASE WHEN status!='paid' AND due_date>=CURDATE() THEN 1 ELSE 0 END) pending,
         SUM(CASE WHEN status!='paid' AND due_date<CURDATE() THEN 1 ELSE 0 END) overdue,
         SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) paid,
         SUM(CASE WHEN status!='paid' AND due_date>=CURDATE() THEN total_amount ELSE 0 END) pending_amt,
         SUM(CASE WHEN status!='paid' AND due_date<CURDATE() THEN total_amount ELSE 0 END) overdue_amt FROM `payroll_remittances`");
     if ($res && ($row = mysqli_fetch_assoc($res))) {
-        $finance['remit'] = ['overdue' => (int) $row['overdue'], 'pending' => (int) $row['pending'], 'paid' => (int) $row['paid'], 'overdue_amt' => (float) $row['overdue_amt'], 'pending_amt' => (float) $row['pending_amt']];
+        $finance['remit'] = ['overdue' => (int) $row['overdue'], 'pending' => (int) $row['pending'], 'paid' => (int) $row['paid'], 'overdue_amt' => (float) $row['overdue_amt'] / $rate, 'pending_amt' => (float) $row['pending_amt'] / $rate];
     }
 
+    // ===== Commissions (USD) =====
     $res = $q("SELECT SUM(commission_amount) eligible,
         SUM(CASE WHEN status IN ('pending','pending_approval') THEN commission_amount ELSE 0 END) pending,
         SUM(CASE WHEN status='approved' THEN commission_amount ELSE 0 END) approved,
         SUM(CASE WHEN status='paid' THEN commission_amount ELSE 0 END) paid FROM `commission_records` WHERE is_eligible=1");
     if ($res && ($row = mysqli_fetch_assoc($res))) {
-        $finance['commission'] = ['eligible' => (float) $row['eligible'] * $rate, 'pending' => (float) $row['pending'] * $rate, 'approved' => (float) $row['approved'] * $rate, 'paid' => (float) $row['paid'] * $rate];
+        $finance['commission'] = ['eligible' => (float) $row['eligible'], 'pending' => (float) $row['pending'], 'approved' => (float) $row['approved'], 'paid' => (float) $row['paid']];
     }
 } catch (\Throwable $e) { error_log('CEO Finance fetch: ' . $e->getMessage()); }
 
@@ -238,6 +307,12 @@ try {
     .bde-app .chip{font-size:11px;font-weight:800;letter-spacing:.04em;padding:5px 11px;border-radius:999px;white-space:nowrap;align-self:center}
     .bde-app .chip.jade{color:var(--jade);background:var(--jade-soft)} .bde-app .chip.gold{color:var(--gold);background:var(--gold-soft)} .bde-app .chip.slate{color:var(--slate);background:var(--slate-soft)} .bde-app .chip.amber{color:var(--amber);background:var(--amber-soft)} .bde-app .chip.coral{color:var(--coral);background:var(--coral-soft)}
     .bde-app .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px} .bde-app .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .bde-app .kpis4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .bde-app .grid-rev{display:grid;grid-template-columns:1fr 2fr;gap:16px}
+    .bde-app .curtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+    .bde-app .curtoggle button{border:0;background:var(--surface2);color:var(--muted);padding:6px 15px;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.02em}
+    .bde-app .curtoggle button.on{background:var(--brand);color:#fff}
+    .bde-app .finsel{background:var(--surface2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:700}
     .bde-app .hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px}
     .bde-app .pace-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-weight:750;font-size:12px;border:1px solid} .bde-app .pace-pill .dot{width:8px;height:8px;border-radius:50%}
     .bde-app .pg{color:var(--jade);background:var(--jade-soft);border-color:color-mix(in srgb,var(--jade) 30%,transparent)} .bde-app .pg .dot{background:var(--jade)}
@@ -326,9 +401,9 @@ try {
     .bde-app .bde-foot{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6} .bde-app .bde-foot code{background:var(--surface2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
 
     @media(max-width:1000px){
-      .bde-app .hero,.bde-app .grid-2,.bde-app .grid-3,.bde-app .strategy{grid-template-columns:1fr} .bde-app .kpis{grid-template-columns:1fr 1fr} .bde-app .drivers{grid-template-columns:repeat(2,1fr)} .bde-app .principles{grid-template-columns:1fr} .bde-app .form-grid{grid-template-columns:repeat(2,1fr)} .bde-app .field.span4{grid-column:span 2}
+      .bde-app .hero,.bde-app .grid-2,.bde-app .grid-3,.bde-app .strategy,.bde-app .grid-rev{grid-template-columns:1fr} .bde-app .kpis,.bde-app .kpis4{grid-template-columns:1fr 1fr} .bde-app .drivers{grid-template-columns:repeat(2,1fr)} .bde-app .principles{grid-template-columns:1fr} .bde-app .form-grid{grid-template-columns:repeat(2,1fr)} .bde-app .field.span4{grid-column:span 2}
     }
-    @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
+    @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .kpis4,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
     @media(prefers-reduced-motion:reduce){.bde-app *{transition:none!important}}
     .bde-app .ops-modal{position:fixed;inset:0;background:rgba(10,20,30,.55);z-index:2000;display:none;align-items:flex-start;justify-content:center;padding:5vh 16px}
     .bde-app .ops-modal.open{display:flex}
@@ -429,7 +504,7 @@ try {
         ]
       };
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command",role:"ceo",dept:0,emp:0};
+      const state={p:2,view:"command",role:"ceo",dept:0,emp:0,finYear:"all",finCur:"USD"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -877,29 +952,113 @@ try {
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Contact</th><th>Department</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
       const finPalette=["var(--brand)","var(--jade)","var(--slate)","var(--violet)","var(--gold)","#2f8f88","var(--coral)","#4d8bd6"];
-      function bar(label,val,max,color){return `<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${label}</span><b>${kMoney(val)}</b></div><div style="height:9px;border-radius:99px;background:var(--surface3)"><div style="width:${clamp(max?val/max*100:0,0,100)}%;height:100%;border-radius:99px;background:${color}"></div></div></div>`;}
+      const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      // money helpers — all stored USD; toggle multiplies by rate for KES
+      function fcur(){return state.finCur==="KES"?FIN.rate:1;}
+      function fsym(){return state.finCur==="KES"?"KSh ":"$";}
+      function fmoney(usd){const v=(usd||0)*fcur();const a=Math.abs(v);if(a>=1e6)return fsym()+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return fsym()+Math.round(v/1e3)+"K";return fsym()+nf.format(Math.round(v));}
+      function fmoneyFull(usd){const v=(usd||0)*fcur();return fsym()+v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
+      function fbar(label,usd,maxUsd,color){return `<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${label}</span><b>${fmoney(usd)}</b></div><div style="height:9px;border-radius:99px;background:var(--surface3)"><div style="width:${clamp(maxUsd?usd/maxUsd*100:0,0,100)}%;height:100%;border-radius:99px;background:${color}"></div></div></div>`;}
+      const pctOf=(a,b)=>b>0?Math.round(a/b*100):0;
+      // aggregate the revenue series for the selected year
+      function revAgg(){
+        const yr=state.finYear;
+        const ms=FIN.rev.months.filter(m=>yr==="all"||String(m.y)===String(yr));
+        let v=0,i=0,c=0,vexp=0,iexp=0,vn=0,ic=0;
+        ms.forEach(m=>{v+=m.v;i+=m.i;c+=m.c;vexp+=m.vexp;iexp+=m.iexp;vn+=m.vn;ic+=m.in;});
+        return {months:ms,v:v,i:i,c:c,vexp:vexp,iexp:iexp,vn:vn,ic:ic,total:v+i+c,coll:v+i,exp:vexp+iexp};
+      }
+      function revTop(list,key){
+        const yr=state.finYear,agg={};
+        list.filter(x=>yr==="all"||String(x.y)===String(yr)).forEach(x=>{const k=x[key];if(!agg[k])agg[k]={name:k,rev:0,n:0};agg[k].rev+=x.rev;agg[k].n+=x.n;});
+        return Object.values(agg).sort((a,b)=>b.rev-a.rev).slice(0,5);
+      }
+      // multi-series area+line SVG (Virtual vs International), currency-aware
+      function revTrendSVG(months){
+        if(!months.length)return '<p style="color:var(--muted);font-size:12.5px;margin:16px 4px">No revenue recorded in this period.</p>';
+        const W=980,H=300,padL=66,padR=18,padT=16,padB=44,iw=W-padL-padR,ih=H-padT-padB,mul=fcur();
+        const vs=months.map(m=>m.v*mul),is=months.map(m=>m.i*mul),n=months.length;
+        const rawMax=Math.max(1,...vs,...is);
+        const niceMax=(function(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const u=x/p;const f=u<=1?1:u<=2?2:u<=5?5:10;return f*p;})(rawMax);
+        const xAt=idx=>padL+(n===1?iw/2:iw*idx/(n-1)),yAt=val=>padT+ih-(val/niceMax)*ih;
+        const short=v=>{const a=Math.abs(v);if(a>=1e6)return fsym()+(v/1e6).toFixed(1).replace(/\.0$/,"")+"M";if(a>=1e3)return fsym()+Math.round(v/1e3)+"K";return fsym()+Math.round(v);};
+        const path=(arr,close)=>{let d=arr.map((v,idx)=>(idx?"L":"M")+xAt(idx).toFixed(1)+" "+yAt(v).toFixed(1)).join(" ");if(close)d+=" L"+xAt(n-1).toFixed(1)+" "+(padT+ih)+" L"+xAt(0).toFixed(1)+" "+(padT+ih)+" Z";return d;};
+        let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="1"/><text x="${padL-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:10px;fill:var(--muted)">${short(val)}</text>`;}
+        const step=Math.max(1,Math.ceil(n/12));let xl="";months.forEach((m,idx)=>{if(idx%step===0||idx===n-1){const lab=MON[m.m-1]+(state.finYear==="all"?" '"+String(m.y).slice(2):"");xl+=`<text x="${xAt(idx).toFixed(1)}" y="${H-padB+18}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${lab}</text>`;}});
+        const dots=(arr,color)=>arr.map((v,idx)=>`<circle cx="${xAt(idx).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="2.6" fill="${color}"/>`).join("");
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">${grid}
+          <path d="${path(is,true)}" fill="var(--brand)" opacity="0.10"/><path d="${path(vs,true)}" fill="var(--jade)" opacity="0.12"/>
+          <path d="${path(is,false)}" fill="none" stroke="var(--brand)" stroke-width="2.5"/><path d="${path(vs,false)}" fill="none" stroke="var(--jade)" stroke-width="2.5"/>
+          ${dots(is,"var(--brand)")}${dots(vs,"var(--jade)")}${xl}</svg>`;
+      }
       function vFinance(){
-        const F=FIN,inc=F.income,exp=F.expenses,fee=F.fees,rem=F.remit,com=F.commission,pay=F.payroll;
-        const net=inc.total-exp.total,inOutMax=Math.max(inc.total,exp.total,1);
-        const incCard=`<div class="card"><div class="chead"><h4>Income collected</h4><span class="chip jade">Live</span></div><div class="mini3"><div class="cm"><span>Virtual</span><b class="num">${kMoney(inc.virtual)}</b></div><div class="cm"><span>International</span><b class="num">${kMoney(inc.intl)}</b></div><div class="cm"><span>Custom</span><b class="num">${kMoney(inc.custom)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Total in: <b style="color:var(--ink)">${kMoney(inc.total)}</b> · settled receipts only</div></div>`;
-        const expCard=`<div class="card" ${exp.by_cat.length?'style="cursor:pointer" data-modal="expcat"':''}><div class="chead"><h4>Expenses</h4>${exp.by_cat.length?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">By category →</span>':'<span class="chip slate">Live</span>'}</div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>Total spend</span><b class="num" style="color:var(--coral)">${kMoney(exp.total)}</b></div><div class="cm"><span>Transactions</span><b class="num">${nf.format(exp.count)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">${nf.format(exp.by_cat.length)} categories · click for the breakdown</div></div>`;
-        const posCard=`<div class="card"><div class="chead"><h4>Net position</h4><span class="chip ${net>=0?'jade':'coral'}">${net>=0?'Surplus':'Deficit'}</span></div><div style="font-size:30px;font-weight:850;line-height:1.1;color:${net>=0?'var(--jade)':'var(--coral)'}">${kMoney(net)}</div><div style="font-size:11px;color:var(--muted);margin:4px 0 14px">Income minus expenses, all sources</div><div style="display:flex;flex-direction:column;gap:10px">${bar('Income',inc.total,inOutMax,'var(--jade)')}${bar('Expenses',exp.total,inOutMax,'var(--coral)')}</div></div>`;
-        const feeRate=fee.expected?Math.round(fee.collected/fee.expected*100):0;
-        const feeCard=`<div class="card"><div class="chead"><h4>Fee collection</h4><span class="chip slate">${nf.format(fee.clients)} paying clients</span></div><div class="mini3"><div class="cm"><span>Expected</span><b class="num">${kMoney(fee.expected)}</b></div><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${kMoney(fee.collected)}</b></div><div class="cm"><span>Outstanding</span><b class="num" style="color:${fee.outstanding>0?'var(--amber)':'var(--ink)'}">${kMoney(fee.outstanding)}</b></div></div><div style="margin-top:16px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px"><span>Collection rate</span><b style="color:var(--ink)">${feeRate}%</b></div><div style="height:11px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(feeRate,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div><div style="display:flex;gap:8px;margin-top:12px"><span class="chip jade">${nf.format(fee.paid)} fully paid</span><span class="chip amber">${nf.format(fee.partial)} partial</span></div></div>`;
+        const F=FIN,exp=F.expenses,fee=F.fees,rem=F.remit,com=F.commission,pay=F.payroll,st=F.statutory,dis=F.disburse;
+        const r=revAgg();
+        const yrLabel=state.finYear==="all"?"All time":state.finYear;
+        // ---- controls ----
+        const yopts=['<option value="all"'+(state.finYear==="all"?" selected":"")+">All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
+        const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
+            <select id="finYear" class="finsel">${yopts}</select>
+          </div></div><div class="rule" style="margin:0 0 4px"></div>`;
+        // ---- KPI row ----
+        const kpi=(l,v,m,a)=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
+        const kpiRowRev=`<div class="kpis4">
+          ${kpi("Total Revenue",fmoneyFull(r.total),esc(yrLabel),"var(--brand)")}
+          ${kpi("Virtual (Courses)",fmoneyFull(r.v),pctOf(r.v,r.total)+"% of total","var(--jade)")}
+          ${kpi("International (Events)",fmoneyFull(r.i),pctOf(r.i,r.total)+"% of total","var(--slate)")}
+          ${kpi("Total Transactions",nf.format(r.vn+r.ic),"V: "+nf.format(r.vn)+" &nbsp;|&nbsp; I: "+nf.format(r.ic),"var(--gold)")}
+        </div>`;
+        // ---- distribution donut + monthly trend ----
+        const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
+        const dlegend=(r.total>0?[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]):[]).map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${s[2]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${s[0]}</span><b class="num" style="font-size:12.5px">${fmoney(s[1])}</b><span style="font-size:11px;color:var(--muted);width:38px;text-align:right">${pctOf(s[1],r.total)}%</span></div>`).join("")||'<p style="color:var(--muted);font-size:12.5px;margin:0">No revenue.</p>';
+        const distCard=`<div class="card"><div class="chead"><h4>Revenue distribution</h4><span class="chip slate">${esc(yrLabel)}</span></div><div style="display:flex;flex-direction:column;align-items:center;gap:14px"><div>${hrDonut(dsegs,fmoney(r.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" total")}</div><div style="width:100%">${dlegend}</div></div></div>`;
+        const trendCard=`<div class="card"><div class="chead"><h4>Monthly revenue trend</h4><div style="display:flex;gap:14px;font-size:11px"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--jade);border-radius:2px"></span>Virtual</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--brand);border-radius:2px"></span>International</span></div></div>${revTrendSVG(r.months)}</div>`;
+        // ---- top courses / events ----
+        const tc=revTop(F.rev.courses,"name"),te=revTop(F.rev.events,"name");
+        const courseRows=tc.length?tc.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td><span class="chip slate">${nf.format(c.n)}</span></td><td class="num">${fmoney(c.rev)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No virtual course revenue.</td></tr>';
+        const eventRows=te.length?te.map(e=>`<tr><td><b>${esc(e.name)}</b></td><td><span class="chip slate">${nf.format(e.n)}</span></td><td class="num">${fmoney(e.rev)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No international event revenue.</td></tr>';
+        const topCourses=`<div class="card tight"><div class="chead" style="padding:14px 16px 0"><h4>Top virtual courses</h4><span class="chip slate">Top 5</span></div><div class="table-wrap"><table><thead><tr><th>Course</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${courseRows}</tbody></table></div></div>`;
+        const topEvents=`<div class="card tight"><div class="chead" style="padding:14px 16px 0"><h4>Top international events</h4><span class="chip slate">Top 5</span></div><div class="table-wrap"><table><thead><tr><th>Location</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${eventRows}</tbody></table></div></div>`;
+        // ---- collection (income.php) ----
+        const collRate=r.exp>0?Math.round(r.coll/r.exp*100):0,uncoll=Math.max(0,r.exp-r.coll);
+        const collCard=`<div class="card"><div class="chead"><h4>Collection — collected vs expected</h4><span class="chip ${collRate>=80?'jade':collRate>=50?'amber':'coral'}">${collRate}% collected</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(r.coll)}</b></div><div class="cm"><span>Expected</span><b class="num">${fmoney(r.exp)}</b></div><div class="cm"><span>Uncollected</span><b class="num" style="color:${uncoll>0?'var(--amber)':'var(--ink)'}">${fmoney(uncoll)}</b></div></div><div style="margin-top:16px"><div style="height:11px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(collRate,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Course fees vs price · event tickets vs early-bird · ${esc(yrLabel)}</div></div>`;
+        // ---- expenses donut + net position ----
+        const totalMul=1;
         const esegs=exp.by_cat.slice(0,8).map((d,i)=>[d.name,d.amount,finPalette[i%finPalette.length]]);
-        const elegend=exp.by_cat.length?exp.by_cat.slice(0,8).map((d,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${finPalette[i%finPalette.length]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${esc(d.name)}</span><b class="num" style="font-size:12.5px">${kMoney(d.amount)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No expenses recorded.</p>';
-        const expDonut=`<div class="card"><div class="chead"><h4>Expenses by category</h4><span class="chip slate">Top ${Math.min(8,exp.by_cat.length)}</span></div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(esegs,kMoney(exp.total).replace('KES ',''),"KES spent")}</div><div style="flex:1;min-width:180px">${elegend}</div></div></div>`;
-        const payCard=pay?`<div class="card" style="cursor:pointer" data-modal="payslips"><div class="chead"><h4>Payroll — latest</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">Payslips →</span></div><div class="mini3"><div class="cm"><span>Gross</span><b class="num">${kMoney(pay.gross)}</b></div><div class="cm"><span>Net</span><b class="num" style="color:var(--jade)">${kMoney(pay.net)}</b></div><div class="cm"><span>Staff</span><b class="num">${nf.format(pay.employees)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Period ${pay.month}/${pay.year} · ${esc(String(pay.status||'—').replace(/_/g,' '))}</div></div>`:`<div class="card"><div class="chead"><h4>Payroll — latest</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p></div>`;
+        const elegend=exp.by_cat.length?exp.by_cat.slice(0,8).map((d,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${finPalette[i%finPalette.length]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${esc(d.name)}</span><b class="num" style="font-size:12.5px">${fmoney(d.amount)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No expenses recorded.</p>';
+        const expDonut=`<div class="card" ${exp.by_cat.length?'style="cursor:pointer" data-modal="expcat"':''}><div class="chead"><h4>Expenses by category</h4>${exp.by_cat.length?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">All →</span>':'<span class="chip slate">Live</span>'}</div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(esegs,fmoney(exp.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" spent")}</div><div style="flex:1;min-width:180px">${elegend}</div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">${nf.format(exp.count)} transactions across ${nf.format(exp.by_cat.length)} categories (all-time)</div></div>`;
+        const netAll=r.total-exp.total,inOutMax=Math.max(r.total,exp.total,1);
+        const posCard=`<div class="card"><div class="chead"><h4>Net position</h4><span class="chip ${netAll>=0?'jade':'coral'}">${netAll>=0?'Surplus':'Deficit'}</span></div><div style="font-size:28px;font-weight:850;line-height:1.1;color:${netAll>=0?'var(--jade)':'var(--coral)'}">${fmoney(netAll)}</div><div style="font-size:11px;color:var(--muted);margin:4px 0 14px">Revenue (${esc(yrLabel)}) minus expenses (all-time)</div><div style="display:flex;flex-direction:column;gap:10px">${fbar("Revenue",r.total,inOutMax,"var(--jade)")}${fbar("Expenses",exp.total,inOutMax,"var(--coral)")}</div></div>`;
+        // ---- payroll + statutory + disbursement ----
+        const payCard=pay?`<div class="card" style="cursor:pointer" data-modal="payslips"><div class="chead"><h4>Payroll — latest</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">Payslips →</span></div><div class="mini3"><div class="cm"><span>Gross</span><b class="num">${fmoney(pay.gross)}</b></div><div class="cm"><span>Net</span><b class="num" style="color:var(--jade)">${fmoney(pay.net)}</b></div><div class="cm"><span>Staff</span><b class="num">${nf.format(pay.employees)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Period ${pay.month}/${pay.year} · ${esc(String(pay.status||'—').replace(/_/g,' '))}</div></div>`:`<div class="card"><div class="chead"><h4>Payroll — latest</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p></div>`;
+        const statTotal=st.paye+st.nssf_emp+st.nssf_er+st.shif+st.housing;
+        const statCard=`<div class="card"><div class="chead"><h4>Statutory deductions</h4><span class="chip slate">${fmoney(statTotal)}</span></div><div class="mini3" style="grid-template-columns:1fr 1fr"><div class="cm"><span>PAYE (KRA)</span><b class="num">${fmoney(st.paye)}</b></div><div class="cm"><span>SHIF</span><b class="num">${fmoney(st.shif)}</b></div><div class="cm"><span>NSSF (emp+er)</span><b class="num">${fmoney(st.nssf_emp+st.nssf_er)}</b></div><div class="cm"><span>Housing levy</span><b class="num">${fmoney(st.housing)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Latest payroll period · remitted to KRA / NSSF / SHA</div></div>`;
+        const disPct=dis.total_emp?Math.round(dis.paid_n/dis.total_emp*100):0;
+        const disCard=`<div class="card"><div class="chead"><h4>Payroll disbursement</h4>${dis.pend_n?`<span class="chip amber">${nf.format(dis.pend_n)} pending</span>`:'<span class="chip jade">All paid</span>'}</div><div class="mini3"><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${nf.format(dis.paid_n)}</b></div><div class="cm"><span>Pending</span><b class="num" style="color:${dis.pend_n?'var(--amber)':'var(--ink)'}">${nf.format(dis.pend_n)}</b></div><div class="cm"><span>Net pay</span><b class="num">${fmoney(dis.total_net)}</b></div></div><div style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px"><span>Disbursed</span><b style="color:var(--ink)">${disPct}% · ${fmoney(dis.paid_amt)}</b></div><div style="height:10px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(disPct,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div></div>`;
+        // ---- remittance aging + commissions ----
         const remOut=rem.pending_amt+rem.overdue_amt;
-        const remCard=`<div class="card"><div class="chead"><h4>Statutory remittances</h4>${rem.overdue?`<span class="chip coral">${nf.format(rem.overdue)} overdue</span>`:'<span class="chip jade">On track</span>'}</div><div class="mini3"><div class="cm"><span>Overdue</span><b class="num" style="color:${rem.overdue?'var(--coral)':'var(--ink)'}">${nf.format(rem.overdue)}</b></div><div class="cm"><span>Pending</span><b class="num">${nf.format(rem.pending)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${nf.format(rem.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Outstanding: <b style="color:${remOut>0?'var(--amber)':'var(--ink)'}">${kMoney(remOut)}</b></div></div>`;
-        const comCard=`<div class="card"><div class="chead"><h4>Commissions</h4><span class="chip slate">Eligible</span></div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${kMoney(com.pending)}</b></div><div class="cm"><span>Approved</span><b class="num">${kMoney(com.approved)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${kMoney(com.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Total eligible: <b style="color:var(--ink)">${kMoney(com.eligible)}</b></div></div>`;
+        const remCard=`<div class="card"><div class="chead"><h4>Remittance aging</h4>${rem.overdue?`<span class="chip coral">${nf.format(rem.overdue)} overdue</span>`:'<span class="chip jade">On track</span>'}</div><div class="mini3"><div class="cm"><span>Overdue</span><b class="num" style="color:${rem.overdue?'var(--coral)':'var(--ink)'}">${nf.format(rem.overdue)}</b></div><div class="cm"><span>Pending</span><b class="num">${nf.format(rem.pending)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${nf.format(rem.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Outstanding: <b style="color:${remOut>0?'var(--amber)':'var(--ink)'}">${fmoney(remOut)}</b> · overdue ${fmoney(rem.overdue_amt)}</div></div>`;
+        const feeR=fee.expected?Math.round(fee.collected/fee.expected*100):0;
+        const feeCard=`<div class="card"><div class="chead"><h4>Client fee balances</h4><span class="chip slate">${nf.format(fee.clients)} clients</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(fee.collected)}</b></div><div class="cm"><span>Expected</span><b class="num">${fmoney(fee.expected)}</b></div><div class="cm"><span>Outstanding</span><b class="num" style="color:${fee.outstanding>0?'var(--amber)':'var(--ink)'}">${fmoney(fee.outstanding)}</b></div></div><div style="display:flex;gap:8px;margin-top:12px"><span class="chip jade">${nf.format(fee.paid)} fully paid</span><span class="chip amber">${nf.format(fee.partial)} partial</span><span class="chip slate">${feeR}% collected</span></div></div>`;
+        const comCard=`<div class="card"><div class="chead"><h4>Sales commissions</h4><span class="chip slate">Eligible ${fmoney(com.eligible)}</span></div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${fmoney(com.pending)}</b></div><div class="cm"><span>Approved</span><b class="num">${fmoney(com.approved)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${fmoney(com.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Marketer commissions on cleared revenue</div></div>`;
         return `
-          <div class="section-tag"><h3>Finance &amp; Accounting</h3><span>All figures in KES · converted at 1 USD = ${nf.format(F.rate)} where applicable</span><div class="rule"></div></div>
-          <section class="grid-3">${incCard}${expCard}${posCard}</section>
-          <div class="section-tag"><h3>Fee collection &amp; expense mix</h3><span>Student &amp; delegate fees against recorded spend</span><div class="rule"></div></div>
-          <section class="grid-2">${feeCard}${expDonut}</section>
-          <div class="section-tag"><h3>Payroll, remittances &amp; commissions</h3><span>Staff cost, statutory obligations and sales commissions</span><div class="rule"></div></div>
-          <section class="grid-3">${payCard}${remCard}${comCard}</section>`;
+          ${controls}
+          ${kpiRowRev}
+          <div class="section-tag"><h3>Revenue mix &amp; trend</h3><span>Where the money comes from, month by month</span><div class="rule"></div></div>
+          <section class="grid-rev">${distCard}${trendCard}</section>
+          <div class="section-tag"><h3>Top earners</h3><span>Highest-grossing courses and events — ${esc(yrLabel)}</span><div class="rule"></div></div>
+          <section class="grid-2">${topCourses}${topEvents}</section>
+          <div class="section-tag"><h3>Collection &amp; balances</h3><span>Collected against expected, and outstanding client fees</span><div class="rule"></div></div>
+          <section class="grid-2">${collCard}${feeCard}</section>
+          <div class="section-tag"><h3>Spend &amp; net position</h3><span>Expenses by category and the bottom line</span><div class="rule"></div></div>
+          <section class="grid-2">${expDonut}${posCard}</section>
+          <div class="section-tag"><h3>Payroll &amp; statutory</h3><span>Staff cost, statutory deductions and disbursement status</span><div class="rule"></div></div>
+          <section class="grid-3">${payCard}${statCard}${disCard}</section>
+          <div class="section-tag"><h3>Obligations &amp; commissions</h3><span>Statutory remittance aging and sales commissions</span><div class="rule"></div></div>
+          <section class="grid-2">${remCard}${comCard}</section>`;
       }
       function vAdmin(){
         const A=ADM,rq=A.req,total=rq.pending+rq.progress+rq.completed+rq.rejected;
@@ -937,8 +1096,8 @@ try {
         openOpsModal("Payslips"+per+" · "+nf.format(HR.payslips.length)+" staff",`<div class="table-wrap"><table><thead><tr><th>Staff</th><th>Department</th><th>Gross</th><th>Net</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showExpcat(){
-        const rows=FIN.expenses.by_cat.length?FIN.expenses.by_cat.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${kMoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses.</td></tr>';
-        openOpsModal("Expenses by category · "+kMoney(FIN.expenses.total),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+        const rows=FIN.expenses.by_cat.length?FIN.expenses.by_cat.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${fmoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses.</td></tr>';
+        openOpsModal("Expenses by category · "+fmoney(FIN.expenses.total),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showRequests(){
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
@@ -952,6 +1111,8 @@ try {
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
         root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();}));
+        const fySel=el("finYear");if(fySel)fySel.addEventListener("change",e=>{state.finYear=e.target.value;render();});
+        root.querySelectorAll("[data-fincur]").forEach(x=>x.addEventListener("click",()=>{state.finCur=x.getAttribute("data-fincur");render();}));
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
