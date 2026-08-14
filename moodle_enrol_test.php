@@ -70,7 +70,16 @@ if (empty($courses)) {
         echo "Could not read the selection: " . $e->getMessage() . "\n-> Enrol explicitly instead with &courses=9,44,45\n\n";
     }
 }
-if (empty($courses)) { exit("No courses to enrol. Add &courses=9,44,45 (the course ids of the units she paid for).\n"); }
+if (empty($courses)) { exit("No courses. Add &courses=9,44,45 (the course ids).\n"); }
+
+// Un-enrol mode: ...&action=unenrol&courses=9&confirm=1
+if (($_GET['action'] ?? '') === 'unenrol') {
+    if (!isset($_GET['confirm'])) { exit("UN-ENROL dry run — would remove user $uid from course(s) " . implode(',', $courses) . ". Add &confirm=1 to remove.\n"); }
+    $res = moodle_unenrol_user_from_courses($sys, $uid, $courses);
+    echo "Un-enrol result:\n";
+    foreach ($res['results'] as $r) { printf("  course %-5d | %s\n", $r['course_id'], $r['status']); }
+    exit("\nDone. The course(s) will drop off the learner's dashboard.\n");
+}
 
 if (!isset($_GET['confirm'])) {
     $preview = moodle_enrol_preview($sys, $uid, $courses);

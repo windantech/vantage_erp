@@ -99,6 +99,40 @@ if (!function_exists('moodle_enrol_user_in_courses')) {
     }
 }
 
+if (!function_exists('moodle_unenrol_user_from_courses')) {
+    /** Remove a user's manual enrolment + student role from the given courses. Idempotent, never throws. */
+    function moodle_unenrol_user_from_courses($sys, $moodleUserId, array $courseIds)
+    {
+        $uid = (int) $moodleUserId;
+        $out = ['user' => $uid, 'results' => []];
+        if (!$sys || $uid <= 0) { $out['error'] = 'bad connection or user'; return $out; }
+        $roleId = moodle_student_role_id($sys);
+        foreach (array_unique(array_map('intval', $courseIds)) as $cid) {
+            if ($cid <= 0) { continue; }
+            $res = ['course_id' => $cid, 'status' => ''];
+            try {
+                $enrolids = [];
+                $eq = @mysqli_query($sys, "SELECT id FROM mdl_enrol WHERE courseid=$cid AND enrol='manual'");
+                while ($eq && ($e = mysqli_fetch_assoc($eq))) { $enrolids[] = (int) $e['id']; }
+                $removed = 0;
+                if (!empty($enrolids)) {
+                    @mysqli_query($sys, "DELETE FROM mdl_user_enrolments WHERE userid=$uid AND enrolid IN (" . implode(',', $enrolids) . ")");
+                    $removed = mysqli_affected_rows($sys);
+                }
+                $xq = @mysqli_query($sys, "SELECT id FROM mdl_context WHERE contextlevel=50 AND instanceid=$cid LIMIT 1");
+                if ($xq && ($x = mysqli_fetch_assoc($xq))) {
+                    @mysqli_query($sys, "DELETE FROM mdl_role_assignments WHERE userid=$uid AND contextid=" . (int) $x['id'] . " AND roleid=$roleId AND component=''");
+                }
+                $res['status'] = $removed > 0 ? 'unenrolled' : 'was_not_enrolled';
+            } catch (\Throwable $e) {
+                $res['status'] = 'error: ' . $e->getMessage();
+            }
+            $out['results'][] = $res;
+        }
+        return $out;
+    }
+}
+
 if (!function_exists('moodle_autoenrol_from_selection')) {
     /**
      * Fail-safe: enrol a just-created/returning learner into their selected units' Moodle courses.
