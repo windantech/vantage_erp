@@ -111,7 +111,7 @@ if (!function_exists('moodle_autoenrol_from_selection')) {
         try {
             $crm = (isset($GLOBALS['conn']) && ($GLOBALS['conn'] instanceof mysqli)) ? $GLOBALS['conn'] : null;
             $courseIds = function_exists('academic_selected_course_ids') ? academic_selected_course_ids($crm, $selection) : [];
-            if (empty($courseIds)) { error_log('[moodle] auto-enrol: no course_ids resolved for ' . $email); return; }
+            if (empty($courseIds)) { error_log('[moodle] auto-enrol: no course_ids resolved for ' . $email . ' | selection=' . json_encode($selection)); return; }
             $enr = moodle_enrol_user_in_courses($sys, (int) $moodleUserId, $courseIds);
             error_log('[moodle] auto-enrol user ' . (int) $moodleUserId . ' (' . $email . '): ' . json_encode($enr['results']));
         } catch (\Throwable $e) {
@@ -129,31 +129,50 @@ if (!function_exists('academic_selected_course_ids')) {
      */
     function academic_selected_course_ids($crm, array $selection)
     {
-        // Prefer explicit course ids if the caller already resolved them (works without a CRM handle).
+        $norm = function ($s) { return strtolower(trim(preg_replace('/\s+/', ' ', (string) $s))); };
+
+        // (1) Explicit course ids anywhere in the payload (frontend already knows them).
         if (!empty($selection['course_ids']) && is_array($selection['course_ids'])) {
             return array_values(array_filter(array_map('intval', $selection['course_ids'])));
         }
-        if (!$crm) { return []; }
-        $program = trim((string) ($selection['program'] ?? ''));
+
+        // (2) Units may arrive as plain names, or as objects carrying course_id / name.
         $units = (isset($selection['units']) && is_array($selection['units'])) ? $selection['units'] : [];
-        if ($program === '' || empty($units)) { return []; }
+        $direct = [];
+        $names = [];
+        foreach ($units as $u) {
+            if (is_array($u)) {
+                if (!empty($u['course_id'])) { $direct[] = (int) $u['course_id']; continue; }
+                $nm = $u['module_name'] ?? $u['name'] ?? $u['title'] ?? $u['unit'] ?? '';
+                if ($nm !== '') { $names[] = (string) $nm; }
+            } elseif (trim((string) $u) !== '') {
+                $names[] = (string) $u;
+            }
+        }
+        if (!empty($direct)) { return array_values(array_unique(array_filter($direct))); }
+        if (empty($names) || !$crm) { return []; }
 
-        // program_id from title (academic_programs)
-        $pe = mysqli_real_escape_string($crm, $program);
-        $pq = @mysqli_query($crm, "SELECT id FROM academic_programs WHERE title = '$pe' LIMIT 1");
-        if (!$pq || !($pr = mysqli_fetch_assoc($pq))) { return []; }
-        $pid = (int) $pr['id'];
-
-        // curriculum for this program → map normalised module_name → course_id
+        // (3) Match unit names to program_curriculum.module_name for the learner's program.
+        $program = $selection['program'] ?? '';
+        $pid = 0;
+        if (is_numeric($program)) {
+            $pid = (int) $program; // frontend program select uses the program id
+        } else {
+            $pe = mysqli_real_escape_string($crm, trim((string) $program));
+            $pq = @mysqli_query($crm, "SELECT id FROM academic_programs WHERE title = '$pe' LIMIT 1");
+            if ($pq && ($pr = mysqli_fetch_assoc($pq))) { $pid = (int) $pr['id']; }
+        }
+        // Build the name→course_id map (scoped to the program if we know it, else all curricula).
+        $where = $pid > 0 ? "WHERE program_id = $pid" : '';
         $map = [];
-        $cq = @mysqli_query($crm, "SELECT module_name, course_id FROM program_curriculum WHERE program_id = $pid");
+        $cq = @mysqli_query($crm, "SELECT module_name, course_id FROM program_curriculum $where");
         while ($cq && ($c = mysqli_fetch_assoc($cq))) {
-            $key = strtolower(trim(preg_replace('/\s+/', ' ', (string) $c['module_name'])));
+            $key = $norm($c['module_name']);
             if ($key !== '' && trim((string) $c['course_id']) !== '') { $map[$key] = (int) $c['course_id']; }
         }
         $ids = [];
-        foreach ($units as $u) {
-            $key = strtolower(trim(preg_replace('/\s+/', ' ', (string) $u)));
+        foreach ($names as $n) {
+            $key = $norm($n);
             if (isset($map[$key])) { $ids[] = $map[$key]; }
         }
         return array_values(array_unique(array_filter($ids)));
