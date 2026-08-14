@@ -19,6 +19,11 @@ if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role
     $bde_ru_id = (int) $_GET['as'];
 }
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01', date('Y-m-d')) : null;
+$bdeInitials = 'AA';
+if ($bde_metrics && $bde_metrics['name'] !== '') {
+    $parts = preg_split('/\s+/', trim($bde_metrics['name']));
+    $bdeInitials = strtoupper(substr($parts[0], 0, 1) . (isset($parts[1]) ? substr($parts[1], 0, 1) : ''));
+}
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -188,7 +193,7 @@ $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01
         <div class="controls">
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
-          <div class="profile-chip"><span class="a">AA</span><div><b>Austin Abere</b><span>BDE · Digital Solutions</span></div></div>
+          <div class="profile-chip"><span class="a"><?php echo htmlspecialchars($bdeInitials); ?></span><div><b><?php echo htmlspecialchars($bde_metrics && $bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'BDE'); ?></b><span><?php echo htmlspecialchars($bde_metrics ? (($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE') . ' · ' . $bde_metrics['mandate']['tag']) : 'BDE · Digital Solutions'); ?></span></div></div>
         </div>
       </header>
       <nav class="tabs" aria-label="Dashboard sections">
@@ -207,7 +212,7 @@ $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01
           <div class="kpi" style="--acc:var(--slate)"><div class="lab">Paid clients</div><div class="val num"><?php echo (int) $bde_metrics['paid_clients']; ?></div><div class="meta">of <?php echo (int) $bde_metrics['total_regs']; ?> registrations</div></div>
           <div class="kpi" style="--acc:var(--brand)"><div class="lab">Attributed via</div><div class="val num" style="font-size:15px"><?php echo htmlspecialchars($bde_metrics['dept'] !== '' ? $bde_metrics['dept'] : 'intakes assigned to you'); ?></div><div class="meta">intake.assigned_to → cleared payments</div></div>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px">Real cleared payments (Finance-verified, converted USD→KES). The cards below are still illustrative until targets and pipeline are wired.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">Live: cleared revenue (virtual + events), conversion funnel, lead sources, collection and commission — attributed to you and Finance-verified. <b>Targets and field visits</b> are the next slice, so attainment %, pace and the visits tab are still illustrative.</div>
       </section>
       <?php endif; ?>
       <main id="workspace"></main>
@@ -263,6 +268,30 @@ $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01
           {date:"2026-09-11",client:"Lucy Wambui",org:"Metro Property Ltd",location:"Nairobi Westlands",product:"M&E System",outcome:"visited",value:0,notes:"Cold visit; captured contact, scheduled discovery call."}
         ]
       };
+<?php if ($bde_metrics): ?>
+      /* ---- real data override: name, revenue, funnel, sources, collection, units, mandate, commission ---- */
+      Object.assign(B, {
+        name: <?php echo json_encode($bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'BDE', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDE"'; ?>,
+        initials: <?php echo json_encode($bdeInitials, JSON_INVALID_UTF8_SUBSTITUTE) ?: '"AA"'; ?>,
+        title: <?php echo json_encode($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDE"'; ?>,
+        dept: <?php echo json_encode($bde_metrics['mandate']['tag'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        actual: <?php echo (float) $bde_metrics['revenue_kes']; ?>,
+        collection: <?php echo (float) $bde_metrics['collection_rate']; ?>,
+        units: <?php echo (int) $bde_metrics['units']; ?>,
+        funnel: <?php echo json_encode($bde_metrics['funnel'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        sources: <?php echo json_encode($bde_metrics['sources'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        mandate: <?php echo json_encode($bde_metrics['mandate']['mission'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        mandateText: <?php echo json_encode($bde_metrics['mandate']['detail'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        focus: <?php echo json_encode($bde_metrics['mandate']['focus'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        real: true,
+        revenueUsd: <?php echo (float) $bde_metrics['revenue_usd']; ?>,
+        expectedUsd: <?php echo (float) $bde_metrics['expected_usd']; ?>,
+        totalRegs: <?php echo (int) $bde_metrics['total_regs']; ?>,
+        paidClients: <?php echo (int) $bde_metrics['paid_clients']; ?>,
+        stale: <?php echo (int) $bde_metrics['stale']; ?>,
+        commissionKes: <?php echo (float) $bde_metrics['commission_kes']; ?>
+      });
+<?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
 

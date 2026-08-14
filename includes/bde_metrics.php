@@ -3,12 +3,9 @@
  * bde_metrics.php — real per-BDE performance metrics.
  *
  * Attribution mirrors the proven logic in staff_performance.php:
- *   intake.assigned_to = registered_users.id (the CRM login id)
- *   register.intake_id  = intake.intake_id           (that BDE's registrations)
- *   dpo_payment.app_id  = register.entry_id, status=2 (cleared money, in USD)
- *
- * This first slice covers VIRTUAL / intake revenue only. Events (international /
- * corporate) attribute the same way via Event.assigned_to and are added later.
+ *   VIRTUAL:  intake.assigned_to = registered_users.id → register.intake_id → dpo_payment(app_id,status=2)
+ *   EVENTS:   Event.assigned_to  = registered_users.id → ticket_congress(event_id,status=2) [international + corporate]
+ * All money is USD in the DB; KES via commission_settings.commission_conversion_rate.
  */
 
 if (!function_exists('bde_usd_to_kes')) {
@@ -18,7 +15,44 @@ if (!function_exists('bde_usd_to_kes')) {
         if ($r && ($row = mysqli_fetch_assoc($r)) && floatval($row['setting_value']) > 0) {
             return floatval($row['setting_value']);
         }
-        return 129.0; // sensible default if the setting is missing
+        return 129.0;
+    }
+}
+
+if (!function_exists('bde_mandate')) {
+    /** Per-department strategic mandate + today's focus, chosen by department name. */
+    function bde_mandate($dept)
+    {
+        $d = strtolower((string) $dept);
+        $M = [
+            'digital' => ['tag' => 'Digital Solutions', 'headline' => 'Personal performance mandate',
+                'mission' => 'Turn Eval360 and 360 Appraisal into visible, trusted and fast-growing recurring-revenue solutions.',
+                'detail' => 'Growth requires product mastery, direct organization engagement, aggressive demonstrations, RFP intelligence, digital demand generation, reliable self-onboarding, strong adoption and proactive maintenance and renewals.',
+                'focus' => 'Move qualified organizations into demos and paid onboarding while protecting product readiness and recurring revenue.'],
+            'virtual' => ['tag' => 'Virtual', 'headline' => 'Personal execution dashboard',
+                'mission' => 'Convert every enquiry into a managed next step and every free session into a payment opportunity.',
+                'detail' => 'The Virtual Department wins through fast response, relationship building, strong free-session attendance, human calls for hot leads, accurate automation, payment guidance and disciplined CRM follow-up.',
+                'focus' => 'Call every hot lead and payment promise first; then protect free-session attendance and same-day CRM updates.'],
+            'corporate' => ['tag' => 'Corporate', 'headline' => 'Personal execution dashboard',
+                'mission' => 'Create institutional demand, reach decision-makers and move every account toward a commercial commitment.',
+                'detail' => 'Corporate growth comes from a Top-200 account system, Top-50 priorities, discovery meetings, tailored proposals, RFP discipline, open-programme innovation, cross-SBU conversion, collections and excellent delivery.',
+                'focus' => 'Advance the highest-value accounts into discovery, proposal, negotiation or deposit; no important account may sit without a dated next action.'],
+            'international' => ['tag' => 'International', 'headline' => 'Personal execution dashboard',
+                'mission' => 'Build organization-sponsored country pipelines first, then use automation, calls, free training, alumni and local marketers to close the remaining gap.',
+                'detail' => 'Each country is a mini business unit. M&E and Data Analysis require independent pipelines, organization targets, local marketers, free-session plans, payment routes, forecasts and recovery actions.',
+                'focus' => 'Move organization sponsorships and payment commitments in every country; do not allow strong countries to hide weak ones.'],
+            'academ' => ['tag' => 'Academics', 'headline' => 'Personal execution dashboard',
+                'mission' => 'Build the conversion machine first, then increase traffic and scale toward one million African learners.',
+                'detail' => 'The department owns system readiness, a self-service customer journey, digital lead quality, paid conversion, learner activation, institutional distribution, customer feedback and preparation for learner-created-course SaaS.',
+                'focus' => 'Fix any customer-journey friction immediately, protect paid conversion and activation, and expand university, college and employer channels.'],
+        ];
+        foreach ($M as $key => $m) {
+            if ($d !== '' && strpos($d, $key) !== false) { return $m; }
+        }
+        return ['tag' => ($dept !== '' ? $dept : 'Business Development'), 'headline' => 'Personal execution dashboard',
+            'mission' => 'Convert qualified pipeline into cleared, verified revenue with disciplined daily follow-up across every channel you own.',
+            'detail' => 'Fast response, relationship building, accurate CRM follow-up and payment guidance turn attributed leads into cleared revenue.',
+            'focus' => 'Advance every hot lead and payment promise to a dated next action today.'];
     }
 }
 
@@ -33,62 +67,116 @@ if (!function_exists('bde_fetch_metrics')) {
         $ruId = (int) $ruId;
         $out = [
             'ru_id' => $ruId, 'name' => '', 'title' => '', 'dept' => '',
-            'revenue_usd' => 0.0, 'revenue_kes' => 0.0,
-            'paid_clients' => 0, 'total_regs' => 0,
+            'revenue_usd' => 0.0, 'revenue_kes' => 0.0, 'expected_usd' => 0.0, 'collection_rate' => 0.0,
+            'rev_virtual_usd' => 0.0, 'rev_events_usd' => 0.0,
+            'paid_clients' => 0, 'total_regs' => 0, 'units' => 0, 'stale' => 0,
+            'funnel' => [], 'sources' => [],
+            'commission_usd' => 0.0, 'commission_kes' => 0.0,
+            'mandate' => bde_mandate(''),
             'start' => $start_date, 'end' => $end_date,
         ];
-        if ($ruId <= 0) {
-            return $out;
-        }
+        if ($ruId <= 0) { return $out; }
+        $s = mysqli_real_escape_string($conn, $start_date);
+        $e = mysqli_real_escape_string($conn, $end_date);
+        $rate = bde_usd_to_kes($conn);
 
-        // --- identity ---
+        // --- identity + mandate ---
         $iq = @mysqli_query($conn, "SELECT ru.fullname, s.job_title, d.department_name
             FROM registered_users ru
             LEFT JOIN staff s ON ru.staff_id = s.id
             LEFT JOIN departments d ON s.department_id = d.id
             WHERE ru.id = $ruId LIMIT 1");
         if ($iq && ($ir = mysqli_fetch_assoc($iq))) {
-            $out['name']  = (string) ($ir['fullname'] ?? '');
+            $out['name'] = (string) ($ir['fullname'] ?? '');
             $out['title'] = (string) ($ir['job_title'] ?? '');
-            $out['dept']  = (string) ($ir['department_name'] ?? '');
+            $out['dept'] = (string) ($ir['department_name'] ?? '');
         }
+        $out['mandate'] = bde_mandate($out['dept']);
 
         // --- cleared payment totals, keyed by app_id (= register.entry_id) ---
         $paid = [];
-        $pq = @mysqli_query($conn, "SELECT app_id, SUM(TransactionAmount) AS paid
-            FROM dpo_payment WHERE status = 2 GROUP BY app_id");
-        while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
-            $paid[$pr['app_id']] = (float) $pr['paid'];
-        }
+        $pq = @mysqli_query($conn, "SELECT app_id, SUM(TransactionAmount) AS paid FROM dpo_payment WHERE status = 2 GROUP BY app_id");
+        while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $paid[$pr['app_id']] = (float) $pr['paid']; }
 
         // --- intakes assigned to this BDE ---
         $intakeIds = [];
         $tq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
-        while ($tq && ($tr = mysqli_fetch_assoc($tq))) {
-            $intakeIds[] = $tr['intake_id'];
-        }
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $intakeIds[] = $tr['intake_id']; }
 
-        // --- registrations under those intakes, in range; tally cleared money + paid clients ---
+        // --- VIRTUAL registrations: revenue, funnel (lead_status), sources, collection, stale ---
+        $fLeads = $fCont = $fQual = $fEnr = $fPaid = 0;
+        $sources = [];
+        $now = time();
         if (!empty($intakeIds)) {
-            $in = implode(',', array_map(function ($x) use ($conn) {
-                return "'" . mysqli_real_escape_string($conn, $x) . "'";
-            }, $intakeIds));
-            $s = mysqli_real_escape_string($conn, $start_date);
-            $e = mysqli_real_escape_string($conn, $end_date);
-            $rq = @mysqli_query($conn, "SELECT r.entry_id FROM register r
-                WHERE r.intake_id IN ($in)
-                AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
+            $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, $intakeIds));
+            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.payment_status, r.source, r.last_contact_date, c.price_usd
+                FROM register r JOIN intake i ON r.intake_id = i.intake_id LEFT JOIN course c ON i.course_id = c.course_id
+                WHERE r.intake_id IN ($in) AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
             while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
                 $out['total_regs']++;
+                $fLeads++;
+                $ls = strtolower(trim((string) ($rr['lead_status'] ?? '')));
+                $lastc = trim((string) ($rr['last_contact_date'] ?? ''));
+                $contacted = in_array($ls, ['contacted', 'qualified', 'enrolled'], true) || ($lastc !== '' && $lastc !== '0000-00-00' && strtotime($lastc));
+                if ($contacted) { $fCont++; }
+                if (in_array($ls, ['qualified', 'enrolled'], true)) { $fQual++; }
+                if ($ls === 'enrolled') { $fEnr++; }
+                if (!empty($rr['price_usd'])) { $out['expected_usd'] += (float) $rr['price_usd']; }
                 $amt = isset($paid[$rr['entry_id']]) ? $paid[$rr['entry_id']] : 0;
-                if ($amt > 0) {
-                    $out['paid_clients']++;
-                    $out['revenue_usd'] += $amt;
+                $cleared = $amt > 0;
+                if ($cleared) {
+                    $fPaid++; $out['paid_clients']++;
+                    $out['revenue_usd'] += $amt; $out['rev_virtual_usd'] += $amt;
+                } else if ($ls !== 'enrolled') {
+                    $stale = ($lastc === '' || $lastc === '0000-00-00' || !strtotime($lastc)) || (strtotime($lastc) < $now - 7 * 86400);
+                    if ($stale) { $out['stale']++; }
                 }
+                $src = trim((string) ($rr['source'] ?? ''));
+                $srcLabel = $src === '' ? 'Unknown' : $src;
+                $sources[$srcLabel] = ($sources[$srcLabel] ?? 0) + 1;
             }
         }
 
-        $out['revenue_kes'] = $out['revenue_usd'] * bde_usd_to_kes($conn);
+        // --- EVENTS (international + corporate): Event.assigned_to → ticket_congress (status=2) ---
+        $events = [];
+        $evq = @mysqli_query($conn, "SELECT event_id, COALESCE(early_amount,0) AS early FROM Event WHERE assigned_to = $ruId");
+        while ($evq && ($evr = mysqli_fetch_assoc($evq))) { $events[(int) $evr['event_id']] = (float) $evr['early']; }
+        if (!empty($events)) {
+            $ein = implode(',', array_map('intval', array_keys($events)));
+            $tq2 = @mysqli_query($conn, "SELECT event_id, COUNT(*) AS regs,
+                SUM(CASE WHEN status=2 AND amount>0 THEN 1 ELSE 0 END) AS paidc,
+                SUM(CASE WHEN status=2 THEN amount ELSE 0 END) AS rev
+                FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY event_id");
+            while ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) {
+                $regs = (int) $t2['regs']; $pc = (int) $t2['paidc']; $rev = (float) $t2['rev'];
+                $out['total_regs'] += $regs; $out['paid_clients'] += $pc;
+                $out['revenue_usd'] += $rev; $out['rev_events_usd'] += $rev;
+                $out['expected_usd'] += $regs * ($events[(int) $t2['event_id']] ?? 0);
+                $fLeads += $regs; $fPaid += $pc;   // events: leads + paid (no lead_status stages)
+            }
+        }
+
+        // --- roll-ups ---
+        $out['units'] = $out['paid_clients'];
+        $out['funnel'] = [['Leads', $fLeads], ['Contacted', $fCont], ['Qualified', $fQual], ['Enrolled', $fEnr], ['Paid', $fPaid]];
+        arsort($sources);
+        $srcOut = [];
+        foreach (array_slice($sources, 0, 6, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
+        $out['sources'] = $srcOut;
+        $out['collection_rate'] = $out['expected_usd'] > 0 ? min(1.0, $out['revenue_usd'] / $out['expected_usd']) : 0.0;
+        $out['revenue_kes'] = $out['revenue_usd'] * $rate;
+
+        // --- commission from the existing commission engine (commission_records) ---
+        $cq = @mysqli_query($conn, "SELECT
+            COALESCE(SUM(CASE WHEN is_eligible=1 THEN commission_amount ELSE 0 END),0) AS eligible,
+            COALESCE(SUM(CASE WHEN status='paid' THEN commission_amount ELSE 0 END),0) AS paid
+            FROM commission_records WHERE staff_user_id = $ruId");
+        if ($cq && ($cr = mysqli_fetch_assoc($cq))) {
+            $out['commission_usd'] = (float) $cr['eligible'];
+            $out['commission_paid_usd'] = (float) $cr['paid'];
+            $out['commission_kes'] = (float) $cr['eligible'] * $rate;
+        }
+
         return $out;
     }
 }
