@@ -99,6 +99,27 @@ if (!function_exists('moodle_enrol_user_in_courses')) {
     }
 }
 
+if (!function_exists('moodle_autoenrol_from_selection')) {
+    /**
+     * Fail-safe: enrol a just-created/returning learner into their selected units' Moodle courses.
+     * Resolves course_ids from the selection (explicit, or matched against program_curriculum via the
+     * global CRM $conn), then enrols on the given vantage_system connection. Never throws.
+     */
+    function moodle_autoenrol_from_selection($sys, $moodleUserId, $email, $selection)
+    {
+        if (!$sys || !is_array($selection) || empty($selection)) { return; }
+        try {
+            $crm = (isset($GLOBALS['conn']) && ($GLOBALS['conn'] instanceof mysqli)) ? $GLOBALS['conn'] : null;
+            $courseIds = function_exists('academic_selected_course_ids') ? academic_selected_course_ids($crm, $selection) : [];
+            if (empty($courseIds)) { error_log('[moodle] auto-enrol: no course_ids resolved for ' . $email); return; }
+            $enr = moodle_enrol_user_in_courses($sys, (int) $moodleUserId, $courseIds);
+            error_log('[moodle] auto-enrol user ' . (int) $moodleUserId . ' (' . $email . '): ' . json_encode($enr['results']));
+        } catch (\Throwable $e) {
+            error_log('[moodle] auto-enrol failed for ' . $email . ': ' . $e->getMessage());
+        }
+    }
+}
+
 if (!function_exists('academic_selected_course_ids')) {
     /**
      * Resolve Moodle course ids for a learner's SELECTED units.
@@ -108,11 +129,11 @@ if (!function_exists('academic_selected_course_ids')) {
      */
     function academic_selected_course_ids($crm, array $selection)
     {
-        if (!$crm) { return []; }
-        // Prefer explicit course ids if the caller already resolved them.
+        // Prefer explicit course ids if the caller already resolved them (works without a CRM handle).
         if (!empty($selection['course_ids']) && is_array($selection['course_ids'])) {
             return array_values(array_filter(array_map('intval', $selection['course_ids'])));
         }
+        if (!$crm) { return []; }
         $program = trim((string) ($selection['program'] ?? ''));
         $units = (isset($selection['units']) && is_array($selection['units'])) ? $selection['units'] : [];
         if ($program === '' || empty($units)) { return []; }

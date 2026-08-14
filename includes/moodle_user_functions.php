@@ -128,6 +128,11 @@ if (!function_exists('create_moodle_user_and_send_email')) {
             if ($using_system_lms && is_array($selection) && !empty($selection) && function_exists('vasl_learner_ledger_write')) {
                 vasl_learner_ledger_write($moodle_conn, (int) $exrow['id'], $email, $selection);
             }
+            // Enrol the returning learner into the courses for their selected units.
+            if ($using_system_lms && is_array($selection) && !empty($selection)) {
+                if (!function_exists('moodle_autoenrol_from_selection')) { @require_once __DIR__ . '/moodle_enrol_functions.php'; }
+                if (function_exists('moodle_autoenrol_from_selection')) { moodle_autoenrol_from_selection($moodle_conn, (int) $exrow['id'], $email, $selection); }
+            }
             return ['success' => false, 'username' => $existing_username, 'password' => '', 'error' => 'already_created', 'email_sent' => $email_sent];
         }
 
@@ -191,6 +196,11 @@ if (!function_exists('create_moodle_user_and_send_email')) {
         $new_uid = (int) mysqli_insert_id($moodle_conn);
         if ($using_system_lms && is_array($selection) && !empty($selection) && function_exists('vasl_learner_ledger_write')) {
             vasl_learner_ledger_write($moodle_conn, $new_uid, $email, $selection);
+        }
+        // Enrol the new learner into the courses for their selected units (fail-safe; never blocks the email).
+        if ($using_system_lms && is_array($selection) && !empty($selection)) {
+            if (!function_exists('moodle_autoenrol_from_selection')) { @require_once __DIR__ . '/moodle_enrol_functions.php'; }
+            if (function_exists('moodle_autoenrol_from_selection')) { moodle_autoenrol_from_selection($moodle_conn, $new_uid, $email, $selection); }
         }
 
         $email_sent = false;
