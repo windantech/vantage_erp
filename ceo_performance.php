@@ -237,6 +237,49 @@ try {
         $admin['events'][] = ['name' => (string) (($row['event_title'] ?? '') !== '' ? $row['event_title'] : 'Event'), 'location' => (string) ($row['location'] ?? ''), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_on']) ? date('M j, Y', strtotime((string) $row['start_on'])) : '', 'ts' => !empty($row['start_on']) ? (int) strtotime((string) $row['start_on']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
     }
 } catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
+
+// ---- Reports tab: monthly trends (virtual + international) + per-location breakdown. Money stored USD. ----
+$reports = ['virtual' => ['months' => []], 'international' => ['months' => [], 'loc' => []]];
+try {
+    $seed = [];
+    for ($i = 5; $i >= 0; $i--) { $t = strtotime(date('Y-m-01') . " -$i month"); $seed[date('Y-m', $t)] = ['label' => date('M', $t), 'enq' => 0, 'cli' => 0, 'collected' => 0, 'due' => 0]; }
+    $since = date('Y-m-01', strtotime(date('Y-m-01') . ' -5 month'));
+
+    // ---- VIRTUAL months ----
+    $vm = $seed;
+    $res = $q("SELECT DATE_FORMAT(datee,'%Y-%m') ym, COUNT(*) enq, SUM(CASE WHEN status=2 THEN 1 ELSE 0 END) cli FROM `register` WHERE datee>='$since' GROUP BY DATE_FORMAT(datee,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($vm[$row['ym']])) { $vm[$row['ym']]['enq'] = (int) $row['enq']; $vm[$row['ym']]['cli'] = (int) $row['cli']; } }
+    $res = $q("SELECT DATE_FORMAT(dp.datee,'%Y-%m') ym, SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END) collected, SUM(c.price_usd) due FROM `dpo_payment` dp JOIN `course` c ON dp.purpose=c.course_id WHERE dp.datee>='$since' GROUP BY DATE_FORMAT(dp.datee,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($vm[$row['ym']])) { $vm[$row['ym']]['collected'] = (float) $row['collected']; $vm[$row['ym']]['due'] = (float) $row['due']; } }
+    $reports['virtual']['months'] = array_values($vm);
+
+    // ---- INTERNATIONAL months ----
+    $im = $seed;
+    $res = $q("SELECT DATE_FORMAT(ulf.date_applied,'%Y-%m') ym, COUNT(*) enq FROM `user_lead_forms` ulf WHERE ulf.date_applied>='$since' GROUP BY DATE_FORMAT(ulf.date_applied,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['enq'] = (int) $row['enq']; } }
+    $res = $q("SELECT DATE_FORMAT(tc.date_sent,'%Y-%m') ym, COUNT(*) cli FROM `ticket_congress` tc WHERE tc.status=2 AND tc.date_sent>='$since' GROUP BY DATE_FORMAT(tc.date_sent,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['cli'] = (int) $row['cli']; } }
+    $res = $q("SELECT DATE_FORMAT(dp.datee,'%Y-%m') ym, SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END) collected FROM `dpo_payment` dp INNER JOIN `event_config` ec ON ec.event_id=dp.purpose WHERE dp.datee>='$since' GROUP BY DATE_FORMAT(dp.datee,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($im[$row['ym']])) { $im[$row['ym']]['collected'] = (float) $row['collected']; } }
+    $reports['international']['months'] = array_values($im);
+
+    // ---- INTERNATIONAL per-location: revenue (collected) + fee balance (paid tickets * early - collected) ----
+    $loc = [];
+    $res = $q("SELECT e.location loc, COALESCE(SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END),0) revenue
+               FROM `event_config` ec INNER JOIN `Event` e ON ec.event_id=e.event_id
+               LEFT JOIN `dpo_payment` dp ON dp.purpose=ec.event_id AND dp.status=2
+               GROUP BY e.location");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown'); if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; } $loc[$k]['revenue'] += (float) $row['revenue']; }
+    $res = $q("SELECT e.location loc, COALESCE(e.early_amount,0) ea, COUNT(CASE WHEN tc.status=2 THEN tc.id END) paidn,
+               COALESCE(SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END),0) paid
+               FROM `event_config` ec INNER JOIN `Event` e ON ec.event_id=e.event_id
+               LEFT JOIN `ticket_congress` tc ON ec.event_id=tc.event_id
+               LEFT JOIN `dpo_payment` dp ON tc.ticket_id=dp.app_id
+               GROUP BY e.location, e.early_amount");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown'); if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; } $loc[$k]['balance'] += max(0, ((int) $row['paidn'] * (float) $row['ea']) - (float) $row['paid']); }
+    usort($loc, function ($a, $b) { return ($b['revenue'] + $b['balance']) <=> ($a['revenue'] + $a['balance']); });
+    $reports['international']['loc'] = array_slice(array_values($loc), 0, 10);
+} catch (\Throwable $e) { error_log('CEO Reports fetch: ' . $e->getMessage()); }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -437,6 +480,7 @@ try {
         <button class="tab" data-v="hr"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>HR</button>
         <button class="tab" data-v="finance"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Finance</button>
         <button class="tab" data-v="admin"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Admin</button>
+        <button class="tab" data-v="reports"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reports</button>
       </nav>
       <main id="workspace"></main>
       <div class="ops-modal" id="opsModal"><div class="ops-modal-box"><div class="ops-modal-head"><h4 id="opsModalTitle"></h4><button type="button" class="tbtn" data-close>✕ Close</button></div><div class="ops-modal-body" id="opsModalBody"></div></div></div>
@@ -449,6 +493,7 @@ try {
       const HR = <?php echo json_encode($hr, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
       const FIN = <?php echo json_encode($finance, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
       const ADM = <?php echo json_encode($admin, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
+      const REP = <?php echo json_encode($reports, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
@@ -1106,8 +1151,47 @@ try {
         openOpsModal("Service requests · "+nf.format(ADM.req.list.length)+" shown",`<div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
 
+      /* ---------- Reports tab: native grouped-bar charts (virtual + international) ---------- */
+      function barsSVG(labels,series,fmt){
+        if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return '<p style="color:var(--muted);font-size:12.5px;margin:16px 4px">No data in this period.</p>';
+        const W=920,H=280,padL=68,padR=14,padT=14,padB=48,iw=W-padL-padR,ih=H-padT-padB;
+        const rawMax=Math.max(1,...series.flatMap(s=>s.vals.map(v=>Math.abs(v||0))));
+        const niceMax=(function(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const u=x/p;const f=u<=1?1:u<=2?2:u<=5?5:10;return f*p;})(rawMax);
+        const n=labels.length,gw=iw/n,ns=series.length,bw=Math.max(6,Math.min(42,(gw*0.62)/ns));
+        let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="1"/><text x="${padL-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:10px;fill:var(--muted)">${fmt(val)}</text>`;}
+        let bars="",xl="";
+        labels.forEach((lab,i)=>{const cx=padL+gw*i+gw/2,groupW=bw*ns;
+          series.forEach((s,si)=>{const v=Math.max(0,s.vals[i]||0),x=cx-groupW/2+si*bw,h=(v/niceMax)*ih,y=padT+ih-h;
+            bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-3).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="2" fill="${s.color}"><title>${esc(lab)} · ${esc(s.name)}: ${fmt(v)}</title></rect>`;});
+          xl+=`<text x="${cx.toFixed(1)}" y="${H-padB+18}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${esc(lab)}</text>`;});
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}${xl}</svg>`;
+      }
+      function repLegend(series){return `<div style="display:flex;gap:14px;font-size:11px;flex-wrap:wrap">${series.map(s=>`<span style="display:flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:${s.color}"></span>${esc(s.name)}</span>`).join("")}</div>`;}
+      function vReports(){
+        const V=REP.virtual||{months:[]},I=REP.international||{months:[],loc:[]};
+        const cnt=v=>nf.format(Math.round(v||0));
+        const vm=V.months||[],im=I.months||[],locs=I.loc||[],short=s=>{s=String(s||"—");return s.length>13?s.slice(0,12)+"…":s;};
+        const chart=(title,chip,series,vals,fmt,legend)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt)}</div>`;
+        const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]));
+        const vMon=chart("Virtual · fee collected vs balance","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)},{name:"Balance",color:"var(--amber)",vals:vm.map(m=>Math.max(0,(m.due||0)-(m.collected||0)))}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"},{name:"Balance",color:"var(--amber)"}]));
+        const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]));
+        const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]));
+        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"");
+        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"");
+        return `
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Reports</h3><span>Enrolment &amp; revenue trends — last 6 months and by location</span></div>
+            <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
+          </div><div class="rule" style="margin:0 0 4px"></div>
+          <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment and fees</span><div class="rule"></div></div>
+          <section class="grid-2">${vEnq}${vMon}</section>
+          <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees and geographic spread</span><div class="rule"></div></div>
+          <section class="grid-2">${iEnq}${iMon}</section>
+          <section class="grid-2">${iRev}${iBal}</section>`;
+      }
+
       function render(){
-        if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():v==="hr"?vHR():v==="finance"?vFinance():v==="admin"?vAdmin():vPipeline();}
+        if(state.role==="ceo"){const v=state.view;el("workspace").innerHTML=v==="command"?vCommand():v==="people"?vPeople():v==="hr"?vHR():v==="finance"?vFinance():v==="admin"?vAdmin():v==="reports"?vReports():vPipeline();}
         else{el("workspace").innerHTML=roleView();}
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
