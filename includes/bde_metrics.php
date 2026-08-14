@@ -203,11 +203,28 @@ if (!function_exists('bde_team_metrics')) {
         $deptId = 0;
         $dq = @mysqli_query($conn, "SELECT s.department_id FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE ru.id = $ruId LIMIT 1");
         if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $deptId = (int) $dr['department_id']; }
-        if ($deptId <= 0) { return $team; }
 
+        // Primary: sellers whose staff record shares this department.
         $members = [];
-        $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE s.department_id = $deptId ORDER BY ru.fullname");
-        while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+        if ($deptId > 0) {
+            $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE s.department_id = $deptId ORDER BY ru.fullname");
+            while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+        }
+        // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
+        // group by selling peers instead: everyone assigned the same way you are (intakes vs events).
+        if (count($members) < 2) {
+            $ci = @mysqli_query($conn, "SELECT 1 FROM intake WHERE assigned_to = $ruId LIMIT 1");
+            $hasIntake = $ci && mysqli_num_rows($ci) > 0;
+            $peer = @mysqli_query($conn, $hasIntake
+                ? "SELECT DISTINCT assigned_to FROM intake WHERE assigned_to > 0"
+                : "SELECT DISTINCT assigned_to FROM Event WHERE assigned_to > 0");
+            $pids = [$ruId => true];
+            while ($peer && ($pr = mysqli_fetch_assoc($peer))) { $pids[(int) $pr['assigned_to']] = true; }
+            $pin = implode(',', array_map('intval', array_keys($pids)));
+            $members = [];
+            $mq2 = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id WHERE ru.id IN ($pin)");
+            while ($mq2 && ($mr = mysqli_fetch_assoc($mq2))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+        }
         if (empty($members)) { return $team; }
         $ids = implode(',', array_map('intval', array_keys($members)));
 

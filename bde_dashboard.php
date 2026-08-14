@@ -209,7 +209,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
       <section class="card" style="margin-top:14px">
         <div class="chead"><h4>Live from Finance<?php echo $bde_metrics['name'] !== '' ? ' — ' . htmlspecialchars($bde_metrics['name']) : ''; ?></h4><span class="chip jade">Real data · to date</span></div>
         <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Your cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> — only intakes &amp; events assigned to you</div></div>
+          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Your cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> in settled payments · attributed to you via assigned intakes &amp; events</div></div>
           <div class="kpi" style="--acc:var(--slate)"><div class="lab">Paid clients</div><div class="val num"><?php echo (int) $bde_metrics['paid_clients']; ?></div><div class="meta">of <?php echo (int) $bde_metrics['total_regs']; ?> registrations</div></div>
           <div class="kpi" style="--acc:var(--brand)"><div class="lab">Attributed via</div><div class="val num" style="font-size:15px"><?php echo htmlspecialchars($bde_metrics['dept'] !== '' ? $bde_metrics['dept'] : 'intakes assigned to you'); ?></div><div class="meta">intake.assigned_to → cleared payments</div></div>
         </div>
@@ -432,7 +432,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
-          <div class="section-tag"><h3>Your department team</h3><span>Sellers in your department, ranked by cleared revenue (targets are the next slice)</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Your team</h3><span>Sellers alongside you, ranked by cleared revenue · targets are the next slice</span><div class="rule"></div></div>
           ${teamTable()}`;
       }
 
