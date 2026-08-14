@@ -47,20 +47,30 @@ if ($uid <= 0) { exit("Pass ?user=<moodle_user_id> or ?email=<email>.\n"); }
 // If no explicit courses, derive them from the learner's stored selection (vasl_learner_ledger)
 // exactly the way the auto-enrol does — this tests the REAL resolution path.
 if (empty($courses)) {
-    $ee = mysqli_real_escape_string($sys, $email);
-    $lq = @mysqli_query($sys, "SELECT program, level, units, unit_count, total_amount FROM vasl_learner_ledger WHERE moodle_user_id=$uid" . ($email !== '' ? " OR email='$ee'" : '') . " ORDER BY id DESC LIMIT 1");
-    if ($lq && ($lr = mysqli_fetch_assoc($lq))) {
-        $units = json_decode((string) $lr['units'], true);
-        $sel = ['program' => $lr['program'], 'level' => $lr['level'], 'units' => is_array($units) ? $units : []];
-        echo "ledger selection : program={$lr['program']} | level={$lr['level']} | unit_count={$lr['unit_count']}\n";
-        echo "ledger units     : " . (string) $lr['units'] . "\n";
-        $courses = function_exists('academic_selected_course_ids') ? academic_selected_course_ids($conn, $sel) : [];
-        echo "resolved courses : " . (empty($courses) ? '(none — names did not match program_curriculum)' : implode(', ', $courses)) . "\n\n";
-    } else {
-        echo "No vasl_learner_ledger row for this learner (they registered before the ledger, or selection wasn't recorded).\n\n";
+    try {
+        $ee = mysqli_real_escape_string($sys, $email);
+        $exists = @mysqli_query($sys, "SHOW TABLES LIKE 'vasl_learner_ledger'");
+        if (!$exists || mysqli_num_rows($exists) === 0) {
+            echo "vasl_learner_ledger table does not exist on the LMS yet (no academic selection has been recorded there).\n";
+            echo "-> Enrol explicitly instead: add &courses=9,44,45 (the Moodle course ids of the units she paid for).\n\n";
+        } else {
+            $lq = @mysqli_query($sys, "SELECT program, level, units, unit_count, total_amount FROM vasl_learner_ledger WHERE moodle_user_id=$uid" . ($email !== '' ? " OR email='$ee'" : '') . " ORDER BY id DESC LIMIT 1");
+            if ($lq && ($lr = mysqli_fetch_assoc($lq))) {
+                $units = json_decode((string) $lr['units'], true);
+                $sel = ['program' => $lr['program'], 'level' => $lr['level'], 'units' => is_array($units) ? $units : []];
+                echo "ledger selection : program={$lr['program']} | level={$lr['level']} | unit_count={$lr['unit_count']}\n";
+                echo "ledger units     : " . (string) $lr['units'] . "\n";
+                $courses = function_exists('academic_selected_course_ids') ? academic_selected_course_ids($conn, $sel) : [];
+                echo "resolved courses : " . (empty($courses) ? '(none — unit names did not match program_curriculum)' : implode(', ', $courses)) . "\n\n";
+            } else {
+                echo "No vasl_learner_ledger row for this learner (registered before the ledger, or selection wasn't recorded there).\n\n";
+            }
+        }
+    } catch (\Throwable $e) {
+        echo "Could not read the selection: " . $e->getMessage() . "\n-> Enrol explicitly instead with &courses=9,44,45\n\n";
     }
 }
-if (empty($courses)) { exit("No courses to enrol. Pass ?courses=9,44,45 explicitly, or fix the unit→course_id mapping.\n"); }
+if (empty($courses)) { exit("No courses to enrol. Add &courses=9,44,45 (the course ids of the units she paid for).\n"); }
 
 if (!isset($_GET['confirm'])) {
     $preview = moodle_enrol_preview($sys, $uid, $courses);
