@@ -105,16 +105,18 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
     .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
-    /* ---- scoreboard: hero result cards (clean white, colour lives in the icon + number) ---- */
-    .bde-app .results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    .bde-app .result{position:relative;border-radius:16px;padding:20px 22px;border:1px solid var(--line);background:var(--surface);overflow:hidden;transition:transform .16s,box-shadow .22s}
-    .bde-app .result:hover{transform:translateY(-3px);box-shadow:0 16px 32px -22px rgba(18,34,58,.35)}
+    /* ---- scoreboard: three coloured cells inside one white box ---- */
+    .bde-app .results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+    .bde-app .result{padding:6px 26px}
+    .bde-app .result:first-child{padding-left:8px}
+    .bde-app .result:last-child{padding-right:8px}
+    .bde-app .result + .result{border-left:1px solid var(--line)}
     .bde-app .result .ricon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:var(--acc,var(--brand));color:#fff;margin-bottom:15px;box-shadow:0 10px 22px -9px var(--acc,var(--brand))}
     .bde-app .result .ricon svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .result .rlab{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800}
     .bde-app .result .rval{font-size:38px;font-weight:850;letter-spacing:-.025em;line-height:1.02;margin:6px 0 5px;color:var(--acc,var(--brand))}
     .bde-app .result .rmeta{font-size:12px;color:var(--muted)}
-    @media(max-width:820px){.bde-app .results{grid-template-columns:1fr}}
+    @media(max-width:820px){.bde-app .results{grid-template-columns:1fr} .bde-app .result{padding:16px 8px} .bde-app .result:first-child{padding-top:6px} .bde-app .result + .result{border-left:0;border-top:1px solid var(--line)}}
     .bde-app .kpi .kicon{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)} .bde-app .kpi .kicon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .kpi .lab{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;padding-right:34px}
     .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
@@ -337,11 +339,11 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         const icConv='<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
         const card=(l,v,m,a,ic)=>`<div class="result" style="--acc:${a}"><div class="ricon">${ic}</div><div class="rlab">${l}</div><div class="rval num">${v}</div><div class="rmeta">${m}</div></div>`;
         return `<div class="section-tag" style="margin-top:6px"><h3>Your scoreboard</h3><span>Cleared revenue, paying clients and conversion — live</span><div class="rule"></div></div>
-          <section class="results">
+          <div class="card"><section class="results">
             ${card("Cleared revenue",kMoney(B.actual||0),(B.revenueUsd!=null?("$"+nf.format(B.revenueUsd)+" settled"):"settled payments"),"var(--jade)",icMoney)}
             ${card("Paid clients",nf.format(B.paidClients||0),"of "+nf.format(B.totalRegs||0)+" leads",'var(--slate)',icUsers)}
             ${card("Conversion",pct(conv,0),"leads → paid clients","var(--brand)",icConv)}
-          </section>`;
+          </section></div>`;
       }
 
       function kpiBlock(){
