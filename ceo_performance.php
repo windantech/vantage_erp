@@ -446,9 +446,9 @@ try {
     (() => {
       "use strict";
       const root=document.getElementById("bdeApp");
-      const HR = <?php echo json_encode($hr, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
-      const FIN = <?php echo json_encode($finance, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
-      const ADM = <?php echo json_encode($admin, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+      const HR = <?php echo json_encode($hr, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
+      const FIN = <?php echo json_encode($finance, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
+      const ADM = <?php echo json_encode($admin, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
         bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
