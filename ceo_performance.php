@@ -996,7 +996,7 @@ try {
         const r=revAgg();
         const yrLabel=state.finYear==="all"?"All time":state.finYear;
         // ---- controls ----
-        const yopts=['<option value="all"'+(state.finYear==="all"?" selected":"")+">All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
+        const yopts=['<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
         const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
           <div style="display:flex;gap:10px;align-items:center">
