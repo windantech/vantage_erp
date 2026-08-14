@@ -226,7 +226,7 @@ try {
       WHERE i.status=1 ORDER BY i.start_date DESC LIMIT 40");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         $configured = ((int) $row['minimum_clients'] > 0 && (float) $row['commission_rate'] > 0);
-        $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
+        $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_date']) ? date('M j, Y', strtotime((string) $row['start_date'])) : '', 'ts' => !empty($row['start_date']) ? (int) strtotime((string) $row['start_date']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
     }
     $res = $q("SELECT e.event_id, e.event_title, e.location, e.start_on, e.minimum_clients, e.commission_rate, e.assigned_to, ru.fullname assignee,
         (SELECT COUNT(*) FROM `ticket_congress` t WHERE t.event_id=e.event_id) registered,
@@ -234,7 +234,7 @@ try {
       FROM `Event` e LEFT JOIN `registered_users` ru ON e.assigned_to=ru.id WHERE e.status=1 ORDER BY e.start_on DESC LIMIT 40");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         $configured = ((int) $row['minimum_clients'] > 0 && (float) $row['commission_rate'] > 0);
-        $admin['events'][] = ['name' => (string) (($row['event_title'] ?? '') !== '' ? $row['event_title'] : 'Event'), 'location' => (string) ($row['location'] ?? ''), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
+        $admin['events'][] = ['name' => (string) (($row['event_title'] ?? '') !== '' ? $row['event_title'] : 'Event'), 'location' => (string) ($row['location'] ?? ''), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_on']) ? date('M j, Y', strtotime((string) $row['start_on'])) : '', 'ts' => !empty($row['start_on']) ? (int) strtotime((string) $row['start_on']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
     }
 } catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
 ?>
@@ -322,7 +322,7 @@ try {
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
-    .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--brand);border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     .bde-app .kpi .kicon{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)} .bde-app .kpi .kicon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .kpi .lab{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;padding-right:34px}
     .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
@@ -1004,12 +1004,13 @@ try {
             <select id="finYear" class="finsel">${yopts}</select>
           </div></div><div class="rule" style="margin:0 0 4px"></div>`;
         // ---- KPI row ----
-        const kpi=(l,v,m,a)=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
+        const kIco={rev:'<svg viewBox="0 0 24 24"><path d="M3 7l3-3h12l3 3v12H3z"/><path d="M3 7h18"/><path d="M15 12h3"/></svg>',virt:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>',intl:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>',txn:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>'};
+        const kpi=(l,v,m,a,ic)=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a};background:var(--surface3)">${ic}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
         const kpiRowRev=`<div class="kpis4">
-          ${kpi("Total Revenue",fmoneyFull(r.total),esc(yrLabel),"var(--brand)")}
-          ${kpi("Virtual (Courses)",fmoneyFull(r.v),pctOf(r.v,r.total)+"% of total","var(--jade)")}
-          ${kpi("International (Events)",fmoneyFull(r.i),pctOf(r.i,r.total)+"% of total","var(--slate)")}
-          ${kpi("Total Transactions",nf.format(r.vn+r.ic),"V: "+nf.format(r.vn)+" &nbsp;|&nbsp; I: "+nf.format(r.ic),"var(--gold)")}
+          ${kpi("Total Revenue",fmoneyFull(r.total),esc(yrLabel),"var(--brand)",kIco.rev)}
+          ${kpi("Virtual (Courses)",fmoneyFull(r.v),pctOf(r.v,r.total)+"% of total","var(--jade)",kIco.virt)}
+          ${kpi("International (Events)",fmoneyFull(r.i),pctOf(r.i,r.total)+"% of total","var(--slate)",kIco.intl)}
+          ${kpi("Total Transactions",nf.format(r.vn+r.ic),"V: "+nf.format(r.vn)+" &nbsp;|&nbsp; I: "+nf.format(r.ic),"var(--gold)",kIco.txn)}
         </div>`;
         // ---- distribution donut + monthly trend ----
         const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
@@ -1017,7 +1018,7 @@ try {
         const distCard=`<div class="card"><div class="chead"><h4>Revenue distribution</h4><span class="chip slate">${esc(yrLabel)}</span></div><div style="display:flex;flex-direction:column;align-items:center;gap:14px"><div>${hrDonut(dsegs,fmoney(r.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" total")}</div><div style="width:100%">${dlegend}</div></div></div>`;
         const trendCard=`<div class="card"><div class="chead"><h4>Monthly revenue trend</h4><div style="display:flex;gap:14px;font-size:11px"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--jade);border-radius:2px"></span>Virtual</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--brand);border-radius:2px"></span>International</span></div></div>${revTrendSVG(r.months)}</div>`;
         // ---- top courses / events ----
-        const tc=revTop(F.rev.courses,"name"),te=revTop(F.rev.events,"name");
+        const tc=revTop(F.rev.courses,"name"),te=revTop(F.rev.events,"loc");
         const courseRows=tc.length?tc.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td><span class="chip slate">${nf.format(c.n)}</span></td><td class="num">${fmoney(c.rev)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No virtual course revenue.</td></tr>';
         const eventRows=te.length?te.map(e=>`<tr><td><b>${esc(e.name)}</b></td><td><span class="chip slate">${nf.format(e.n)}</span></td><td class="num">${fmoney(e.rev)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No international event revenue.</td></tr>';
         const topCourses=`<div class="card tight"><div class="chead" style="padding:14px 16px 0"><h4>Top virtual courses</h4><span class="chip slate">Top 5</span></div><div class="table-wrap"><table><thead><tr><th>Course</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${courseRows}</tbody></table></div></div>`;
@@ -1070,17 +1071,17 @@ try {
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
-        const intakeRows=A.intakes.length?A.intakes.map(it=>`<tr><td><b>${esc(it.name)}</b></td><td>${esc(it.assignee||'—')}</td><td class="num">${nf.format(it.registered)}</td><td class="num">${nf.format(it.paying)}</td><td>${stateChip(it.state)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No active intakes.</td></tr>';
-        const eventRows=A.events.length?A.events.map(ev=>`<tr><td><b>${esc(ev.name)}</b>${ev.location?`<div style="font-size:11px;color:var(--muted)">${esc(ev.location)}</div>`:''}</td><td>${esc(ev.assignee||'—')}</td><td class="num">${nf.format(ev.registered)}</td><td class="num">${nf.format(ev.paying)}</td><td>${stateChip(ev.state)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No active events.</td></tr>';
+        const intakeRows=A.intakes.length?A.intakes.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(it=>`<tr><td><b>${esc(it.name)}</b></td><td class="num">${esc(it.date||'—')}</td><td>${esc(it.assignee||'—')}</td><td class="num">${nf.format(it.registered)}</td><td class="num">${nf.format(it.paying)}</td><td>${stateChip(it.state)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No active intakes.</td></tr>';
+        const eventRows=A.events.length?A.events.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(ev=>`<tr><td><b>${esc(ev.name)}</b>${ev.location?`<div style="font-size:11px;color:var(--muted)">${esc(ev.location)}</div>`:''}</td><td class="num">${esc(ev.date||'—')}</td><td>${esc(ev.assignee||'—')}</td><td class="num">${nf.format(ev.registered)}</td><td class="num">${nf.format(ev.paying)}</td><td>${stateChip(ev.state)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No active events.</td></tr>';
         return `
           <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests, course intakes and event assignments — live</span><div class="rule"></div></div>
           <section class="grid-2">${pendCard}${reqDonut}</section>
           <div class="section-tag"><h3>Recent requests</h3><span>Newest first · open queue on top</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
-          <div class="section-tag"><h3>Course intake assignments</h3><span>Active virtual intakes · registrations and paying clients</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Intake</th><th>Assignee</th><th>Registered</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${intakeRows}</tbody></table></div></div>
-          <div class="section-tag"><h3>Event assignments</h3><span>Active international events · tickets and paying delegates</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Event</th><th>Assignee</th><th>Tickets</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${eventRows}</tbody></table></div></div>`;
+          <div class="section-tag"><h3>Course intake assignments</h3><span>Active virtual intakes (still enrolling) · newest start first</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Intake</th><th>Starts</th><th>Assignee</th><th>Registered</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${intakeRows}</tbody></table></div></div>
+          <div class="section-tag"><h3>Event assignments</h3><span>Active international events (still open) · newest start first</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Event</th><th>Starts</th><th>Assignee</th><th>Tickets</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${eventRows}</tbody></table></div></div>`;
       }
 
       /* ---------- detail modals (attendance clock-ins, payroll payslips) ---------- */
