@@ -239,7 +239,7 @@ try {
 } catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
 
 // ---- Reports tab: monthly trends (virtual + international) + per-location breakdown. Money stored USD. ----
-$reports = ['virtual' => ['months' => []], 'international' => ['months' => [], 'loc' => []]];
+$reports = ['virtual' => ['months' => []], 'international' => ['months' => [], 'loc' => []], 'corporate' => ['months' => []]];
 try {
     $seed = [];
     for ($i = 5; $i >= 0; $i--) { $t = strtotime(date('Y-m-01') . " -$i month"); $seed[date('Y-m', $t)] = ['label' => date('M', $t), 'enq' => 0, 'cli' => 0, 'collected' => 0, 'due' => 0]; }
@@ -279,6 +279,14 @@ try {
     while ($res && ($row = mysqli_fetch_assoc($res))) { $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown'); if (!isset($loc[$k])) { $loc[$k] = ['label' => $k, 'revenue' => 0, 'balance' => 0]; } $loc[$k]['balance'] += max(0, ((int) $row['paidn'] * (float) $row['ea']) - (float) $row['paid']); }
     usort($loc, function ($a, $b) { return ($b['revenue'] + $b['balance']) <=> ($a['revenue'] + $a['balance']); });
     $reports['international']['loc'] = array_slice(array_values($loc), 0, 10);
+
+    // ---- CORPORATE months (proposals = enquiries, status=won = clients, corporate-event payments = fee) ----
+    $cm = $seed;
+    $res = $q("SELECT DATE_FORMAT(submitted_at,'%Y-%m') ym, COUNT(*) enq, SUM(CASE WHEN status='won' THEN 1 ELSE 0 END) cli FROM `corporate_proposals` WHERE submitted_at>='$since' GROUP BY DATE_FORMAT(submitted_at,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($cm[$row['ym']])) { $cm[$row['ym']]['enq'] = (int) $row['enq']; $cm[$row['ym']]['cli'] = (int) $row['cli']; } }
+    $res = $q("SELECT DATE_FORMAT(dp.datee,'%Y-%m') ym, SUM(CASE WHEN dp.status=2 THEN dp.TransactionAmount ELSE 0 END) collected FROM `dpo_payment` dp WHERE dp.datee>='$since' AND dp.purpose IN (SELECT event_id FROM `corporate_programs`) GROUP BY DATE_FORMAT(dp.datee,'%Y-%m')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { if (isset($cm[$row['ym']])) { $cm[$row['ym']]['collected'] = (float) $row['collected']; } }
+    $reports['corporate']['months'] = array_values($cm);
 } catch (\Throwable $e) { error_log('CEO Reports fetch: ' . $e->getMessage()); }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
@@ -1152,8 +1160,8 @@ try {
       }
 
       /* ---------- Reports tab: native grouped-bar charts (virtual + international) ---------- */
-      function barsSVG(labels,series,fmt){
-        if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return '<p style="color:var(--muted);font-size:13px;margin:20px 4px">No data in this period.</p>';
+      function barsSVG(labels,series,fmt,empty){
+        if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return `<div style="display:flex;align-items:center;justify-content:center;min-height:180px;color:var(--muted);font-size:13.5px;font-weight:500;text-align:center;padding:20px">${esc(empty||"No data in this period.")}</div>`;
         const W=920,H=340,padL=74,padR=18,padT=34,padB=54,iw=W-padL-padR,ih=H-padT-padB;
         const rawMax=Math.max(1,...series.flatMap(s=>s.vals.map(v=>Math.abs(v||0))));
         const niceMax=(function(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const u=x/p;const f=u<=1?1:u<=2?2:u<=5?5:10;return f*p;})(rawMax);
@@ -1169,26 +1177,30 @@ try {
       }
       function repLegend(series){return `<div style="display:flex;gap:16px;font-size:12.5px;font-weight:600;flex-wrap:wrap">${series.map(s=>`<span style="display:flex;align-items:center;gap:7px"><span style="width:13px;height:13px;border-radius:3px;background:${s.color}"></span>${esc(s.name)}</span>`).join("")}</div>`;}
       function vReports(){
-        const V=REP.virtual||{months:[]},I=REP.international||{months:[],loc:[]};
+        const V=REP.virtual||{months:[]},I=REP.international||{months:[],loc:[]},C=REP.corporate||{months:[]};
         const cnt=v=>nf.format(Math.round(v||0));
-        const vm=V.months||[],im=I.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
-        const chart=(title,chip,series,vals,fmt,legend)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt)}</div>`;
-        const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]));
-        const vMon=chart("Virtual · fee collected vs balance","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)},{name:"Balance",color:"var(--amber)",vals:vm.map(m=>Math.max(0,(m.due||0)-(m.collected||0)))}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"},{name:"Balance",color:"var(--amber)"}]));
-        const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]));
-        const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]));
-        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"");
-        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"");
+        const vm=V.months||[],im=I.months||[],cm=C.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
+        const chart=(title,chip,series,vals,fmt,legend,empty)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt,empty)}</div>`;
+        const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]),"No enquiries in this period.");
+        const vMon=chart("Virtual · fee collected vs balance","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)},{name:"Balance",color:"var(--amber)",vals:vm.map(m=>Math.max(0,(m.due||0)-(m.collected||0)))}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"},{name:"Balance",color:"var(--amber)"}]),"No fee collected in this period.");
+        const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads in this period.");
+        const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected in this period.");
+        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
+        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"","No outstanding balances.");
+        const cEnq=chart("Corporate · enquiries vs won","",[{name:"Enquiries",color:"var(--brand)",vals:cm.map(m=>m.enq)},{name:"Won",color:"var(--jade)",vals:cm.map(m=>m.cli)}],cm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Won",color:"var(--jade)"}]),"No corporate enquiries in this period.");
+        const cMon=chart("Corporate · fee collected","",[{name:"Collected",color:"var(--jade)",vals:cm.map(m=>m.collected)}],cm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected in this period.");
         return `
           <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Reports</h3><span>Enrolment &amp; revenue trends — last 6 months and by location</span></div>
+            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Reports</h3><span>Enrolment &amp; revenue trends by department — last 6 months</span></div>
             <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
           </div><div class="rule" style="margin:0 0 4px"></div>
           <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment and fees</span><div class="rule"></div></div>
           <section class="grid-2">${vEnq}${vMon}</section>
           <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees and geographic spread</span><div class="rule"></div></div>
           <section class="grid-2">${iEnq}${iMon}</section>
-          <section class="grid-2">${iRev}${iBal}</section>`;
+          <section class="grid-2">${iRev}${iBal}</section>
+          <div class="section-tag"><h3>Corporate (trainings)</h3><span>Corporate proposals, wins and training fees</span><div class="rule"></div></div>
+          <section class="grid-2">${cEnq}${cMon}</section>`;
       }
 
       function render(){
