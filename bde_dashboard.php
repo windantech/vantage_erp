@@ -104,7 +104,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
-    .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--brand);border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     .bde-app .kpi .kicon{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)} .bde-app .kpi .kicon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .kpi .lab{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;padding-right:34px}
     .bde-app .kpi .val{font-size:24px;font-weight:850;letter-spacing:-.02em;margin:10px 0 3px;line-height:1} .bde-app .kpi .meta{font-size:12px;color:var(--muted)}
@@ -205,17 +205,6 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
-      <?php if ($bde_metrics): ?>
-      <section class="card" style="margin-top:14px">
-        <div class="chead"><h4>Live from Finance<?php echo $bde_metrics['name'] !== '' ? ' — ' . htmlspecialchars($bde_metrics['name']) : ''; ?></h4><span class="chip jade">Real data · to date</span></div>
-        <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-          <div class="kpi" style="--acc:var(--jade)"><div class="lab">Your cleared revenue</div><div class="val num">KES <?php echo number_format($bde_metrics['revenue_kes']); ?></div><div class="meta">$<?php echo number_format($bde_metrics['revenue_usd'], 2); ?> in settled payments · attributed to you via assigned intakes &amp; events</div></div>
-          <div class="kpi" style="--acc:var(--slate)"><div class="lab">Paid clients</div><div class="val num"><?php echo (int) $bde_metrics['paid_clients']; ?></div><div class="meta">of <?php echo (int) $bde_metrics['total_regs']; ?> registrations</div></div>
-          <div class="kpi" style="--acc:var(--brand)"><div class="lab">Attributed via</div><div class="val num" style="font-size:15px"><?php echo htmlspecialchars($bde_metrics['dept'] !== '' ? $bde_metrics['dept'] : 'intakes assigned to you'); ?></div><div class="meta">intake.assigned_to → cleared payments</div></div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px">Live: cleared revenue (virtual + events), conversion funnel, lead sources, collection and commission — attributed to you and Finance-verified. <b>Targets and field visits</b> are the next slice, so attainment %, pace and the visits tab are still illustrative.</div>
-      </section>
-      <?php endif; ?>
       <main id="workspace"></main>
       <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
     </div>
@@ -331,6 +320,19 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
 
       /* ---------- shared blocks ---------- */
       function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Personal performance mandate</div><h2>${esc(B.mandate)}</h2><p>${esc(B.mandateText)}</p></div><div class="focus"><b>Today's strategic focus</b><span>${esc(B.focus)}</span></div></section>`;}
+      function realOutcomes(){
+        const conv=B.totalRegs?(B.paidClients||0)/B.totalRegs:0;
+        const icMoney='<svg viewBox="0 0 24 24"><path d="M3 7l3-3h12l3 3v12H3z"/><path d="M3 7h18"/><path d="M15 12h3"/></svg>';
+        const icUsers='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>';
+        const icConv='<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
+        const card=(l,v,m,a,ic)=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a};background:var(--surface3)">${ic}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
+        return `<div class="section-tag" style="margin-top:4px"><h3>Your results to date</h3><span>Real cleared payments and clients attributed to you — Finance-verified</span><div class="rule"></div></div>
+          <section class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            ${card("Your cleared revenue",kMoney(B.actual||0),(B.revenueUsd!=null?("$"+nf.format(B.revenueUsd)+" settled · virtual + events"):"settled payments"),"var(--jade)",icMoney)}
+            ${card("Paid clients",nf.format(B.paidClients||0),"of "+nf.format(B.totalRegs||0)+" leads attributed to you","var(--slate)",icUsers)}
+            ${card("Conversion",pct(conv,0),"leads that became paid clients","var(--brand)",icConv)}
+          </section>`;
+      }
 
       function kpiBlock(){
         const p=period();const att=B.actual/B.target;const daysLeft=Math.max(0,p.working-p.elapsed);const dailyNeed=daysLeft?Math.max(0,(B.target-B.actual)/daysLeft):0;const c=commission();
@@ -411,7 +413,15 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
           '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>',
           '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 3M20 5v6h-6"/></svg>'
         ];
-        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
+        const F=B.funnel||[];const fv=i=>F[i]?F[i][1]:0;
+        const drivers=[
+          ["Total leads",nf.format(B.totalRegs||0),"Attributed to you"],
+          ["Qualified pipeline",nf.format(fv(2)),"Active qualified leads"],
+          ["Collection rate",(B.collection!=null?pct(B.collection,0):"—"),"Fees settled vs expected"],
+          ["Follow-ups due",nf.format(B.stale||0),"Leads needing contact"],
+          ["Commission (eligible)",(B.commissionKes?kMoney(B.commissionKes):"KES 0"),"From the commission engine"]
+        ];
+        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept||"")}</span></div><div class="drivers">${drivers.map(([l,v,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${v}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function teamTable(){
         const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
@@ -423,6 +433,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
       function vCommand(){
         const ps=pace();
         return `${strategyStrip()}
+          ${realOutcomes()}
           <section class="hero">
             <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
