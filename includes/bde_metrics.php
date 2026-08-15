@@ -99,30 +99,36 @@ if (!function_exists('bde_fetch_metrics')) {
         while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $paid[$pr['app_id']] = (float) $pr['paid']; }
 
         // --- intakes assigned to this BDE ---
-        $intakeIds = [];
-        $tq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
-        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $intakeIds[] = $tr['intake_id']; }
+        $intakeIds = []; $intakePrice = [];
+        $tq = @mysqli_query($conn, "SELECT i.intake_id, c.price_usd FROM intake i LEFT JOIN course c ON i.course_id = c.course_id WHERE i.assigned_to = $ruId");
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) {
+            $iid = (string) $tr['intake_id'];
+            $intakeIds[$iid] = true;   // set-keys de-dupe repeated intake_ids
+            if ($tr['price_usd'] !== null && !isset($intakePrice[$iid])) { $intakePrice[$iid] = (float) $tr['price_usd']; }
+        }
+        $intakeIds = array_keys($intakeIds);
 
         // --- VIRTUAL registrations: revenue, collection, and the register-side pipeline (their leads) ---
         $now = time();
         $fLeads = $fCont = $fQual = $fEnr = $fPaid = 0; $regStale = 0; $sources = []; $seenReg = [];
         if (!empty($intakeIds)) {
             $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, $intakeIds));
-            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.last_contact_date, c.price_usd,
+            // No JOIN to intake here — that multiplied a registration once per intake sharing its intake_id.
+            // Filter by intake_id (one row per registration); course price comes from the $intakePrice map.
+            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.intake_id, r.lead_status, r.last_contact_date,
                     COALESCE(NULLIF(es.name,''), NULLIF(r.source,''), 'Unknown') AS src_name
-                FROM register r JOIN intake i ON r.intake_id = i.intake_id
-                LEFT JOIN course c ON i.course_id = c.course_id
-                LEFT JOIN enquiry_sources es ON es.id = r.source
+                FROM register r LEFT JOIN enquiry_sources es ON es.id = r.source
                 WHERE r.intake_id IN ($in) AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
             while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
                 $eid = (string) $rr['entry_id'];
-                if (isset($seenReg[$eid])) { continue; }   // guard: an intake_id shared by >1 intake row would else double-count
+                if (isset($seenReg[$eid])) { continue; }   // defensive: skip any literal duplicate register row
                 $seenReg[$eid] = true;
                 $out['total_regs']++; $fLeads++;
                 $ls = strtolower(trim((string) ($rr['lead_status'] ?? '')));
                 $lastc = trim((string) ($rr['last_contact_date'] ?? ''));
                 $hasContact = ($lastc !== '' && $lastc !== '0000-00-00' && strtotime($lastc));
-                if (!empty($rr['price_usd'])) { $out['expected_usd'] += (float) $rr['price_usd']; }
+                $unitPrice = $intakePrice[(string) $rr['intake_id']] ?? 0;
+                if ($unitPrice > 0) { $out['expected_usd'] += $unitPrice; }
                 $amt = isset($paid[$rr['entry_id']]) ? $paid[$rr['entry_id']] : 0;
                 $cleared = $amt > 0;
                 $isEnrolled  = $cleared || $ls === 'enrolled';
