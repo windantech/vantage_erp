@@ -270,6 +270,19 @@ if (!function_exists('bde_active_since')) {
     }
 }
 
+if (!function_exists('bde_digital_roster')) {
+    /**
+     * The Digital Solutions BDEs, by name. They have no CRM assignments (their products —
+     * Eval360, 360 Appraisal — aren't tracked in intake/register/event), so their team roster
+     * is an explicit list rather than derived from attribution. Names are matched with LIKE
+     * against registered_users.fullname. Edit this list to add / correct a member.
+     */
+    function bde_digital_roster()
+    {
+        return ['Austin', 'Ruth', 'Alein']; // Eval360 · 360 Appraisal · (3rd product TBD)
+    }
+}
+
 if (!function_exists('bde_team_metrics')) {
     /** The BDE's own department team: each seller's attributed cleared revenue + paid clients. */
     function bde_team_metrics($conn, $ruId, $start_date, $end_date)
@@ -281,30 +294,66 @@ if (!function_exists('bde_team_metrics')) {
         $e = mysqli_real_escape_string($conn, $end_date);
         $rate = bde_usd_to_kes($conn);
 
-        $deptId = 0;
-        $dq = @mysqli_query($conn, "SELECT s.department_id FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE ru.id = $ruId LIMIT 1");
-        if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $deptId = (int) $dr['department_id']; }
-
-        // Primary: sellers whose staff record shares this department.
-        $members = [];
-        if ($deptId > 0) {
-            $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE s.department_id = $deptId ORDER BY ru.fullname");
-            while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+        // Resolve the viewed BDE's identity + department once.
+        $deptId = 0; $deptName = ''; $meName = '';
+        $dq = @mysqli_query($conn, "SELECT s.department_id, d.department_name, ru.fullname
+            FROM registered_users ru
+            LEFT JOIN staff s ON ru.staff_id = s.id
+            LEFT JOIN departments d ON s.department_id = d.id
+            WHERE ru.id = $ruId LIMIT 1");
+        if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
+            $deptId = (int) ($dr['department_id'] ?? 0);
+            $deptName = (string) ($dr['department_name'] ?? '');
+            $meName = (string) ($dr['fullname'] ?? '');
         }
-        // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
-        // group by selling peers instead: everyone assigned the same way you are (intakes vs events).
-        if (count($members) < 2) {
-            $ci = @mysqli_query($conn, "SELECT 1 FROM intake WHERE assigned_to = $ruId LIMIT 1");
-            $hasIntake = $ci && mysqli_num_rows($ci) > 0;
-            $peer = @mysqli_query($conn, $hasIntake
-                ? "SELECT DISTINCT assigned_to FROM intake WHERE assigned_to > 0"
-                : "SELECT DISTINCT assigned_to FROM Event WHERE assigned_to > 0");
-            $pids = [$ruId => true];
-            while ($peer && ($pr = mysqli_fetch_assoc($peer))) { $pids[(int) $pr['assigned_to']] = true; }
-            $pin = implode(',', array_map('intval', array_keys($pids)));
-            $members = [];
-            $mq2 = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id WHERE ru.id IN ($pin)");
-            while ($mq2 && ($mr = mysqli_fetch_assoc($mq2))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+
+        // Digital Solutions: its BDEs exist as users but have NO intake/event assignments (their
+        // products — Eval360, 360 Appraisal — aren't tracked in the CRM revenue tables). So the
+        // department-dump / selling-peer logic below surfaces the wrong people. For Digital we use
+        // an explicit named roster instead. (Actuals stay 0 until a Digital data source exists.)
+        $digitalRoster = bde_digital_roster();
+        $isDigital = stripos($deptName, 'digital') !== false;
+        if (!$isDigital && $meName !== '') {
+            foreach ($digitalRoster as $dn) { if (stripos($meName, $dn) !== false) { $isDigital = true; break; } }
+        }
+
+        $members = [];
+        if ($isDigital) {
+            foreach ($digitalRoster as $dn) {
+                $like = mysqli_real_escape_string($conn, $dn);
+                $nq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title
+                    FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id
+                    WHERE ru.fullname LIKE '%$like%' ORDER BY ru.id LIMIT 1");
+                if ($nq && ($nr = mysqli_fetch_assoc($nq))) {
+                    $t = (string) ($nr['job_title'] ?? '');
+                    $members[(int) $nr['id']] = ['name' => (string) $nr['fullname'], 'title' => $t !== '' ? $t : 'BDE', 'rev' => 0.0, 'clients' => 0];
+                }
+            }
+            // Always include the viewed BDE even if their name isn't in the roster list.
+            if (!isset($members[$ruId]) && $meName !== '') {
+                $members[$ruId] = ['name' => $meName, 'title' => 'BDE', 'rev' => 0.0, 'clients' => 0];
+            }
+        } else {
+            // Primary: sellers whose staff record shares this department.
+            if ($deptId > 0) {
+                $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE s.department_id = $deptId ORDER BY ru.fullname");
+                while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+            }
+            // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
+            // group by selling peers instead: everyone assigned the same way you are (intakes vs events).
+            if (count($members) < 2) {
+                $ci = @mysqli_query($conn, "SELECT 1 FROM intake WHERE assigned_to = $ruId LIMIT 1");
+                $hasIntake = $ci && mysqli_num_rows($ci) > 0;
+                $peer = @mysqli_query($conn, $hasIntake
+                    ? "SELECT DISTINCT assigned_to FROM intake WHERE assigned_to > 0"
+                    : "SELECT DISTINCT assigned_to FROM Event WHERE assigned_to > 0");
+                $pids = [$ruId => true];
+                while ($peer && ($pr = mysqli_fetch_assoc($peer))) { $pids[(int) $pr['assigned_to']] = true; }
+                $pin = implode(',', array_map('intval', array_keys($pids)));
+                $members = [];
+                $mq2 = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id WHERE ru.id IN ($pin)");
+                while ($mq2 && ($mr = mysqli_fetch_assoc($mq2))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+            }
         }
         if (empty($members)) { return $team; }
         $ids = implode(',', array_map('intval', array_keys($members)));
