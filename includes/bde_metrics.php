@@ -69,7 +69,7 @@ if (!function_exists('bde_fetch_metrics')) {
             'ru_id' => $ruId, 'name' => '', 'title' => '', 'dept' => '',
             'revenue_usd' => 0.0, 'revenue_kes' => 0.0, 'expected_usd' => 0.0, 'collection_rate' => 0.0,
             'rev_virtual_usd' => 0.0, 'rev_events_usd' => 0.0,
-            'paid_clients' => 0, 'total_regs' => 0, 'units' => 0, 'stale' => 0,
+            'paid_clients' => 0, 'total_regs' => 0, 'units' => 0, 'stale' => 0, 'total_leads' => 0, 'contacted' => 0,
             'funnel' => [], 'sources' => [],
             'commission_usd' => 0.0, 'commission_kes' => 0.0,
             'mandate' => bde_mandate(''),
@@ -103,44 +103,19 @@ if (!function_exists('bde_fetch_metrics')) {
         $tq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
         while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $intakeIds[] = $tr['intake_id']; }
 
-        // --- VIRTUAL registrations: revenue, funnel (lead_status), sources, collection, stale ---
-        $fLeads = $fCont = $fQual = $fEnr = $fPaid = 0;
-        $sources = [];
+        // --- VIRTUAL registrations: revenue + collection only (the lead pipeline comes from enquiries below) ---
         $now = time();
         if (!empty($intakeIds)) {
             $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, $intakeIds));
-            $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.last_contact_date, c.price_usd,
-                    COALESCE(NULLIF(es.name,''), NULLIF(r.source,''), 'Unknown') AS src_name
+            $rq = @mysqli_query($conn, "SELECT r.entry_id, c.price_usd
                 FROM register r JOIN intake i ON r.intake_id = i.intake_id
                 LEFT JOIN course c ON i.course_id = c.course_id
-                LEFT JOIN enquiry_sources es ON es.id = r.source
                 WHERE r.intake_id IN ($in) AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
             while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
                 $out['total_regs']++;
-                $fLeads++;
-                $ls = strtolower(trim((string) ($rr['lead_status'] ?? '')));
-                $lastc = trim((string) ($rr['last_contact_date'] ?? ''));
-                $hasContact = ($lastc !== '' && $lastc !== '0000-00-00' && strtotime($lastc));
                 if (!empty($rr['price_usd'])) { $out['expected_usd'] += (float) $rr['price_usd']; }
                 $amt = isset($paid[$rr['entry_id']]) ? $paid[$rr['entry_id']] : 0;
-                $cleared = $amt > 0;
-                // Funnel is CUMULATIVE: a paid/enrolled client necessarily passed the earlier stages,
-                // even when lead_status was never updated. Downstream always implies upstream.
-                $isEnrolled  = $cleared || $ls === 'enrolled';
-                $isQualified = $isEnrolled || $ls === 'qualified';
-                $isContacted = $isQualified || $ls === 'contacted' || $hasContact;
-                if ($isContacted) { $fCont++; }
-                if ($isQualified) { $fQual++; }
-                if ($isEnrolled) { $fEnr++; }
-                if ($cleared) {
-                    $fPaid++; $out['paid_clients']++;
-                    $out['revenue_usd'] += $amt; $out['rev_virtual_usd'] += $amt;
-                } else if (!$isEnrolled) {
-                    $stale = !$hasContact || (strtotime($lastc) < $now - 7 * 86400);
-                    if ($stale) { $out['stale']++; }
-                }
-                $srcLabel = trim((string) ($rr['src_name'] ?? '')) !== '' ? (string) $rr['src_name'] : 'Unknown';
-                $sources[$srcLabel] = ($sources[$srcLabel] ?? 0) + 1;
+                if ($amt > 0) { $out['paid_clients']++; $out['revenue_usd'] += $amt; $out['rev_virtual_usd'] += $amt; }
             }
         }
 
@@ -155,21 +130,49 @@ if (!function_exists('bde_fetch_metrics')) {
                 SUM(CASE WHEN status=2 THEN amount ELSE 0 END) AS rev
                 FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY event_id");
             while ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) {
-                $regs = (int) $t2['regs']; $pc = (int) $t2['paidc']; $rev = (float) $t2['rev'];
-                $out['total_regs'] += $regs; $out['paid_clients'] += $pc;
-                $out['revenue_usd'] += $rev; $out['rev_events_usd'] += $rev;
-                $out['expected_usd'] += $regs * ($events[(int) $t2['event_id']] ?? 0);
-                // events have no lead_status stages; paid delegates count cumulatively as leads→…→paid
-                $fLeads += $regs; $fCont += $pc; $fQual += $pc; $fEnr += $pc; $fPaid += $pc;
+                $out['total_regs'] += (int) $t2['regs']; $out['paid_clients'] += (int) $t2['paidc'];
+                $out['revenue_usd'] += (float) $t2['rev']; $out['rev_events_usd'] += (float) $t2['rev'];
+                $out['expected_usd'] += (int) $t2['regs'] * ($events[(int) $t2['event_id']] ?? 0);
             }
+        }
+
+        // --- LEAD PIPELINE from `enquiries` (attributed by enquiries.assigned_to = the BDE) ---
+        // Real funnel (new→contacted→qualified→proposal→converted), sources across ALL channels, and
+        // follow-ups = leads that REACHED contacted/qualified but stalled (updated_at gone cold).
+        $eLeads = $eCont = $eQual = $eProp = $eConv = 0;
+        $esrc = [];
+        $eq2 = @mysqli_query($conn, "SELECT e.status, e.updated_at, COALESCE(NULLIF(s.name,''),'Other') src
+            FROM enquiries e LEFT JOIN enquiry_sources s ON s.id = e.source_id WHERE e.assigned_to = $ruId");
+        while ($eq2 && ($er = mysqli_fetch_assoc($eq2))) {
+            $eLeads++;
+            $st = strtolower(trim((string) $er['status']));
+            if (in_array($st, ['contacted', 'qualified', 'proposal_sent', 'negotiating', 'converted'], true)) { $eCont++; }
+            if (in_array($st, ['qualified', 'proposal_sent', 'negotiating', 'converted'], true)) { $eQual++; }
+            if (in_array($st, ['proposal_sent', 'negotiating', 'converted'], true)) { $eProp++; }
+            if ($st === 'converted') { $eConv++; }
+            if (in_array($st, ['contacted', 'qualified', 'proposal_sent', 'negotiating'], true)) {
+                $u = strtotime((string) $er['updated_at']);
+                if (!$u || $u < $now - 7 * 86400) { $out['stale']++; }   // reached a stage but gone cold
+            }
+            $lab = (string) $er['src'];
+            $esrc[$lab] = ($esrc[$lab] ?? 0) + 1;
+        }
+        // WhatsApp channel: wa_contacts has no BDE field, so attribute via register_id → intake.assigned_to.
+        if (!empty($intakeIds)) {
+            $waq = @mysqli_query($conn, "SELECT COUNT(*) n FROM wa_contacts wc
+                JOIN register r ON r.id = wc.register_id JOIN intake i ON r.intake_id = i.intake_id
+                WHERE i.assigned_to = $ruId");
+            if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $esrc['WhatsApp'] = ($esrc['WhatsApp'] ?? 0) + (int) $war['n']; }
         }
 
         // --- roll-ups ---
         $out['units'] = $out['paid_clients'];
-        $out['funnel'] = [['Leads', $fLeads], ['Contacted', $fCont], ['Qualified', $fQual], ['Enrolled', $fEnr], ['Paid', $fPaid]];
-        arsort($sources);
+        $out['total_leads'] = $eLeads;
+        $out['contacted'] = $eCont;
+        $out['funnel'] = [['Leads', $eLeads], ['Contacted', $eCont], ['Qualified', $eQual], ['Proposal', $eProp], ['Converted', $eConv]];
+        arsort($esrc);
         $srcOut = [];
-        foreach (array_slice($sources, 0, 6, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
+        foreach (array_slice($esrc, 0, 8, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
         $out['sources'] = $srcOut;
         $out['collection_rate'] = $out['expected_usd'] > 0 ? min(1.0, $out['revenue_usd'] / $out['expected_usd']) : 0.0;
         $out['revenue_kes'] = $out['revenue_usd'] * $rate;

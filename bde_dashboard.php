@@ -287,6 +287,8 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         totalRegs: <?php echo (int) $bde_metrics['total_regs']; ?>,
         paidClients: <?php echo (int) $bde_metrics['paid_clients']; ?>,
         stale: <?php echo (int) $bde_metrics['stale']; ?>,
+        totalLeads: <?php echo (int) ($bde_metrics['total_leads'] ?? 0); ?>,
+        contacted: <?php echo (int) ($bde_metrics['contacted'] ?? 0); ?>,
         commissionKes: <?php echo (float) $bde_metrics['commission_kes']; ?>
       });
       B.team = <?php echo json_encode(!empty($bde_team) ? $bde_team : [['name' => ($bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'You'), 'title' => ($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE'), 'actual' => (float) $bde_metrics['revenue_kes'], 'clients' => (int) $bde_metrics['paid_clients'], 'me' => true]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
@@ -423,10 +425,10 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         ];
         const F=B.funnel||[];const fv=i=>F[i]?F[i][1]:0;
         const drivers=[
-          ["Total leads",nf.format(B.totalRegs||0),"Attributed to you"],
-          ["Qualified pipeline",nf.format(fv(2)),"Active qualified leads"],
+          ["Total leads",nf.format(B.totalLeads||0),"Enquiries assigned to you"],
+          ["Qualified pipeline",nf.format(fv(2)),"Reached qualified or beyond"],
           ["Collection rate",(B.collection!=null?pct(B.collection,0):"—"),"Fees settled vs expected"],
-          ["Follow-ups due",nf.format(B.stale||0),"Leads needing contact"],
+          ["Follow-ups due",nf.format(B.stale||0),"Contacted/qualified but stalled"],
           ["Commission (eligible)",(B.commissionKes?kMoney(B.commissionKes):"KES 0"),"From the commission engine"]
         ];
         return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept||"")}</span></div><div class="drivers">${drivers.map(([l,v,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${v}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
