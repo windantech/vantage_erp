@@ -164,7 +164,8 @@ if (!function_exists('bde_fetch_metrics')) {
         // Combines with the register pipeline above so both are reflected; sources merge into one list.
         $eLeads = $eCont = $eQual = $eProp = $eConv = 0; $enqStale = 0;
         $eq2 = @mysqli_query($conn, "SELECT e.status, e.updated_at, COALESCE(NULLIF(s.name,''),'Other') src
-            FROM enquiries e LEFT JOIN enquiry_sources s ON s.id = e.source_id WHERE e.assigned_to = $ruId");
+            FROM enquiries e LEFT JOIN enquiry_sources s ON s.id = e.source_id
+            WHERE e.assigned_to = $ruId AND e.created_at BETWEEN '$s' AND '$e 23:59:59'");
         while ($eq2 && ($er = mysqli_fetch_assoc($eq2))) {
             $eLeads++;
             $st = strtolower(trim((string) $er['status']));

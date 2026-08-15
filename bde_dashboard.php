@@ -18,13 +18,18 @@ $bde_ru_id = (int) ($_SESSION['login_id'] ?? 0);
 if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role)) {
     $bde_ru_id = (int) $_GET['as'];
 }
-$bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, '2020-01-01', date('Y-m-d')) : null;
+// Date range filter (calendar). Defaults to all-time; ?from=YYYY-MM-DD&to=YYYY-MM-DD scopes it.
+$bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) ? $_GET['from'] : '2020-01-01';
+$bde_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['to']))   ? $_GET['to']   : date('Y-m-d');
+if ($bde_from > $bde_to) { $t = $bde_from; $bde_from = $bde_to; $bde_to = $t; }
+$bde_all_time = ($bde_from === '2020-01-01' && $bde_to === date('Y-m-d'));
+$bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
     $parts = preg_split('/\s+/', trim($bde_metrics['name']));
     $bdeInitials = strtoupper(substr($parts[0], 0, 1) . (isset($parts[1]) ? substr($parts[1], 0, 1) : ''));
 }
-$bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_metrics($conn, $bde_ru_id, '2020-01-01', date('Y-m-d')) : [];
+$bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : [];
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -200,7 +205,10 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>Performance Command Centre</h1><p>Strategy → daily execution → verified revenue → commission → growth</p></div></div>
         <div class="controls">
-          <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
+          <div class="control"><label>From</label><input type="date" id="fromDate" value="<?php echo htmlspecialchars($bde_from); ?>"></div>
+          <div class="control"><label>To</label><input type="date" id="toDate" value="<?php echo htmlspecialchars($bde_to); ?>"></div>
+          <?php if (!$bde_all_time): ?><a class="tbtn" id="clearRange" href="?<?php echo htmlspecialchars(isset($_GET['as']) ? 'as=' . (int) $_GET['as'] : ''); ?>">All time</a><?php endif; ?>
+          <select id="periodSelect" style="display:none"></select>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
           <div class="profile-chip"><span class="a"><?php echo htmlspecialchars($bdeInitials); ?></span><div><b><?php echo htmlspecialchars($bde_metrics && $bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'BDE'); ?></b><span><?php echo htmlspecialchars($bde_metrics ? (($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE') . ' · ' . $bde_metrics['mandate']['tag']) : 'BDE · Digital Solutions'); ?></span></div></div>
         </div>
@@ -649,6 +657,12 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
       el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
+      // Calendar date-range filter → reload with ?from&to (server re-scopes the real metrics), keeping ?as=
+      ["fromDate","toDate"].forEach(function(id){var d=el(id); if(d) d.addEventListener("change",function(){
+        var p=new URLSearchParams(location.search), f=el("fromDate").value, t=el("toDate").value;
+        if(f) p.set("from",f); else p.delete("from"); if(t) p.set("to",t); else p.delete("to");
+        location.search=p.toString();
+      });});
       root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
