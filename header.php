@@ -82,13 +82,21 @@ if (!headers_sent()) {
     <!-- Nav Item - Performance (role dashboards).
          Only rendered while ON a performance-dashboard route, so it stays hidden
          from the shared sidebar on every other page. Links to the current one. -->
-    <?php $perf_page = basename($_SERVER['SCRIPT_NAME']); if (in_array($perf_page, ['bde_dashboard.php', 'bdo_dashboard.php', 'bdm_dashboard.php', 'ceo_performance.php'], true)) { ?>
-    <li class="nav-item active">
-        <a class="nav-link" href="<?php echo $perf_page; ?>">
+    <?php $perf_page = basename($_SERVER['SCRIPT_NAME']); if (in_array($perf_page, ['bde_dashboard.php', 'bdo_dashboard.php', 'bdm_dashboard.php', 'ceo_performance.php', 'bde_targets.php'], true)) { ?>
+    <li class="nav-item<?php echo $perf_page !== 'bde_targets.php' ? ' active' : ''; ?>">
+        <a class="nav-link" href="<?php echo $perf_page === 'bde_targets.php' ? 'bde_dashboard.php' : $perf_page; ?>">
             <i class="fas fa-fw fa-chart-line"></i>
             <span>Performance</span>
         </a>
     </li>
+    <?php if (in_array(777, $role)) { ?>
+    <li class="nav-item<?php echo $perf_page === 'bde_targets.php' ? ' active' : ''; ?>">
+        <a class="nav-link" href="bde_targets.php">
+            <i class="fas fa-fw fa-bullseye"></i>
+            <span>BDE Targets</span>
+        </a>
+    </li>
+    <?php } ?>
     <?php } ?>
 
     <!-- WhatsApp -->
