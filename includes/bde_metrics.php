@@ -105,7 +105,7 @@ if (!function_exists('bde_fetch_metrics')) {
 
         // --- VIRTUAL registrations: revenue, collection, and the register-side pipeline (their leads) ---
         $now = time();
-        $fLeads = $fCont = $fQual = $fEnr = $fPaid = 0; $regStale = 0; $sources = [];
+        $fLeads = $fCont = $fQual = $fEnr = $fPaid = 0; $regStale = 0; $sources = []; $seenReg = [];
         if (!empty($intakeIds)) {
             $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, $intakeIds));
             $rq = @mysqli_query($conn, "SELECT r.entry_id, r.lead_status, r.last_contact_date, c.price_usd,
@@ -115,6 +115,9 @@ if (!function_exists('bde_fetch_metrics')) {
                 LEFT JOIN enquiry_sources es ON es.id = r.source
                 WHERE r.intake_id IN ($in) AND r.datee BETWEEN '$s' AND '$e 23:59:59'");
             while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
+                $eid = (string) $rr['entry_id'];
+                if (isset($seenReg[$eid])) { continue; }   // guard: an intake_id shared by >1 intake row would else double-count
+                $seenReg[$eid] = true;
                 $out['total_regs']++; $fLeads++;
                 $ls = strtolower(trim((string) ($rr['lead_status'] ?? '')));
                 $lastc = trim((string) ($rr['last_contact_date'] ?? ''));
