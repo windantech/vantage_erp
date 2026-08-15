@@ -18,18 +18,21 @@ $bde_ru_id = (int) ($_SESSION['login_id'] ?? 0);
 if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role)) {
     $bde_ru_id = (int) $_GET['as'];
 }
-// Date range filter (calendar). Defaults to all-time; ?from=YYYY-MM-DD&to=YYYY-MM-DD scopes it.
-$bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) ? $_GET['from'] : '2020-01-01';
-$bde_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['to']))   ? $_GET['to']   : date('Y-m-d');
+// Date range filter (calendar). Defaults to "since they joined" — the BDE's first real
+// activity in the DB — so the period reflects their actual tenure, not a fixed window.
+// ?from=YYYY-MM-DD&to=YYYY-MM-DD scopes it explicitly.
+$bde_today   = date('Y-m-d');
+$bde_started = function_exists('bde_active_since') ? bde_active_since($conn, $bde_ru_id) : '';
+$bde_join    = $bde_started !== '' ? $bde_started : '2020-01-01'; // fallback if no activity yet
+$bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) ? $_GET['from'] : $bde_join;
+$bde_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['to']))   ? $_GET['to']   : $bde_today;
 if ($bde_from > $bde_to) { $t = $bde_from; $bde_from = $bde_to; $bde_to = $t; }
-$bde_all_time = ($bde_from === '2020-01-01' && $bde_to === date('Y-m-d'));
-$bde_today = date('Y-m-d');
 $bde_presets = [
-    'all'   => ['label' => 'All time',      'from' => '2020-01-01', 'to' => $bde_today],
+    'since' => ['label' => 'Since they joined' . ($bde_started !== '' ? ' · ' . date('M Y', strtotime($bde_started)) : ''), 'from' => $bde_join, 'to' => $bde_today],
     'month' => ['label' => 'This month',    'from' => date('Y-m-01'), 'to' => $bde_today],
     'last'  => ['label' => 'Last month',    'from' => date('Y-m-01', strtotime('first day of last month')), 'to' => date('Y-m-t', strtotime('last month'))],
-    '3mo'   => ['label' => 'Last 3 months', 'from' => date('Y-m-01', strtotime('-2 month')), 'to' => $bde_today],
     'ytd'   => ['label' => 'This year',     'from' => date('Y-01-01'), 'to' => $bde_today],
+    'all'   => ['label' => 'All time',      'from' => '2020-01-01', 'to' => $bde_today],
 ];
 $bde_active_preset = 'custom';
 foreach ($bde_presets as $pk => $pv) { if ($pv['from'] === $bde_from && $pv['to'] === $bde_to) { $bde_active_preset = $pk; break; } }

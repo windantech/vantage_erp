@@ -229,6 +229,47 @@ if (!function_exists('bde_fetch_metrics')) {
     }
 }
 
+if (!function_exists('bde_active_since')) {
+    /**
+     * Earliest real activity date for a BDE — first registration (on their intakes),
+     * first enquiry assigned to them, or first ticket sale on their events. This is the
+     * point they actually started working, taken straight from the DB (not a fixed window).
+     * Returns 'Y-m-d', or '' if they have no activity yet.
+     */
+    function bde_active_since($conn, $ruId)
+    {
+        $ruId = (int) $ruId;
+        if ($ruId <= 0) { return ''; }
+        $dates = [];
+
+        // first registration on an intake assigned to them
+        $intakeIds = [];
+        $tq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $intakeIds[(string) $tr['intake_id']] = true; }
+        if (!empty($intakeIds)) {
+            $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, array_keys($intakeIds)));
+            $r = @mysqli_query($conn, "SELECT MIN(datee) d FROM register WHERE intake_id IN ($in) AND datee > '1971-01-01'");
+            if ($r && ($row = mysqli_fetch_assoc($r)) && !empty($row['d'])) { $dates[] = (string) $row['d']; }
+        }
+        // first enquiry assigned to them
+        $r = @mysqli_query($conn, "SELECT MIN(created_at) d FROM enquiries WHERE assigned_to = $ruId AND created_at > '1971-01-01'");
+        if ($r && ($row = mysqli_fetch_assoc($r)) && !empty($row['d'])) { $dates[] = (string) $row['d']; }
+        // first ticket sale on an event assigned to them
+        $evIds = [];
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        while ($evq && ($evr = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $evr['event_id']; }
+        if (!empty($evIds)) {
+            $ein = implode(',', $evIds);
+            $r = @mysqli_query($conn, "SELECT MIN(date_sent) d FROM ticket_congress WHERE event_id IN ($ein) AND date_sent > '1971-01-01'");
+            if ($r && ($row = mysqli_fetch_assoc($r)) && !empty($row['d'])) { $dates[] = (string) $row['d']; }
+        }
+
+        if (empty($dates)) { return ''; }
+        sort($dates);
+        return substr($dates[0], 0, 10); // 'Y-m-d'
+    }
+}
+
 if (!function_exists('bde_team_metrics')) {
     /** The BDE's own department team: each seller's attributed cleared revenue + paid clients. */
     function bde_team_metrics($conn, $ruId, $start_date, $end_date)
