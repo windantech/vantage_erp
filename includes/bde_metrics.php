@@ -69,7 +69,7 @@ if (!function_exists('bde_fetch_metrics')) {
             'ru_id' => $ruId, 'name' => '', 'title' => '', 'dept' => '',
             'revenue_usd' => 0.0, 'revenue_kes' => 0.0, 'expected_usd' => 0.0, 'collection_rate' => 0.0,
             'rev_virtual_usd' => 0.0, 'rev_events_usd' => 0.0,
-            'paid_clients' => 0, 'total_regs' => 0, 'units' => 0, 'stale' => 0, 'total_leads' => 0, 'contacted' => 0,
+            'paid_clients' => 0, 'total_regs' => 0, 'units' => 0, 'stale' => 0, 'total_leads' => 0, 'contacted' => 0, 'wa_open' => 0, 'wa_unread' => 0,
             'funnel' => [], 'sources' => [],
             'commission_usd' => 0.0, 'commission_kes' => 0.0,
             'mandate' => bde_mandate(''),
@@ -183,6 +183,13 @@ if (!function_exists('bde_fetch_metrics')) {
                 WHERE i.assigned_to = $ruId");
             if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $sources['WhatsApp'] = ($sources['WhatsApp'] ?? 0) + (int) $war['n']; }
         }
+
+        // WhatsApp follow-ups: open conversations assigned to this BDE with an unread message
+        // (opened vs not = last_message_at newer than last_read_at, or never read).
+        $wq = @mysqli_query($conn, "SELECT COUNT(*) open_chats,
+            SUM(CASE WHEN last_read_at IS NULL OR last_message_at > last_read_at THEN 1 ELSE 0 END) unread
+            FROM wa_conversations WHERE assigned_user_id = $ruId AND status = 'open'");
+        if ($wq && ($wr = mysqli_fetch_assoc($wq))) { $out['wa_open'] = (int) $wr['open_chats']; $out['wa_unread'] = (int) $wr['unread']; }
 
         // --- roll-ups (register + enquiries combined) ---
         $out['units'] = $out['paid_clients'];
