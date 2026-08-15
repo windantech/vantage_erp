@@ -23,6 +23,16 @@ $bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string
 $bde_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['to']))   ? $_GET['to']   : date('Y-m-d');
 if ($bde_from > $bde_to) { $t = $bde_from; $bde_from = $bde_to; $bde_to = $t; }
 $bde_all_time = ($bde_from === '2020-01-01' && $bde_to === date('Y-m-d'));
+$bde_today = date('Y-m-d');
+$bde_presets = [
+    'all'   => ['label' => 'All time',      'from' => '2020-01-01', 'to' => $bde_today],
+    'month' => ['label' => 'This month',    'from' => date('Y-m-01'), 'to' => $bde_today],
+    'last'  => ['label' => 'Last month',    'from' => date('Y-m-01', strtotime('first day of last month')), 'to' => date('Y-m-t', strtotime('last month'))],
+    '3mo'   => ['label' => 'Last 3 months', 'from' => date('Y-m-01', strtotime('-2 month')), 'to' => $bde_today],
+    'ytd'   => ['label' => 'This year',     'from' => date('Y-01-01'), 'to' => $bde_today],
+];
+$bde_active_preset = 'custom';
+foreach ($bde_presets as $pk => $pv) { if ($pv['from'] === $bde_from && $pv['to'] === $bde_to) { $bde_active_preset = $pk; break; } }
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
@@ -75,6 +85,10 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     .bde-app .control label{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}
     .bde-app .control select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 28px 8px 11px;font-size:13px;font-weight:650;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 16px,calc(100% - 10px) 16px;background-size:5px 5px;background-repeat:no-repeat}
     .bde-app .control select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+    .bde-app .control input[type=date]{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:12.5px;font-weight:650;color:var(--ink);font-family:inherit}
+    .bde-app .control input[type=date]:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+    .bde-app .daterange{display:flex;align-items:center;gap:6px}
+    .bde-app .daterange span{color:var(--muted);font-size:13px;font-weight:700}
     .bde-app .tbtn{border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:9px 13px;font-size:13px;font-weight:650;display:inline-flex;align-items:center;gap:7px;color:var(--ink)} .bde-app .tbtn:hover{border-color:var(--brand);color:var(--brand)}
     .bde-app .tbtn.solid{background:var(--brand);color:#fff;border-color:var(--brand)} .bde-app .tbtn.solid:hover{background:var(--brand-deep);color:#fff}
     .bde-app .profile-chip{display:flex;align-items:center;gap:10px;padding:5px 13px 5px 5px;border:1px solid var(--line);border-radius:12px;background:var(--surface2)}
@@ -205,9 +219,15 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>Performance Command Centre</h1><p>Strategy → daily execution → verified revenue → commission → growth</p></div></div>
         <div class="controls">
-          <div class="control"><label>From</label><input type="date" id="fromDate" value="<?php echo htmlspecialchars($bde_from); ?>"></div>
-          <div class="control"><label>To</label><input type="date" id="toDate" value="<?php echo htmlspecialchars($bde_to); ?>"></div>
-          <?php if (!$bde_all_time): ?><a class="tbtn" id="clearRange" href="?<?php echo htmlspecialchars(isset($_GET['as']) ? 'as=' . (int) $_GET['as'] : ''); ?>">All time</a><?php endif; ?>
+          <div class="control"><label>Period</label>
+            <select id="periodPreset">
+              <?php foreach ($bde_presets as $pk => $pv): ?>
+                <option value="<?php echo $pk; ?>" data-from="<?php echo $pv['from']; ?>" data-to="<?php echo $pv['to']; ?>"<?php echo $bde_active_preset === $pk ? ' selected' : ''; ?>><?php echo htmlspecialchars($pv['label']); ?></option>
+              <?php endforeach; ?>
+              <option value="custom"<?php echo $bde_active_preset === 'custom' ? ' selected' : ''; ?>>Custom…</option>
+            </select>
+          </div>
+          <div class="control" id="customWrap"<?php echo $bde_active_preset === 'custom' ? '' : ' style="display:none"'; ?>><label>Range</label><div class="daterange"><input type="date" id="fromDate" value="<?php echo htmlspecialchars($bde_from); ?>"><span>→</span><input type="date" id="toDate" value="<?php echo htmlspecialchars($bde_to); ?>"></div></div>
           <select id="periodSelect" style="display:none"></select>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
           <div class="profile-chip"><span class="a"><?php echo htmlspecialchars($bdeInitials); ?></span><div><b><?php echo htmlspecialchars($bde_metrics && $bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'BDE'); ?></b><span><?php echo htmlspecialchars($bde_metrics ? (($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE') . ' · ' . $bde_metrics['mandate']['tag']) : 'BDE · Digital Solutions'); ?></span></div></div>
@@ -657,7 +677,15 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
       el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
-      // Calendar date-range filter → reload with ?from&to (server re-scopes the real metrics), keeping ?as=
+      // Period presets → reload with the preset's range; "Custom…" reveals the date inputs.
+      var pp=el("periodPreset");
+      if(pp) pp.addEventListener("change",function(){
+        if(this.value==="custom"){var cw=el("customWrap"); if(cw) cw.style.display=""; var fd=el("fromDate"); if(fd) fd.focus(); return;}
+        var opt=this.options[this.selectedIndex], p=new URLSearchParams(location.search);
+        p.set("from",opt.getAttribute("data-from")); p.set("to",opt.getAttribute("data-to"));
+        location.search=p.toString();
+      });
+      // Custom From/To → reload with ?from&to (server re-scopes the real metrics), keeping ?as=
       ["fromDate","toDate"].forEach(function(id){var d=el(id); if(d) d.addEventListener("change",function(){
         var p=new URLSearchParams(location.search), f=el("fromDate").value, t=el("toDate").value;
         if(f) p.set("from",f); else p.delete("from"); if(t) p.set("to",t); else p.delete("to");
