@@ -81,20 +81,6 @@ if ($bde_ru_id > 0) {
     }
 }
 
-// Repeat organizations (2+ sign-ups) = expansion / corporate opportunity — for Cross-SBU card.
-$bde_repeat_orgs = [];
-if ($bde_ru_id > 0) {
-    $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $bde_ru_id");
-    $ii = []; while ($iq && ($x = mysqli_fetch_assoc($iq))) { $ii[] = "'" . mysqli_real_escape_string($conn, (string) $x['intake_id']) . "'"; }
-    if (!empty($ii)) {
-        $in = implode(',', $ii);
-        $oq = @mysqli_query($conn, "SELECT r.organization org, COUNT(*) n FROM register r
-            WHERE r.intake_id IN ($in) AND r.organization IS NOT NULL AND TRIM(r.organization) <> ''
-            GROUP BY r.organization HAVING n >= 2 ORDER BY n DESC LIMIT 8");
-        while ($oq && ($orr = mysqli_fetch_assoc($oq))) { $bde_repeat_orgs[] = ['org' => (string) $orr['org'], 'n' => (int) $orr['n']]; }
-    }
-}
-
 // Payment promises from chats: clients whose inbound WhatsApp message mentioned paying.
 $bde_promises = [];
 if ($bde_ru_id > 0) {
@@ -550,7 +536,6 @@ if ($bde_is_admin) {
       B.unreadCount = <?php echo (int) $bde_unread_count; ?>;
       B.quietLeads = <?php echo json_encode($bde_quiet_leads, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
-      B.repeatOrgs = <?php echo json_encode($bde_repeat_orgs, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -750,8 +735,8 @@ if ($bde_is_admin) {
         if((B.quietLeads||[]).length>0) quality.push(`${(B.quietLeads||[]).length} unpaid leads gone quiet — pipeline cooling`);
         if((B.unreadCount||0)>3) quality.push(`${B.unreadCount} escalated chats unanswered — slow replies cost conversions`);
         if((B.sources||[]).length===1) quality.push(`All leads from one channel (${B.sources[0][0]}) — diversify sources`);
-        // Cross-SBU / expansion — organizations sending multiple people (real, from registrations).
-        const cross=(B.repeatOrgs||[]).map(o=>`${o.org} — ${o.n} sign-ups`);
+        // Cross-SBU — opportunities another department logged (via field visits) for this BDE's SBU.
+        const cross=(B.crossSbu||[]);
         const showPriorities=/digital/i.test(B.dept||"");
         return `
           <section class="grid-2">
@@ -763,7 +748,7 @@ if ($bde_is_admin) {
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${stale.length?"coral":"jade"}">${stale.length?stale.length+" flagged":"all clear"}</span></div><div class="list">${stale.length?stale.map(a=>`<div class="arow"><span class="pd ${a.c}"></span><div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div>${a.act?`<span class="abtn hot" data-alert="${a.act}" style="cursor:pointer">Open</span>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now — no unread chats or quiet unpaid leads.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${quality.length?"amber":"jade"}">${quality.length?quality.length+" to review":"healthy"}</span></div><div class="list">${quality.length?quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Derived from your live conversion, collection and response numbers.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion, collection and response times all look healthy.</p>'}</div></div>
-            <div class="card"><div class="chead"><h4>Expansion opportunities</h4><span class="chip slate">${cross.length} org${cross.length===1?"":"s"}</span></div><div class="list">${cross.length?cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Multiple sign-ups from one organization — pitch a corporate/bulk deal.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No organizations with repeat sign-ups yet.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} routed</span></div><div class="list">${cross.length?cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Logged by a colleague for your SBU — follow up and record the outcome.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing routed to you yet. These appear when a colleague logs a field-visit opportunity for your department.</p>'}</div></div>
           </section>`;
       }
 
