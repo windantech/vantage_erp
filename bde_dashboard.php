@@ -49,13 +49,14 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 $bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
 $bde_people = []; $bde_current_listed = false;
 if ($bde_is_admin) {
-    // active accounts only (registered_users.status = 1 — the same flag login checks), grouped by
-    // department. Not tied to staff onboarding_status, so dept-unlinked BDEs still appear.
-    $pq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
-        FROM registered_users ru
-        LEFT JOIN staff s ON ru.staff_id = s.id
+    // Live employees only — same allowlist ceo_dashboard/staff_list.php uses (hides rejected,
+    // inactive and blank/NULL statuses). Joined to the login so we still have the ?as= id.
+    $pq = @mysqli_query($conn, "SELECT ru.id, COALESCE(NULLIF(ru.fullname,''), s.full_name) fullname, COALESCE(d.department_name,'') dept
+        FROM staff s
+        JOIN registered_users ru ON ru.staff_id = s.id AND ru.status = 1
         LEFT JOIN departments d ON s.department_id = d.id
-        WHERE ru.status = 1 AND ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
+        WHERE s.onboarding_status IN ('pending','under_review','approved','active')
+        ORDER BY d.department_name, fullname");
     while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
         $pid = (int) $pr['id'];
         $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
