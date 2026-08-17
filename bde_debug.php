@@ -94,6 +94,10 @@ if ($ru) {
         if (!$any) { echo "  (no register rows)\n"; }
     } else { echo "  (no intakes assigned)\n"; }
 
+    echo "\n-- lead sources: WhatsApp chats assigned to them (wa_conversations) --\n";
+    $r = @mysqli_query($conn, "SELECT COUNT(*) n, MIN(created_at) first, MAX(created_at) last FROM wa_conversations WHERE assigned_user_id = $id2");
+    if ($r && ($x = mysqli_fetch_assoc($r))) { echo "  total: {$x['n']}" . ($x['n'] > 0 ? " (from {$x['first']} to {$x['last']})" : '') . "\n"; }
+
     echo "\n-- enquiry_sources lookup table --\n";
     $r = @mysqli_query($conn, "SELECT id, name FROM enquiry_sources ORDER BY id");
     while ($r && ($x = mysqli_fetch_assoc($r))) { echo "  {$x['id']} = {$x['name']}\n"; }

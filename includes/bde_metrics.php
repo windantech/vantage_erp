@@ -264,13 +264,10 @@ if (!function_exists('bde_fetch_metrics')) {
             $lab = (string) $er['src'];
             $sources[$lab] = ($sources[$lab] ?? 0) + 1;
         }
-        // WhatsApp channel: wa_contacts has no BDE field, so attribute via register_id → intake.assigned_to.
-        if (!empty($intakeIds)) {
-            $waq = @mysqli_query($conn, "SELECT COUNT(*) n FROM wa_contacts wc
-                JOIN register r ON r.id = wc.register_id JOIN intake i ON r.intake_id = i.intake_id
-                WHERE i.assigned_to = $ruId");
-            if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $sources['WhatsApp'] = ($sources['WhatsApp'] ?? 0) + (int) $war['n']; }
-        }
+        // WhatsApp channel: chats assigned to this BDE are their WhatsApp enquiries — count as a source.
+        $waq = @mysqli_query($conn, "SELECT COUNT(*) n FROM wa_conversations
+            WHERE assigned_user_id = $ruId AND created_at BETWEEN '$s' AND '$e 23:59:59'");
+        if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $sources['WhatsApp'] = ($sources['WhatsApp'] ?? 0) + (int) $war['n']; }
 
         // WhatsApp follow-ups: open conversations assigned to this BDE with an unread message
         // (opened vs not = last_message_at newer than last_read_at, or never read).
