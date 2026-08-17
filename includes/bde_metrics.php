@@ -570,16 +570,19 @@ if (!function_exists('bde_targets_progress')) {
             if ($metric === 'revenue') {
                 $revTarget += $target;
                 $product = (string) $t['product'];
-                if ($product !== '') {
-                    // match the course named in the product to the per-course revenue map
+                $pl = strtolower($product);
+                if ($product === '' || $product === 'Corporate' || $product === 'International') {
+                    $actual = $totalKes; // whole-revenue target → all collected revenue
+                } else if (strpos($pl, 'eval') !== false || strpos($pl, 'appraisal') !== false) {
+                    $actual = null; // Digital: not tracked in the CRM
+                } else {
+                    // Virtual course: match the course named in the product to its collected revenue
                     $pname = strtolower(trim(preg_replace('/\s*\([^)]*\)\s*$/', '', $product)));
                     $matchUsd = null;
                     foreach ($courseRevUsd as $cn => $rv) {
                         if ($cn !== '' && ($cn === $pname || strpos($cn, $pname) !== false || strpos($pname, $cn) !== false)) { $matchUsd = ($matchUsd ?? 0) + $rv; }
                     }
                     if ($matchUsd !== null) { $actual = $matchUsd * $rate; }
-                } else {
-                    $actual = $totalKes; // department-level revenue target → total collected
                 }
             }
 

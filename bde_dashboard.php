@@ -321,7 +321,6 @@ if ($bde_is_admin) {
       </header>
       <nav class="tabs" aria-label="Dashboard sections">
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
-        <button class="tab" data-v="targets"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>Targets</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
         <button class="tab" data-v="visits"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Field Visits</button>
         <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
@@ -573,6 +572,7 @@ if ($bde_is_admin) {
             <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
+          ${targetsSection()}
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
@@ -749,29 +749,18 @@ if ($bde_is_admin) {
         if(clr)clr.addEventListener("click",()=>["vf_client","vf_org","vf_loc","vf_val","vf_notes"].forEach(id=>{const e=el(id);if(e)e.value="";}));
       }
 
-      function vTargets(){
+      // Targets shown on the Command Centre (below the portfolio / progress boxes), grouped by product.
+      function targetsSection(){
         const rows=B.targets||[];
-        if(!rows.length){
-          return `<section class="strategy"><div><div class="eyebrow">Monthly targets</div><h2>No targets set for ${esc(B.name)} yet</h2><p>An admin can add them under <b>BDE Targets</b> in the left nav — a department default applies to everyone in the department, or set a specific target for this BDE.</p></div></section>`;
-        }
+        if(!rows.length) return "";
         const fmtV=(v,unit)=>unit==="count"?nf.format(Math.round(v||0)):kMoney(v||0);
-        const T=B.targetTotal||0,A=B.targetActual||0,att=T?A/T:0;
-        const st=att>=1?"green":att>=.7?"amber":"red";
-        let head="";
-        if(T>0){
-          head=`<div class="tsum"><div class="pl">Revenue vs monthly target · <b class="num">${kMoney(A)} / ${kMoney(T)}</b></div>
-            <div class="ttrack" style="margin:9px 0"><div class="tfill" style="width:${clamp(att*100,0,100)}%;background:${scol(st)}"></div></div>
-            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>${pct(att,0)} of 100% target</span><span class="sbadge s${st[0]}"><span class="dot"></span>${st==="green"?"On / above target":st==="amber"?"Above the 70% line":"Below the 70% line"}</span></div></div>`;
-        }
-        // group targets by product (e.g. all "Eval360 · Individual" lines in one card), so a compound
-        // target reads as one grouped box: Individual, Corporate setup, Maintenance, etc.
         const order=[], groups={};
         rows.forEach(r=>{ const k=(r.product&&r.product.trim())?r.product:r.metric_label; if(!groups[k]){groups[k]=[];order.push(k);} groups[k].push(r); });
         const metricLine=r=>{
           const isCount=r.unit==="count";
           const tcls=isCount?"tl-count":"tl-money";
           const cword=r.metric==="active_users"?"Users":r.metric==="paid_staff"?"Staff":(r.metric==="corporate_clients"||/client/i.test(r.metric_label))?"Clients":"Number";
-          const chip=isCount?`<span class="tchip tchip-count"># ${cword}</span>`:`<span class="tchip tchip-money">KES Amount</span>`;
+          const chip=isCount?`<span class="tchip tchip-count"># ${cword}</span>`:"";
           const hasA=r.actual!=null;
           const a=hasA&&r.target?r.actual/r.target:0;
           const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
@@ -780,19 +769,17 @@ if ($bde_is_admin) {
           const thMark=r.threshold_pct!=null?clamp(+r.threshold_pct,0,100):null;
           const prog=hasA
             ?`<div class="tprog"><div class="ttrack"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div>${thMark!=null?`<span class="tmark" style="left:${thMark}%"></span>`:""}</div>
-                <div class="tprog-b"><span>Actual <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
-            :`<div class="tprog-none">Actual not tracked in the CRM yet</div>`;
+                <div class="tprog-b"><span>Achieved <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
+            :`<div class="tprog-none">Achieved figure not tracked in the CRM yet</div>`;
           return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
         };
-        const cards=order.map(k=>{
-          const grp=groups[k];
-          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${grp[0].scope==="user"?"Personal":"Dept"}</span><b>${esc(k)}</b></div>${grp.map(metricLine).join("")}</div>`;
-        }).join("");
-        return `<section><div class="eyebrow" style="margin-bottom:10px">Monthly targets · ${esc(B.name)}</div>${head}<div class="tgrid">${cards}</div></section>`;
+        const cards=order.map(k=>`<div class="tcard"><div class="tcard-h"><b>${esc(k)}</b></div>${groups[k].map(metricLine).join("")}</div>`).join("");
+        return `<div class="section-tag"><h3>Your targets</h3><span>Monthly targets vs achieved — the 100% goal and the qualifying line</span><div class="rule"></div></div>
+          <div class="tgrid">${cards}</div>`;
       }
       function render(){
         const v=state.view;
-        el("workspace").innerHTML=v==="command"?vCommand():v==="targets"?vTargets():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
         if(v==="visits")bindVisits();
       }
