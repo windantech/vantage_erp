@@ -100,7 +100,7 @@ $DIGITAL_SEED = [
 // International & Corporate: the department target is the SAME for every BDE, so we assign it
 // per person (user-scoped) — no dependence on department data. Names matched space-tolerantly and
 // seeded to ALL matching accounts (handles duplicate logins). Edit these lists to add/correct BDEs.
-$INTL_BDES = ['John Maina', 'Kelvin Muniu'];                    // International BDEs — 40 clients/country (80% = 32). Erick Ndiema = BDO (separate)
+$INTL_BDES = ['John Maina', 'Kevin Muniu'];                     // International BDEs — 40 clients/country (80% = 32). Erick Ndiema = BDO (separate)
 $CORP_BDES = ['Josiah Mwangi', 'Regina Mas', 'Hannah Wanjiku']; // Corporate BDEs — Kshs 2,000,000/month. Edwin Otieno = BDO (separate). 'Regina Mas' tolerates Masinde/Massinde
 
 // --- handle writes -----------------------------------------------------------
