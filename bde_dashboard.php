@@ -64,15 +64,38 @@ for ($d = 1; $d <= $bde_dom; $d++) {
 $bde_forecast_kes = $bde_dom > 0 ? $bde_cum * ($bde_dim / $bde_dom) : 0.0;
 
 // Unopened WhatsApp enquiries assigned to this BDE — powers the real "chats awaiting reply" alert + modal.
-$bde_unread_chats = [];
+// Chats ESCALATED to this BDE that are still unread — the ones genuinely needing their reply
+// (not every AI-handled chat). Count is the true total; the list is capped for the modal.
+$bde_unread_chats = []; $bde_unread_count = 0;
 if ($bde_ru_id > 0) {
-    $uq = @mysqli_query($conn, "SELECT COALESCE(NULLIF(wc.profile_name,''), wc.wa_id) nm, wc.wa_id phone, conv.last_message_at lm
+    $waWhere = "assigned_user_id = $bde_ru_id AND status = 'open' AND escalated = 1 AND (last_read_at IS NULL OR last_message_at > last_read_at)";
+    $cq = @mysqli_query($conn, "SELECT COUNT(*) n FROM wa_conversations WHERE $waWhere");
+    if ($cq && ($cr = mysqli_fetch_assoc($cq))) { $bde_unread_count = (int) $cr['n']; }
+    $uq = @mysqli_query($conn, "SELECT conv.id cid, COALESCE(NULLIF(wc.profile_name,''), wc.wa_id) nm, wc.wa_id phone, conv.last_message_at lm
         FROM wa_conversations conv LEFT JOIN wa_contacts wc ON wc.id = conv.contact_id
-        WHERE conv.assigned_user_id = $bde_ru_id AND conv.status = 'open'
+        WHERE conv.assigned_user_id = $bde_ru_id AND conv.status = 'open' AND conv.escalated = 1
         AND (conv.last_read_at IS NULL OR conv.last_message_at > conv.last_read_at)
         ORDER BY conv.last_message_at DESC LIMIT 40");
     while ($uq && ($ur = mysqli_fetch_assoc($uq))) {
-        $bde_unread_chats[] = ['name' => (string) $ur['nm'], 'phone' => (string) $ur['phone'], 'when' => !empty($ur['lm']) ? date('M j, H:i', strtotime((string) $ur['lm'])) : ''];
+        $bde_unread_chats[] = ['cid' => (int) $ur['cid'], 'name' => (string) $ur['nm'], 'phone' => (string) $ur['phone'], 'when' => !empty($ur['lm']) ? date('M j, H:i', strtotime((string) $ur['lm'])) : ''];
+    }
+}
+
+// Payment promises from chats: clients whose inbound WhatsApp message mentioned paying.
+$bde_promises = [];
+if ($bde_ru_id > 0) {
+    $pq = @mysqli_query($conn, "SELECT cv.id cid, COALESCE(NULLIF(wc.profile_name,''), wc.wa_id) nm, wc.wa_id phone, MAX(m.wa_timestamp) lastp
+        FROM wa_messages m
+        JOIN wa_contacts wc ON wc.id = m.contact_id
+        JOIN wa_conversations cv ON cv.contact_id = wc.id AND cv.assigned_user_id = $bde_ru_id
+        WHERE m.direction = 'inbound' AND (
+            m.body LIKE '%will pay%' OR m.body LIKE '%i will send%' OR m.body LIKE '%send the money%'
+            OR m.body LIKE '%pay tomorrow%' OR m.body LIKE '%pay today%' OR m.body LIKE '%make the payment%'
+            OR m.body LIKE '%i''ll pay%' OR m.body LIKE '%ill pay%' OR m.body LIKE '%mpesa%' OR m.body LIKE '%paying today%')
+        GROUP BY wc.id ORDER BY lastp DESC LIMIT 40");
+    while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
+        $bde_promises[] = ['cid' => (int) $pr['cid'], 'name' => (string) $pr['nm'], 'phone' => (string) $pr['phone'],
+            'when' => !empty($pr['lastp']) ? ('said ' . date('M j', is_numeric($pr['lastp']) ? (int) $pr['lastp'] : strtotime((string) $pr['lastp']))) : ''];
     }
 }
 
@@ -510,7 +533,9 @@ if ($bde_is_admin) {
       B.dayToday = <?php echo (int) $bde_dom; ?>;
       B.forecast = <?php echo (float) $bde_forecast_kes; ?>;
       B.unreadChats = <?php echo json_encode($bde_unread_chats, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.unreadCount = <?php echo (int) $bde_unread_count; ?>;
       B.quietLeads = <?php echo json_encode($bde_quiet_leads, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -694,9 +719,10 @@ if ($bde_is_admin) {
       function vPipeline(){
         const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
         const dept=(B.dept||"").toLowerCase();const isCorp=/corporate/.test(dept);
-        const nChat=(B.unreadChats||[]).length, nQuiet=(B.quietLeads||[]).length;
+        const nChat=(B.unreadCount||0), nQuiet=(B.quietLeads||[]).length, nProm=(B.promises||[]).length;
         const stale=[];
-        if(nChat>0) stale.push({t:`${nChat} WhatsApp chat${nChat>1?"s":""} awaiting your reply`,p:"Unopened enquiries — open and respond today.",c:"red",act:"chats"});
+        if(nChat>0) stale.push({t:`${nChat} WhatsApp chat${nChat>1?"s":""} escalated to you`,p:"Chats routed to you for a human reply — respond today.",c:"red",act:"chats"});
+        if(nProm>0) stale.push({t:`${nProm} client${nProm>1?"s":""} promised to pay in chat`,p:"They said they'd pay on WhatsApp — confirm and close.",c:"amber",act:"promises"});
         if(nQuiet>0) stale.push({t:`${nQuiet} unpaid lead${nQuiet>1?"s":""} gone quiet`,p:"Registered, not yet paid, no recent contact — follow up.",c:"amber",act:"quiet"});
         if(isCorp) stale.push({t:`Proposals awaiting a confirmed review date`,p:"Corporate proposals need a scheduled review.",c:"amber",act:""});
         const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
@@ -887,13 +913,15 @@ if ($bde_is_admin) {
         return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
       }
       function openAlertModal(act){
-        let title="", list=[], foot="";
-        if(act==="chats"){title="Chats awaiting your reply";list=(B.unreadChats||[]).map(c=>({a:c.name||c.phone,b:c.phone||"",w:c.when||""}));foot=`<a class="abtn hot" href="wa_inbox.php" style="text-decoration:none">Open WhatsApp inbox →</a>`;}
+        let title="", list=[];
+        if(act==="chats"){title="Chats escalated to you";list=(B.unreadChats||[]).map(c=>({a:c.name||c.phone,b:c.phone||"",w:c.when||"",cid:c.cid}));}
+        else if(act==="promises"){title="Clients who promised to pay";list=(B.promises||[]).map(c=>({a:c.name||c.phone,b:c.phone||"",w:c.when||"",cid:c.cid}));}
         else if(act==="quiet"){title="Unpaid leads gone quiet";list=(B.quietLeads||[]).map(c=>({a:c.name,b:[c.phone,c.prog].filter(Boolean).join(" · "),w:c.when||""}));}
         else return;
-        const rows=list.length?list.map(r=>`<div class="amrow"><div><b>${esc(r.a)}</b>${r.b?`<small>${esc(r.b)}</small>`:""}</div><span class="amwhen">${esc(r.w)}</span></div>`).join(""):'<p style="color:#94a3b8;padding:14px">Nothing here right now.</p>';
+        const rows=list.length?list.map(r=>{const inner=`<div><b>${esc(r.a)}</b>${r.b?`<small>${esc(r.b)}</small>`:""}</div><span class="amwhen">${esc(r.w)}${r.cid?' ›':''}</span>`;
+          return r.cid?`<a class="amrow" href="wa_thread.php?id=${r.cid}" style="text-decoration:none;color:inherit">${inner}</a>`:`<div class="amrow">${inner}</div>`;}).join(""):'<p style="color:#94a3b8;padding:14px">Nothing here right now.</p>';
         const ov=document.createElement("div");ov.className="amodal-ov";
-        ov.innerHTML=`<div class="amodal"><div class="amodal-h"><h4>${esc(title)} (${list.length})</h4><button class="amodal-x" aria-label="Close">✕</button></div><div class="amodal-b">${rows}</div>${foot?`<div class="amodal-f">${foot}</div>`:""}</div>`;
+        ov.innerHTML=`<div class="amodal"><div class="amodal-h"><h4>${esc(title)} (${list.length})</h4><button class="amodal-x" aria-label="Close">✕</button></div><div class="amodal-b">${rows}</div></div>`;
         ov.addEventListener("click",e=>{if(e.target===ov||e.target.classList.contains("amodal-x"))ov.remove();});
         document.addEventListener("keydown",function esc2(e){if(e.key==="Escape"){ov.remove();document.removeEventListener("keydown",esc2);}});
         document.body.appendChild(ov);
