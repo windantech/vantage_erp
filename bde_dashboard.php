@@ -274,6 +274,9 @@ if ($bde_is_admin) {
     .bde-app .tmark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
     .bde-app .tprog-b{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink);margin-top:6px}
     .bde-app .tprog-none{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+    .bde-app .tgroup{padding-top:12px}
+    .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:12px}
+    .bde-app .tgroup-h{font-weight:800;font-size:13.5px;color:var(--ink);margin-bottom:2px}
     .bde-app .tmetric{padding-top:10px}
     .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:10px}
     .bde-app .tmetric-h{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -569,10 +572,9 @@ if ($bde_is_admin) {
         return `${strategyStrip()}
           ${realOutcomes()}
           <section class="hero">
-            <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
+            ${targetsCard()}
             ${progressCard()}
           </section>
-          ${targetsSection()}
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
@@ -749,10 +751,12 @@ if ($bde_is_admin) {
         if(clr)clr.addEventListener("click",()=>["vf_client","vf_org","vf_loc","vf_val","vf_notes"].forEach(id=>{const e=el(id);if(e)e.value="";}));
       }
 
-      // Targets shown on the Command Centre (below the portfolio / progress boxes), grouped by product.
-      function targetsSection(){
+      // "Your targets" card (sits beside Progress to target). Grouped by product, no nested cards.
+      function targetsCard(){
         const rows=B.targets||[];
-        if(!rows.length) return "";
+        if(!rows.length){
+          return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">None set</span></div><p style="color:var(--muted);font-size:12.5px;margin:0">No targets set yet — an admin can add them under <b>BDE Targets</b>.</p></div>`;
+        }
         const fmtV=(v,unit)=>unit==="count"?nf.format(Math.round(v||0)):kMoney(v||0);
         const order=[], groups={};
         rows.forEach(r=>{ const k=(r.product&&r.product.trim())?r.product:r.metric_label; if(!groups[k]){groups[k]=[];order.push(k);} groups[k].push(r); });
@@ -773,9 +777,9 @@ if ($bde_is_admin) {
             :`<div class="tprog-none">Achieved figure not tracked in the CRM yet</div>`;
           return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
         };
-        const cards=order.map(k=>`<div class="tcard"><div class="tcard-h"><b>${esc(k)}</b></div>${groups[k].map(metricLine).join("")}</div>`).join("");
-        return `<div class="section-tag"><h3>Your targets</h3><span>Monthly targets vs achieved — the 100% goal and the qualifying line</span><div class="rule"></div></div>
-          <div class="tgrid">${cards}</div>`;
+        const single=order.length===1;
+        const body=order.map(k=>`<div class="tgroup">${single?"":`<div class="tgroup-h">${esc(k)}</div>`}${groups[k].map(metricLine).join("")}</div>`).join("");
+        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
       }
       function render(){
         const v=state.view;
