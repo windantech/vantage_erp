@@ -62,6 +62,45 @@ for ($d = 1; $d <= $bde_dom; $d++) {
     $bde_cum_dates[] = date('M j', mktime(0, 0, 0, $pMonth, $d, $pYear));
 }
 $bde_forecast_kes = $bde_dom > 0 ? $bde_cum * ($bde_dim / $bde_dom) : 0.0;
+
+// Unopened WhatsApp enquiries assigned to this BDE — powers the real "chats awaiting reply" alert + modal.
+$bde_unread_chats = [];
+if ($bde_ru_id > 0) {
+    $uq = @mysqli_query($conn, "SELECT COALESCE(NULLIF(wc.profile_name,''), wc.wa_id) nm, wc.wa_id phone, conv.last_message_at lm
+        FROM wa_conversations conv LEFT JOIN wa_contacts wc ON wc.id = conv.contact_id
+        WHERE conv.assigned_user_id = $bde_ru_id AND conv.status = 'open'
+        AND (conv.last_read_at IS NULL OR conv.last_message_at > conv.last_read_at)
+        ORDER BY conv.last_message_at DESC LIMIT 40");
+    while ($uq && ($ur = mysqli_fetch_assoc($uq))) {
+        $bde_unread_chats[] = ['name' => (string) $ur['nm'], 'phone' => (string) $ur['phone'], 'when' => !empty($ur['lm']) ? date('M j, H:i', strtotime((string) $ur['lm'])) : ''];
+    }
+}
+
+// Unpaid, gone-quiet leads (registered, no cleared payment, no recent contact) — the follow-up list.
+$bde_quiet_leads = [];
+if ($bde_ru_id > 0) {
+    $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $bde_ru_id");
+    $ii = []; while ($iq && ($x = mysqli_fetch_assoc($iq))) { $ii[] = "'" . mysqli_real_escape_string($conn, (string) $x['intake_id']) . "'"; }
+    if (!empty($ii)) {
+        $in = implode(',', $ii);
+        $qq = @mysqli_query($conn, "SELECT r.firstname, r.lastname, r.phone_number, r.program, r.last_contact_date
+            FROM register r
+            WHERE r.intake_id IN ($in)
+              AND r.entry_id NOT IN (SELECT app_id FROM dpo_payment WHERE status = 2)
+              AND (r.last_contact_date IS NULL OR r.last_contact_date = '0000-00-00' OR r.last_contact_date < (CURDATE() - INTERVAL 7 DAY))
+            ORDER BY r.datee DESC LIMIT 40");
+        while ($qq && ($qr = mysqli_fetch_assoc($qq))) {
+            $nm = trim(((string) ($qr['firstname'] ?? '')) . ' ' . ((string) ($qr['lastname'] ?? '')));
+            $lc = (string) ($qr['last_contact_date'] ?? '');
+            $bde_quiet_leads[] = [
+                'name' => $nm !== '' ? $nm : '(no name)',
+                'phone' => (string) ($qr['phone_number'] ?? ''),
+                'prog' => (string) ($qr['program'] ?? ''),
+                'when' => ($lc !== '' && $lc !== '0000-00-00') ? ('last contact ' . date('M j', strtotime($lc))) : 'never contacted',
+            ];
+        }
+    }
+}
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
@@ -122,7 +161,7 @@ if ($bde_is_admin) {
       background:var(--ground);color:var(--ink);font-size:14px;
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       line-height:1.45;-webkit-font-smoothing:antialiased;
-      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;
+      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;min-height:100vh;
     }
     .bde-app.theme-dark{
       --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
@@ -299,6 +338,18 @@ if ($bde_is_admin) {
     .bde-app .tmark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
     .bde-app .tprog-b{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink);margin-top:6px}
     .bde-app .tprog-none{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+    .amodal-ov{position:fixed;inset:0;background:rgba(16,24,40,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px}
+    .amodal{background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(16,24,40,.3);overflow:hidden;font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;color:#0e1726}
+    .amodal-h{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #eef2f7}
+    .amodal-h h4{margin:0;font-size:16px;font-weight:800}
+    .amodal-x{border:0;background:#f1f5f9;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;color:#475569}
+    .amodal-b{overflow-y:auto;padding:8px 12px}
+    .amrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 10px;border-bottom:1px solid #f1f5f9}
+    .amrow:last-child{border-bottom:0}
+    .amrow b{font-size:13.5px;color:#0e1726;display:block}
+    .amrow small{font-size:11.5px;color:#64748b}
+    .amwhen{font-size:11px;color:#94a3b8;white-space:nowrap}
+    .amodal-f{padding:12px 20px;border-top:1px solid #eef2f7;display:flex;justify-content:flex-end;gap:8px}
     .bde-app .tgroup{padding-top:12px}
     .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:12px}
     .bde-app .tgroup-h{font-weight:800;font-size:13.5px;color:var(--ink);margin-bottom:2px}
@@ -356,7 +407,6 @@ if ($bde_is_admin) {
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
       <main id="workspace"></main>
-      <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
     </div>
 
     <script>
@@ -459,6 +509,8 @@ if ($bde_is_admin) {
       B.daysInMonth = <?php echo (int) $bde_dim; ?>;
       B.dayToday = <?php echo (int) $bde_dom; ?>;
       B.forecast = <?php echo (float) $bde_forecast_kes; ?>;
+      B.unreadChats = <?php echo json_encode($bde_unread_chats, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.quietLeads = <?php echo json_encode($bde_quiet_leads, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -641,7 +693,12 @@ if ($bde_is_admin) {
 
       function vPipeline(){
         const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
-        const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
+        const dept=(B.dept||"").toLowerCase();const isCorp=/corporate/.test(dept);
+        const nChat=(B.unreadChats||[]).length, nQuiet=(B.quietLeads||[]).length;
+        const stale=[];
+        if(nChat>0) stale.push({t:`${nChat} WhatsApp chat${nChat>1?"s":""} awaiting your reply`,p:"Unopened enquiries — open and respond today.",c:"red",act:"chats"});
+        if(nQuiet>0) stale.push({t:`${nQuiet} unpaid lead${nQuiet>1?"s":""} gone quiet`,p:"Registered, not yet paid, no recent contact — follow up.",c:"amber",act:"quiet"});
+        if(isCorp) stale.push({t:`Proposals awaiting a confirmed review date`,p:"Corporate proposals need a scheduled review.",c:"amber",act:""});
         const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
         const cross=["Training client → Eval360 / 360 opportunity","Corporate demo → multi-department rollout","Academic employer → staff appraisal cohort","Alumnus → institutional sponsorship"];
         const showPriorities=/digital/i.test(B.dept||"");
@@ -653,7 +710,7 @@ if ($bde_is_admin) {
           ${showPriorities ? `<div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>` : ""}
           <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${stale.length?"coral":"jade"}">${stale.length?stale.length+" flagged":"all clear"}</span></div><div class="list">${stale.length?stale.map(a=>`<div class="arow"><span class="pd ${a.c}"></span><div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div>${a.act?`<span class="abtn hot" data-alert="${a.act}" style="cursor:pointer">Open</span>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now — no unread chats or quiet unpaid leads.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4><span class="chip amber">${quality.length} to review</span></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="abtn warn">Review</span></div>`).join("")}</div></div>
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} open</span></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="abtn info">Route</span></div>`).join("")}</div></div>
           </section>`;
@@ -829,6 +886,18 @@ if ($bde_is_admin) {
         const body=order.map(k=>`<div class="tgroup"><div class="tgroup-h">${esc(k)}</div>${groups[k].map(metricLine).join("")}</div>`).join("");
         return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
       }
+      function openAlertModal(act){
+        let title="", list=[], foot="";
+        if(act==="chats"){title="Chats awaiting your reply";list=(B.unreadChats||[]).map(c=>({a:c.name||c.phone,b:c.phone||"",w:c.when||""}));foot=`<a class="abtn hot" href="wa_inbox.php" style="text-decoration:none">Open WhatsApp inbox →</a>`;}
+        else if(act==="quiet"){title="Unpaid leads gone quiet";list=(B.quietLeads||[]).map(c=>({a:c.name,b:[c.phone,c.prog].filter(Boolean).join(" · "),w:c.when||""}));}
+        else return;
+        const rows=list.length?list.map(r=>`<div class="amrow"><div><b>${esc(r.a)}</b>${r.b?`<small>${esc(r.b)}</small>`:""}</div><span class="amwhen">${esc(r.w)}</span></div>`).join(""):'<p style="color:#94a3b8;padding:14px">Nothing here right now.</p>';
+        const ov=document.createElement("div");ov.className="amodal-ov";
+        ov.innerHTML=`<div class="amodal"><div class="amodal-h"><h4>${esc(title)} (${list.length})</h4><button class="amodal-x" aria-label="Close">✕</button></div><div class="amodal-b">${rows}</div>${foot?`<div class="amodal-f">${foot}</div>`:""}</div>`;
+        ov.addEventListener("click",e=>{if(e.target===ov||e.target.classList.contains("amodal-x"))ov.remove();});
+        document.addEventListener("keydown",function esc2(e){if(e.key==="Escape"){ov.remove();document.removeEventListener("keydown",esc2);}});
+        document.body.appendChild(ov);
+      }
       function render(){
         const v=state.view;
         el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
@@ -869,6 +938,8 @@ if ($bde_is_admin) {
       // Admin "View as" → reload previewing that BDE (?as=<id>), keeping the date range.
       var va=el("viewAs");
       if(va) va.addEventListener("change",function(){var p=new URLSearchParams(location.search);p.set("as",this.value);location.search=p.toString();});
+      // Action-alert "Open" buttons → open the list modal (delegated, survives re-render).
+      root.addEventListener("click",function(e){var b=e.target.closest("[data-alert]");if(b){e.preventDefault();openAlertModal(b.getAttribute("data-alert"));}});
       root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
