@@ -73,5 +73,31 @@ if ($ru) {
     while ($r && ($m = mysqli_fetch_assoc($r))) { echo "  #{$m['id']} \"{$m['fullname']}\" dept={$m['department_id']} status={$m['status']}\n"; }
 }
 
+if ($ru) {
+    $id2 = (int) $ru['id'];
+    echo "\n-- lead sources: their ENQUIRIES (source_id → enquiry_sources) --\n";
+    $r = @mysqli_query($conn, "SELECT COALESCE(es.name, CONCAT('id=', e.source_id)) src, COUNT(*) n
+        FROM enquiries e LEFT JOIN enquiry_sources es ON es.id = e.source_id
+        WHERE e.assigned_to = $id2 GROUP BY e.source_id ORDER BY n DESC");
+    $any = false; while ($r && ($x = mysqli_fetch_assoc($r))) { $any = true; echo "  {$x['src']}: {$x['n']}\n"; }
+    if (!$any) { echo "  (no enquiries assigned to them)\n"; }
+
+    echo "\n-- lead sources: their REGISTER rows (register.source) --\n";
+    $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $id2");
+    $ii = []; while ($iq && ($x = mysqli_fetch_assoc($iq))) { $ii[] = "'" . mysqli_real_escape_string($conn, (string) $x['intake_id']) . "'"; }
+    if (!empty($ii)) {
+        $in = implode(',', $ii);
+        $r = @mysqli_query($conn, "SELECT COALESCE(es.name, CONCAT('code=', r.source)) src, COUNT(*) n
+            FROM register r LEFT JOIN enquiry_sources es ON es.id = r.source
+            WHERE r.intake_id IN ($in) GROUP BY r.source ORDER BY n DESC");
+        $any = false; while ($r && ($x = mysqli_fetch_assoc($r))) { $any = true; echo "  {$x['src']}: {$x['n']}\n"; }
+        if (!$any) { echo "  (no register rows)\n"; }
+    } else { echo "  (no intakes assigned)\n"; }
+
+    echo "\n-- enquiry_sources lookup table --\n";
+    $r = @mysqli_query($conn, "SELECT id, name FROM enquiry_sources ORDER BY id");
+    while ($r && ($x = mysqli_fetch_assoc($r))) { echo "  {$x['id']} = {$x['name']}\n"; }
+}
+
 echo '</pre>';
 require_once 'footer.php';
