@@ -244,6 +244,8 @@ if ($bde_is_admin) {
     .bde-app .pr{color:var(--coral);background:var(--coral-soft);border-color:color-mix(in srgb,var(--coral) 32%,transparent)} .bde-app .pr .dot{background:var(--coral)}
 
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .bde-app .kpis4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    @media(max-width:640px){.bde-app .kpis4{grid-template-columns:1fr 1fr}}
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;cursor:default}
     .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--acc,var(--brand));border-radius:var(--radius-sm) var(--radius-sm) 0 0}
     /* ---- scoreboard: clean white cards (colour lives in the icon + number) ---- */
@@ -846,7 +848,7 @@ if ($bde_is_admin) {
           ["Registered",nf.format(s.registered),"auto-confirmed from payments","var(--jade)"],
           ["Conversion rate",pct(s.conv,0),"visited → registered","var(--brand)"]
         ];
-        const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        const kpiRow=`<div class="kpis4">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
         const rows=(B.visits||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<tr>
               <td class="num">${esc(fmtDate(x.date))}</td>
               <td><b>${esc(x.client)}</b><span style="display:block;font-size:11px;color:var(--muted)">${esc(x.org)}</span></td>
