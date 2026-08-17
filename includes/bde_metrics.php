@@ -419,18 +419,38 @@ if (!function_exists('bde_targets_progress')) {
             foreach (bde_digital_roster() as $dn) { if (stripos($meName, $dn) !== false) { $deptName2 = 'Digital Solutions'; break; } }
         }
 
+        // Digital BDEs each own ONE product (Austin→Eval360, Ruth→360 Appraisal), so a Digital BDE
+        // should see only their product's department targets — not the whole department's.
+        $digitalProduct = '';
+        if (stripos($deptName2, 'digital') !== false && $meName !== '') {
+            if (stripos($meName, 'austin') !== false) { $digitalProduct = 'eval'; }
+            elseif (stripos($meName, 'ruth') !== false) { $digitalProduct = 'appraisal'; }
+        }
+
         $y = (int) date('Y', strtotime($to));
         $m = (int) date('n', strtotime($to));
 
         $conds = ["(scope_type='user' AND scope_ref='$ruId')"];
         if ($deptId > 0) { $conds[] = "(scope_type='department' AND scope_ref='$deptId')"; }
-        if ($deptName2 !== '') { $dnE = mysqli_real_escape_string($conn, $deptName2); $conds[] = "(scope_type='department' AND scope_label LIKE '%$dnE%')"; }
+        if ($deptName2 !== '') {
+            $dnE = mysqli_real_escape_string($conn, $deptName2);
+            // match either direction so "International" ↔ "International Training Dept" etc. align
+            $conds[] = "(scope_type='department' AND (scope_label LIKE '%$dnE%' OR '$dnE' LIKE CONCAT('%', scope_label, '%')))";
+        }
         $where = implode(' OR ', $conds);
         $tq = @mysqli_query($conn, "SELECT * FROM bde_targets WHERE active=1 AND ($where)
             AND (period_year IS NULL OR (period_year=$y AND period_month=$m))
             ORDER BY scope_type DESC, product, metric");
         $targets = [];
         while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $targets[] = $tr; }
+        // keep only this Digital BDE's product on department-scoped rows
+        if ($digitalProduct !== '') {
+            $targets = array_values(array_filter($targets, function ($t) use ($digitalProduct) {
+                if ($t['scope_type'] === 'user') { return true; }
+                $p = strtolower((string) $t['product']);
+                return $p === '' || strpos($p, $digitalProduct) !== false;
+            }));
+        }
         if (empty($targets)) { return $out; }
 
         // --- actuals: collected revenue (USD) over [from,to], total + per course name ---

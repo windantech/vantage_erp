@@ -47,21 +47,33 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 
 // admin-only "View as" roster (so any BDE can be previewed by name without typing ?as=<id>)
 $bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
-$bde_people = []; $bde_current_listed = false;
+$bde_people = []; $bde_current_listed = false; $seenP = [];
 if ($bde_is_admin) {
-    // Live employees only — same allowlist ceo_dashboard/staff_list.php uses (hides rejected,
-    // inactive and blank/NULL statuses). Joined to the login so we still have the ?as= id.
+    // Live employees (same allowlist as ceo_dashboard/staff_list.php — hides rejected/inactive/blank),
+    // mapped to their login by email OR staff_id (staff_id is sparsely populated). Dedupe by login id.
     $pq = @mysqli_query($conn, "SELECT ru.id, COALESCE(NULLIF(ru.fullname,''), s.full_name) fullname, COALESCE(d.department_name,'') dept
         FROM staff s
-        JOIN registered_users ru ON ru.staff_id = s.id AND ru.status = 1
+        JOIN registered_users ru ON (ru.email = s.email OR ru.staff_id = s.id) AND ru.status = 1
         LEFT JOIN departments d ON s.department_id = d.id
         WHERE s.onboarding_status IN ('pending','under_review','approved','active')
         ORDER BY d.department_name, fullname");
     while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
-        $pid = (int) $pr['id'];
+        $pid = (int) $pr['id']; if (isset($seenP[$pid])) { continue; } $seenP[$pid] = true;
         $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
-        if ($pid === $bde_ru_id) { $bde_current_listed = true; }
     }
+    // Fallback so the picker is never empty: if the staff↔login link is too sparse, list active accounts.
+    if (count($bde_people) < 5) {
+        $bde_people = []; $seenP = [];
+        $pq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
+            FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id
+            LEFT JOIN departments d ON s.department_id = d.id
+            WHERE ru.status = 1 AND ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
+        while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
+            $pid = (int) $pr['id']; if (isset($seenP[$pid])) { continue; } $seenP[$pid] = true;
+            $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
+        }
+    }
+    foreach ($bde_people as $p) { if ($p['id'] === $bde_ru_id) { $bde_current_listed = true; break; } }
 }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
@@ -249,7 +261,18 @@ if ($bde_is_admin) {
     .bde-app .tbig{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
     .bde-app .tbig span{font-size:12px;font-weight:700;color:var(--muted)}
     .bde-app .tmeta{font-size:12px;color:var(--ink);margin-top:6px}
-    .bde-app .tnote{font-size:11.5px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+    .bde-app .tnote{font-size:11.5px;color:var(--muted);margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
+    .bde-app .tlevels{display:flex;gap:10px;margin:12px 0 10px}
+    .bde-app .tlevel{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+    .bde-app .tlevel .tl-cap{display:block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
+    .bde-app .tlevel b{font-size:16.5px;font-weight:800;color:var(--ink);letter-spacing:-.01em;line-height:1.1}
+    .bde-app .tl-full{border-left:3px solid var(--brand)}
+    .bde-app .tl-qual{border-left:3px solid var(--amber)}
+    .bde-app .tprog{margin-top:2px}
+    .bde-app .ttrack{position:relative}
+    .bde-app .tmark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
+    .bde-app .tprog-b{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink);margin-top:6px}
+    .bde-app .tprog-none{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
     </style>
 
     <div class="bde-app" id="bdeApp">
@@ -733,12 +756,14 @@ if ($bde_is_admin) {
           const a=hasA&&r.target?r.actual/r.target:0;
           const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
           const label=(r.product?esc(r.product)+" · ":"")+esc(r.metric_label);
-          const th=r.threshold_pct!=null?`<div class="tmeta" style="color:var(--muted)">${(+r.threshold_pct)}% line → <b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
-          const actual=hasA
-            ?`<div class="tmeta">Actual <b>${fmtV(r.actual,r.unit)}</b> · ${pct(a,0)}</div><div class="ttrack" style="margin-top:6px"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div></div>`
-            :`<div class="tmeta" style="color:var(--muted)">Actual not tracked in the CRM yet</div>`;
-          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${r.scope==="user"?"Personal":"Dept"}</span><b>${label}</b></div>
-            <div class="tbig">${fmtV(r.target,r.unit)}<span> · 100%</span></div>${th}${actual}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+          const t70=r.threshold_pct!=null?`<div class="tlevel tl-qual"><span class="tl-cap">${(+r.threshold_pct)}% qualifying</span><b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
+          const levels=`<div class="tlevels"><div class="tlevel tl-full"><span class="tl-cap">100% target</span><b>${fmtV(r.target,r.unit)}</b></div>${t70}</div>`;
+          const thMark=r.threshold_pct!=null?clamp(+r.threshold_pct,0,100):null;
+          const prog=hasA
+            ?`<div class="tprog"><div class="ttrack"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div>${thMark!=null?`<span class="tmark" style="left:${thMark}%"></span>`:""}</div>
+                <div class="tprog-b"><span>Actual <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
+            :`<div class="tprog-none">Actual not tracked in the CRM yet</div>`;
+          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${r.scope==="user"?"Personal":"Dept"}</span><b>${label}</b></div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
         }).join("");
         return `<section><div class="eyebrow" style="margin-bottom:10px">Monthly targets · ${esc(B.name)}</div>${head}<div class="tgrid">${cards}</div></section>`;
       }
