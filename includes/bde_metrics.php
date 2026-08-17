@@ -89,6 +89,42 @@ if (!function_exists('bde_mandate')) {
     }
 }
 
+if (!function_exists('bde_daily_revenue')) {
+    /**
+     * Cleared revenue per calendar day (KES) for a BDE over [from,to] — registrations + events.
+     * Returns ['Y-m-d' => kes]. Used to draw the real month-to-date revenue trajectory.
+     */
+    function bde_daily_revenue($conn, $ruId, $from, $to)
+    {
+        $ruId = (int) $ruId; $out = [];
+        if ($ruId <= 0) { return $out; }
+        $rate = function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0;
+        $s = mysqli_real_escape_string($conn, $from);
+        $e = mysqli_real_escape_string($conn, $to);
+        $intakeIds = [];
+        $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
+        while ($iq && ($ir = mysqli_fetch_assoc($iq))) { $intakeIds[(string) $ir['intake_id']] = true; }
+        if (!empty($intakeIds)) {
+            $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, array_keys($intakeIds)));
+            $q = @mysqli_query($conn, "SELECT DATE(dp.datee) d, SUM(dp.TransactionAmount) amt
+                FROM dpo_payment dp JOIN register r ON r.entry_id = dp.app_id
+                WHERE dp.status = 2 AND r.intake_id IN ($in) AND dp.datee BETWEEN '$s' AND '$e 23:59:59'
+                GROUP BY DATE(dp.datee)");
+            while ($q && ($r = mysqli_fetch_assoc($q))) { $out[(string) $r['d']] = ($out[(string) $r['d']] ?? 0) + (float) $r['amt'] * $rate; }
+        }
+        $evIds = [];
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
+        if (!empty($evIds)) {
+            $ein = implode(',', $evIds);
+            $q = @mysqli_query($conn, "SELECT DATE(date_sent) d, SUM(CASE WHEN status=2 THEN amount ELSE 0 END) amt
+                FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY DATE(date_sent)");
+            while ($q && ($r = mysqli_fetch_assoc($q))) { $out[(string) $r['d']] = ($out[(string) $r['d']] ?? 0) + (float) $r['amt'] * $rate; }
+        }
+        return $out;
+    }
+}
+
 if (!function_exists('bde_fetch_metrics')) {
     /**
      * @param int    $ruId        registered_users.id (the logged-in BDE)

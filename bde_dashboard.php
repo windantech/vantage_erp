@@ -45,6 +45,19 @@ $mToday  = min(strtotime($bde_to), $mEnd);
 $bde_wk_total   = (int) date('t', $paceRef);              // days in the month
 $bde_wk_elapsed = min($bde_wk_total, (int) date('j', $mToday)); // day-of-month reached
 $bde_pace_label = date('F Y', $paceRef);
+
+// Month-to-date daily cleared-revenue trajectory + linear forecast, for the pace chart.
+$bde_daily = ($bde_ru_id > 0 && function_exists('bde_daily_revenue'))
+    ? bde_daily_revenue($conn, $bde_ru_id, date('Y-m-01', $paceRef), $bde_to) : [];
+$bde_dim = (int) date('t', $paceRef);
+$bde_dom = max(1, min($bde_dim, (int) date('j', $mToday)));
+$bde_cum_series = []; $bde_cum = 0.0;
+for ($d = 1; $d <= $bde_dom; $d++) {
+    $dt = date('Y-m-', $paceRef) . str_pad((string) $d, 2, '0', STR_PAD_LEFT);
+    $bde_cum += (float) ($bde_daily[$dt] ?? 0);
+    $bde_cum_series[] = round($bde_cum);
+}
+$bde_forecast_kes = $bde_dom > 0 ? $bde_cum * ($bde_dim / $bde_dom) : 0.0;
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
@@ -435,6 +448,11 @@ if ($bde_is_admin) {
       B.pipelineKes = <?php echo (float) (max(0.0, ((float) $bde_metrics['expected_usd'] - (float) $bde_metrics['revenue_usd'])) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
       // real commission from the engine (commission_records): eligible (KES) + paid to date (KES)
       B.commissionPaidKes = <?php echo (float) (((float) ($bde_metrics['commission_paid_usd'] ?? 0)) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
+      // real month-to-date daily cumulative revenue (KES) + linear month-end forecast
+      B.dailyCum = <?php echo json_encode($bde_cum_series, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.daysInMonth = <?php echo (int) $bde_dim; ?>;
+      B.dayToday = <?php echo (int) $bde_dom; ?>;
+      B.forecast = <?php echo (float) $bde_forecast_kes; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -523,19 +541,29 @@ if ($bde_is_admin) {
       }
 
       function trendSVG(){
-        const target=B.target,actual=B.actual,forecast=B.forecast;const p=period();const frac=p.elapsed/p.working;const N=9;
-        const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);pts.push(x<=frac?actual*(x/Math.max(.01,frac)):actual+(forecast-actual)*((x-frac)/Math.max(.01,1-frac)));}
-        const max=Math.max(target,forecast,...pts)*1.1;const w=560,h=200,pd=30;
-        const P=pts.map((v,i)=>[pd+i*(w-2*pd)/(N-1),h-pd-v/max*(h-2*pd)]);
-        const line=P.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
-        const area=`M${P[0][0]},${h-pd} `+P.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${P[N-1][0]},${h-pd} Z`;
-        const ty=h-pd-target/max*(h-2*pd);const tx=pd+frac*(w-2*pd);
-        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
+        const series=(B.dailyCum&&B.dailyCum.length)?B.dailyCum:[0];
+        const dim=Math.max(2,B.daysInMonth||30);
+        const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
+        const target=B.target||0, forecast=B.forecast||0;
+        const cur=series[series.length-1]||0;
+        const w=560,h=200,pd=34;
+        const max=Math.max(target,forecast,cur,...series,1)*1.12;
+        const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);      // day 1..dim → x
+        const Y=v=>h-pd-(v/max)*(h-2*pd);
+        const A=series.map((v,i)=>[X(i+1),Y(v)]);       // actual, day 1..dayT
+        const aLine=A.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
+        const aArea=`M${A[0][0].toFixed(1)},${(h-pd).toFixed(1)} `+A.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${A[A.length-1][0].toFixed(1)},${(h-pd).toFixed(1)} Z`;
+        const proj=`M${X(dayT).toFixed(1)},${Y(cur).toFixed(1)} L${X(dim).toFixed(1)},${Y(forecast).toFixed(1)}`;
+        const ty=Y(target),tx=X(dayT);
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Month-to-date revenue vs target and forecast">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
           <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
-          <path class="area" d="${area}"/><path class="line" d="${line}"/>${P.map(q=>`<circle class="dot" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5"/>`).join("")}
-          <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
+          <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
+          <path d="${proj}" fill="none" stroke="var(--jade)" stroke-width="2" stroke-dasharray="5 4" opacity="0.9"/>
+          <circle cx="${X(dim).toFixed(1)}" cy="${Y(forecast).toFixed(1)}" r="3.5" fill="var(--jade)"/><text x="${(X(dim)).toFixed(1)}" y="${(Y(forecast)-8).toFixed(1)}" text-anchor="end" style="font-weight:800;fill:var(--jade)">${kMoney(forecast)}</text>
+          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+10,Y(cur)-9).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">${kMoney(cur)}</text>
+          <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (day ${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
 
       function commissionMini(){
@@ -594,7 +622,7 @@ if ($bde_is_admin) {
           </section>
           <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
+            <div class="card"><div class="chead"><h4>Revenue this month vs target</h4><span class="chip jade">${kMoney(B.forecast)} projected</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px"><b style="color:var(--brand)">Solid</b> = cleared revenue day-by-day this month · <b style="color:var(--jade)">dashed</b> = projected month-end at today's pace · <b>Target</b> line = your goal.</div></div>
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
