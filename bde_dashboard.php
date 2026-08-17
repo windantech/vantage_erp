@@ -51,11 +51,13 @@ $bde_daily = ($bde_ru_id > 0 && function_exists('bde_daily_revenue'))
     ? bde_daily_revenue($conn, $bde_ru_id, date('Y-m-01', $paceRef), $bde_to) : [];
 $bde_dim = (int) date('t', $paceRef);
 $bde_dom = max(1, min($bde_dim, (int) date('j', $mToday)));
-$bde_cum_series = []; $bde_cum_dates = []; $bde_cum = 0.0;
+$bde_cum_series = []; $bde_cum_dates = []; $bde_day_amt = []; $bde_cum = 0.0;
 $pMonth = (int) date('n', $paceRef); $pYear = (int) date('Y', $paceRef);
 for ($d = 1; $d <= $bde_dom; $d++) {
     $dt = date('Y-m-', $paceRef) . str_pad((string) $d, 2, '0', STR_PAD_LEFT);
-    $bde_cum += (float) ($bde_daily[$dt] ?? 0);
+    $dayAmt = (float) ($bde_daily[$dt] ?? 0);
+    $bde_cum += $dayAmt;
+    $bde_day_amt[] = round($dayAmt);
     $bde_cum_series[] = round($bde_cum);
     $bde_cum_dates[] = date('M j', mktime(0, 0, 0, $pMonth, $d, $pYear));
 }
@@ -452,6 +454,7 @@ if ($bde_is_admin) {
       B.commissionPaidKes = <?php echo (float) (((float) ($bde_metrics['commission_paid_usd'] ?? 0)) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
       // real month-to-date daily cumulative revenue (KES) + linear month-end forecast
       B.dailyCum = <?php echo json_encode($bde_cum_series, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.dailyAmt = <?php echo json_encode($bde_day_amt, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.dailyDates = <?php echo json_encode($bde_cum_dates, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.daysInMonth = <?php echo (int) $bde_dim; ?>;
       B.dayToday = <?php echo (int) $bde_dom; ?>;
@@ -564,7 +567,7 @@ if ($bde_is_admin) {
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
           <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
           <path d="${proj}" fill="none" stroke="var(--jade)" stroke-width="2" stroke-dasharray="5 4" opacity="0.9"/>
-          ${A.map((q,i)=>`<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="10" fill="transparent" style="cursor:pointer"><title>${esc((B.dailyDates&&B.dailyDates[i])||("Day "+(i+1)))} · ${kMoney(series[i])} cleared</title></circle>`).join("")}
+          ${A.map((q,i)=>{const dAmt=(B.dailyAmt&&B.dailyAmt[i])||0;const dLbl=(B.dailyDates&&B.dailyDates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="10" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
           <circle cx="${X(dim).toFixed(1)}" cy="${Y(forecast).toFixed(1)}" r="3.5" fill="var(--jade)"/><text x="${(X(dim)).toFixed(1)}" y="${(Y(forecast)-8).toFixed(1)}" text-anchor="end" style="font-weight:800;fill:var(--jade)">Proj. ${kMoney(forecast)}</text>
           <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+10,Y(cur)-9).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
           <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (day ${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
