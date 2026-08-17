@@ -38,14 +38,12 @@ $bde_presets = [
 $bde_active_preset = 'custom';
 foreach ($bde_presets as $pk => $pv) { if ($pv['from'] === $bde_from && $pv['to'] === $bde_to) { $bde_active_preset = $pk; break; } }
 
-// Pace math for the month containing $bde_to — real working days, drives Progress-to-target.
+// Pace math for the month containing $bde_to — CALENDAR days (enquiries come on weekends too).
 $paceRef = strtotime($bde_to);
-$mStart  = strtotime(date('Y-m-01', $paceRef));
 $mEnd    = strtotime(date('Y-m-t', $paceRef));
 $mToday  = min(strtotime($bde_to), $mEnd);
-$countWk = function ($a, $b) { $n = 0; for ($d = $a; $d <= $b; $d += 86400) { if ((int) date('N', $d) < 6) { $n++; } } return $n; };
-$bde_wk_total   = max(1, $countWk($mStart, $mEnd));
-$bde_wk_elapsed = max(1, $countWk($mStart, $mToday));
+$bde_wk_total   = (int) date('t', $paceRef);              // days in the month
+$bde_wk_elapsed = min($bde_wk_total, (int) date('j', $mToday)); // day-of-month reached
 $bde_pace_label = date('F Y', $paceRef);
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
@@ -514,7 +512,7 @@ if ($bde_is_admin) {
           <div class="chead"><h4>Progress to target</h4><span class="chip ${ps.status==="green"?"jade":ps.status==="amber"?"amber":"coral"} num">${pct(att)}</span></div>
           <div class="pl">Cleared revenue · <b class="num">${kMoney(B.actual)} / ${kMoney(B.target)}</b></div>
           <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div><div class="exp" style="left:${clamp((p.elapsed/p.working)*100,0,100)}%"></div></div>
-          <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Working days left</span><b class="num">${daysLeft}</b><small style="display:block;font-size:9.5px;color:var(--muted);font-weight:600">to ${esc(period().label||"month end")}</small></div></div>
+          <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b><small style="display:block;font-size:9.5px;color:var(--muted);font-weight:600">to end of ${esc(period().label||"month")}</small></div></div>
           <div class="motiv ${ps.status}">${motiv}</div>
         </div>`;
       }
