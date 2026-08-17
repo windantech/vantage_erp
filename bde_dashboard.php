@@ -19,24 +19,34 @@ $bde_ru_id = (int) ($_SESSION['login_id'] ?? 0);
 if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role)) {
     $bde_ru_id = (int) $_GET['as'];
 }
-// Date range filter (calendar). Defaults to "since they joined" — the BDE's first real
-// activity in the DB — so the period reflects their actual tenure, not a fixed window.
+// Date range filter (calendar). Defaults to THIS MONTH (targets are monthly).
 // ?from=YYYY-MM-DD&to=YYYY-MM-DD scopes it explicitly.
 $bde_today   = date('Y-m-d');
 $bde_started = function_exists('bde_active_since') ? bde_active_since($conn, $bde_ru_id) : '';
 $bde_join    = $bde_started !== '' ? $bde_started : '2020-01-01'; // fallback if no activity yet
-$bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) ? $_GET['from'] : $bde_join;
+$bde_month_start = date('Y-m-01');
+$bde_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) ? $_GET['from'] : $bde_month_start;
 $bde_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['to']))   ? $_GET['to']   : $bde_today;
 if ($bde_from > $bde_to) { $t = $bde_from; $bde_from = $bde_to; $bde_to = $t; }
 $bde_presets = [
-    'since' => ['label' => 'Since they joined' . ($bde_started !== '' ? ' · ' . date('M Y', strtotime($bde_started)) : ''), 'from' => $bde_join, 'to' => $bde_today],
-    'month' => ['label' => 'This month',    'from' => date('Y-m-01'), 'to' => $bde_today],
+    'month' => ['label' => 'This month',    'from' => $bde_month_start, 'to' => $bde_today],
     'last'  => ['label' => 'Last month',    'from' => date('Y-m-01', strtotime('first day of last month')), 'to' => date('Y-m-t', strtotime('last month'))],
     'ytd'   => ['label' => 'This year',     'from' => date('Y-01-01'), 'to' => $bde_today],
+    'since' => ['label' => 'Since they joined' . ($bde_started !== '' ? ' · ' . date('M Y', strtotime($bde_started)) : ''), 'from' => $bde_join, 'to' => $bde_today],
     'all'   => ['label' => 'All time',      'from' => '2020-01-01', 'to' => $bde_today],
 ];
 $bde_active_preset = 'custom';
 foreach ($bde_presets as $pk => $pv) { if ($pv['from'] === $bde_from && $pv['to'] === $bde_to) { $bde_active_preset = $pk; break; } }
+
+// Pace math for the month containing $bde_to — real working days, drives Progress-to-target.
+$paceRef = strtotime($bde_to);
+$mStart  = strtotime(date('Y-m-01', $paceRef));
+$mEnd    = strtotime(date('Y-m-t', $paceRef));
+$mToday  = min(strtotime($bde_to), $mEnd);
+$countWk = function ($a, $b) { $n = 0; for ($d = $a; $d <= $b; $d += 86400) { if ((int) date('N', $d) < 6) { $n++; } } return $n; };
+$bde_wk_total   = max(1, $countWk($mStart, $mEnd));
+$bde_wk_elapsed = max(1, $countWk($mStart, $mToday));
+$bde_pace_label = date('F Y', $paceRef);
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
@@ -419,6 +429,10 @@ if ($bde_is_admin) {
       // replace the demo target with the real monthly revenue target so pace/attainment are honest
       if (B.targetTotal > 0) { B.target = B.targetTotal; B.actual = B.targetActual; }
 <?php endif; ?>
+      // real working-day pace for the selected month
+      B.periodTotal = <?php echo (int) $bde_wk_total; ?>;
+      B.periodElapsed = <?php echo (int) $bde_wk_elapsed; ?>;
+      B.periodLabel = <?php echo json_encode($bde_pace_label, JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -431,7 +445,7 @@ if ($bde_is_admin) {
       const fmtDate=s=>{const d=new Date(s+"T00:00:00");return isNaN(d.getTime())?s:d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});};
       const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
       const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-      const period=()=>periods[state.p];
+      const period=()=>({working:B.periodTotal||22, elapsed:Math.min(B.periodElapsed||1,B.periodTotal||22), label:B.periodLabel||(periods[state.p]&&periods[state.p].label)||""});
 
       function pace(){const p=period();const expected=B.target*(p.elapsed/p.working);const ratio=expected?B.actual/expected:0;const status=ratio>=1?"green":ratio>=.85?"amber":"red";return {expected,ratio,status,label:status==="green"?"On pace":status==="amber"?"At risk":"Behind pace"};}
       const scol=s=>s==="green"?"var(--jade)":s==="amber"?"var(--amber)":"var(--coral)";
@@ -766,17 +780,11 @@ if ($bde_is_admin) {
           const tcls=isCount?"tl-count":"tl-money";
           const cword=r.metric==="active_users"?"Users":r.metric==="paid_staff"?"Staff":(r.metric==="corporate_clients"||/client/i.test(r.metric_label))?"Clients":"Number";
           const chip=isCount?`<span class="tchip tchip-count"># ${cword}</span>`:"";
-          const hasA=r.actual!=null;
-          const a=hasA&&r.target?r.actual/r.target:0;
-          const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
           const t70=r.threshold_pct!=null?`<div class="tlevel tl-qual ${tcls}"><span class="tl-cap">${(+r.threshold_pct)}% qualifying</span><b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
           const levels=`<div class="tlevels"><div class="tlevel tl-full ${tcls}"><span class="tl-cap">100% target</span><b>${fmtV(r.target,r.unit)}</b></div>${t70}</div>`;
-          const thMark=r.threshold_pct!=null?clamp(+r.threshold_pct,0,100):null;
-          const prog=hasA
-            ?`<div class="tprog"><div class="ttrack"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div>${thMark!=null?`<span class="tmark" style="left:${thMark}%"></span>`:""}</div>
-                <div class="tprog-b"><span>Achieved <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
-            :`<div class="tprog-none">Achieved figure not tracked in the CRM yet</div>`;
-          return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+          // achieved/progress lives in the portfolio + Progress-to-target box, so keep the target card
+          // to just the goal structure (100% + qualifying line).
+          return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}</div>`;
         };
         const single=order.length===1;
         const body=order.map(k=>`<div class="tgroup">${single?"":`<div class="tgroup-h">${esc(k)}</div>`}${groups[k].map(metricLine).join("")}</div>`).join("");
