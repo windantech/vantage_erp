@@ -100,8 +100,8 @@ $DIGITAL_SEED = [
 // International & Corporate: the department target is the SAME for every BDE, so we assign it
 // per person (user-scoped) — no dependence on department data. Names matched space-tolerantly and
 // seeded to ALL matching accounts (handles duplicate logins). Edit these lists to add/correct BDEs.
-$INTL_BDES = ['John Maina', 'Kevin Muhu', 'Erick Ndiema'];   // International — 40 clients/country (80% = 32)
-$CORP_BDES = ['Hannah Wanjiku'];                              // Corporate — Kshs 2,000,000/month
+$INTL_BDES = ['John Maina', 'Kelvin Muniu'];                    // International BDEs — 40 clients/country (80% = 32). Erick Ndiema = BDO (separate)
+$CORP_BDES = ['Josiah Mwangi', 'Regina Mas', 'Hannah Wanjiku']; // Corporate BDEs — Kshs 2,000,000/month. Edwin Otieno = BDO (separate). 'Regina Mas' tolerates Masinde/Massinde
 
 // --- handle writes -----------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -237,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $out = []; while ($q && ($r = mysqli_fetch_assoc($q))) { $out[] = ['id' => (int) $r['id'], 'name' => (string) $r['fullname']]; }
             return $out;
         };
-        $seeded = 0; $unresolved = [];
+        $seeded = 0; $unresolved = []; $matchedI = []; $matchedC = [];
         // International — clients per country = 40, 80% qualifying (= 32)
         foreach ($INTL_BDES as $name) {
             $accts = $resolveAll($name);
@@ -245,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($accts as $a) {
                 $slE = mysqli_real_escape_string($conn, $a['name']);
                 if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
-                    VALUES ('user','{$a['id']}','$slE','International','clients_per_country','Clients per country','count',40,80,'Per country · 80% qualifying = 32 clients',$me)")) { $seeded++; }
+                    VALUES ('user','{$a['id']}','$slE','International','clients_per_country','Clients per country','count',40,80,'Per country · 80% qualifying = 32 clients',$me)")) { $seeded++; $matchedI[] = $a['name'] . ' #' . $a['id']; }
             }
         }
         // Corporate — Kshs 2,000,000 monthly revenue
@@ -255,11 +255,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($accts as $a) {
                 $slE = mysqli_real_escape_string($conn, $a['name']);
                 if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
-                    VALUES ('user','{$a['id']}','$slE','Corporate','revenue','Monthly revenue','KES',2000000,NULL,'Kshs 2,000,000 per month',$me)")) { $seeded++; }
+                    VALUES ('user','{$a['id']}','$slE','Corporate','revenue','Monthly revenue','KES',2000000,NULL,'Kshs 2,000,000 per month',$me)")) { $seeded++; $matchedC[] = $a['name'] . ' #' . $a['id']; }
             }
         }
-        $flash = "Seeded $seeded per-person Corporate/International target(s)"
-            . (empty($unresolved) ? '.' : ". Couldn't match: " . implode(', ', array_unique($unresolved)) . " — send me their exact CRM names.");
+        $flash = "Seeded $seeded per-person target(s)."
+            . (empty($matchedI) ? '' : ' International → ' . implode(', ', $matchedI) . '.')
+            . (empty($matchedC) ? '' : ' Corporate → ' . implode(', ', $matchedC) . '.')
+            . (empty($unresolved) ? '' : ' COULD NOT MATCH: ' . implode(', ', array_unique($unresolved)) . ' — send exact CRM names.');
         $flash_ok = $seeded > 0 || empty($unresolved);
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
