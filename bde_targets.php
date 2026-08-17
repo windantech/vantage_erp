@@ -166,14 +166,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $uid = 0; $uname = '';
                 foreach (($OWNER_VARIANTS[$owner] ?? [$owner]) as $variant) {
                     $lk = mysqli_real_escape_string($conn, $variant);
-                    // prefer an employee in the Virtual department (stops a same-first-name person elsewhere winning)
-                    $q = @mysqli_query($conn, "SELECT ru.id, ru.fullname FROM registered_users ru
-                        LEFT JOIN staff s ON ru.staff_id = s.id
+                    // When a name has duplicate accounts, prefer the one with REAL registration data
+                    // (that's the account whose dashboard shows figures), then a Virtual-dept match,
+                    // then lowest id — so targets land where the data lives, not on an empty duplicate.
+                    $q = @mysqli_query($conn, "SELECT ru.id, ru.fullname
+                        FROM registered_users ru
+                        LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
                         LEFT JOIN departments d ON s.department_id = d.id
-                        WHERE ru.fullname LIKE '%$lk%' AND d.department_name LIKE '%virtual%' ORDER BY ru.id LIMIT 1");
-                    if (!$q || mysqli_num_rows($q) === 0) {
-                        $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '%$lk%' ORDER BY id LIMIT 1");
-                    }
+                        WHERE ru.fullname LIKE '%$lk%'
+                        ORDER BY EXISTS(SELECT 1 FROM intake i JOIN register r ON r.intake_id = i.intake_id WHERE i.assigned_to = ru.id) DESC,
+                                 (d.department_name LIKE '%virtual%') DESC, ru.id
+                        LIMIT 1");
                     if ($q && ($rr = mysqli_fetch_assoc($q))) { $uid = (int) $rr['id']; $uname = (string) $rr['fullname']; break; }
                 }
                 $resolved[$owner] = ['id' => $uid, 'name' => $uname];
