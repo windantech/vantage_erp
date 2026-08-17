@@ -465,6 +465,14 @@ if (!function_exists('bde_team_metrics')) {
             WHERE e.assigned_to IN ($ids) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.assigned_to");
         while ($eq && ($er = mysqli_fetch_assoc($eq))) { $id = (int) $er['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $er['rev']; $members[$id]['clients'] += (int) $er['clients']; } }
 
+        // Each member's own monthly revenue target (for the "vs target" column).
+        $mtarget = [];
+        $yy = (int) date('Y', strtotime($end_date)); $mm = (int) date('n', strtotime($end_date));
+        $tq = @mysqli_query($conn, "SELECT scope_ref, SUM(target_value) t FROM bde_targets
+            WHERE scope_type='user' AND metric='revenue' AND scope_ref IN ($ids)
+            AND active=1 AND (period_year IS NULL OR (period_year=$yy AND period_month=$mm)) GROUP BY scope_ref");
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $mtarget[(int) $tr['scope_ref']] = (float) $tr['t']; }
+
         // Merge duplicate logins that share a name (e.g. two "Josiah Mwangi") into one row so the
         // team lists each person once, combining their figures.
         $byName = [];
@@ -472,9 +480,10 @@ if (!function_exists('bde_team_metrics')) {
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $info['name'])));
             if ($key === '') { $key = 'id' . $mid; }
             if (!isset($byName[$key])) {
-                $byName[$key] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => 0.0, 'clients' => 0, 'me' => false];
+                $byName[$key] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => 0.0, 'target' => 0.0, 'clients' => 0, 'me' => false];
             }
             $byName[$key]['actual'] += $info['rev'] * $rate;
+            $byName[$key]['target'] += (float) ($mtarget[$mid] ?? 0);
             $byName[$key]['clients'] += $info['clients'];
             if ($mid === $ruId) { $byName[$key]['me'] = true; }
         }

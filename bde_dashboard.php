@@ -611,8 +611,13 @@ if ($bde_is_admin) {
       }
       function teamTable(){
         const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
-        const total=B.team.reduce((s,t)=>s+(t.actual||0),0)||1;
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Cleared revenue</th><th>Paid clients</th><th>Share of team</th></tr></thead><tbody>${B.team.map((t,i)=>{const share=(t.actual||0)/total;const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title||"BDE")}</span></div></div></td><td class="num">${kMoney(t.actual||0)}</td><td class="num">${t.clients!=null?nf.format(t.clients):"—"}</td><td><span class="mini-track"><div style="width:${clamp(share*100,0,100)}%;background:var(--brand)"></div></span> <b class="num" style="font-size:11.5px">${pct(share,0)}</b></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Cleared revenue</th><th>Paid clients</th><th>vs Target</th></tr></thead><tbody>${B.team.map((t,i)=>{
+          const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");
+          const hasT=(t.target||0)>0;const att=hasT?(t.actual||0)/t.target:null;
+          const st=att==null?"":att>=1?"green":att>=0.7?"amber":"red";
+          const vs=att==null?'<span style="color:var(--muted)">no target set</span>'
+            :`<span class="mini-track"><div style="width:${clamp(att*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px;color:${scol(st)}">${pct(att,0)}</b><div style="font-size:10px;color:var(--muted)">of ${kMoney(t.target)}</div>`;
+          return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title||"BDE")}</span></div></div></td><td class="num">${kMoney(t.actual||0)}</td><td class="num">${t.clients!=null?nf.format(t.clients):"—"}</td><td>${vs}</td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- views ---------- */
@@ -630,7 +635,7 @@ if ($bde_is_admin) {
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
-          <div class="section-tag"><h3>Your team</h3><span>Sellers alongside you, ranked by cleared revenue · targets are the next slice</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Your team</h3><span>Your department, ranked by cleared revenue · each measured against their own target</span><div class="rule"></div></div>
           ${teamTable()}`;
       }
 
