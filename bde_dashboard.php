@@ -427,10 +427,12 @@ if ($bde_is_admin) {
       // replace the demo target with the real monthly revenue target so pace/attainment are honest
       if (B.targetTotal > 0) { B.target = B.targetTotal; B.actual = B.targetActual; }
 <?php endif; ?>
-      // real working-day pace for the selected month
+      // real calendar-day pace for the selected month
       B.periodTotal = <?php echo (int) $bde_wk_total; ?>;
       B.periodElapsed = <?php echo (int) $bde_wk_elapsed; ?>;
       B.periodLabel = <?php echo json_encode($bde_pace_label, JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>;
+      // real outstanding pipeline = expected revenue on their registrations not yet collected (KES)
+      B.pipelineKes = <?php echo (float) (max(0.0, ((float) $bde_metrics['expected_usd'] - (float) $bde_metrics['revenue_usd'])) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -484,14 +486,15 @@ if ($bde_is_admin) {
       }
 
       function kpiBlock(){
-        const p=period();const att=B.actual/B.target;const daysLeft=Math.max(0,p.working-p.elapsed);const dailyNeed=daysLeft?Math.max(0,(B.target-B.actual)/daysLeft):0;const c=commission();
+        const p=period();const hasRev=B.target>0;const att=hasRev?B.actual/B.target:0;const daysLeft=Math.max(0,p.working-p.elapsed);
+        const dailyNeed=(hasRev&&daysLeft)?Math.max(0,(B.target-B.actual)/daysLeft):0;const pipe=B.pipelineKes||0;
         const items=[
-          ["Monthly target",kMoney(B.target),"Approved personal target","flat","var(--slate)"],
-          ["Cleared revenue",kMoney(B.actual),pct(att)+" of target","up","var(--jade)"],
-          ["Volume achieved",nf.format(B.units),"of "+nf.format(B.unitTarget)+" target","flat","var(--slate)"],
-          ["Qualified pipeline",kMoney(B.pipeline),(B.pipeline/B.target).toFixed(1)+"× target coverage","up","var(--slate)"],
-          ["Commission estimate",kMoney(c.current),"current eligible estimate","flat","var(--gold)"],
-          ["Daily pace needed",kMoney(dailyNeed),daysLeft+" working days left","flat","var(--amber)"]
+          ["Monthly target",hasRev?kMoney(B.target):"—",hasRev?"All your targets combined":"Count-based target","flat","var(--slate)"],
+          ["Cleared revenue",kMoney(B.actual),hasRev?pct(att)+" of target":"collected this period","up","var(--jade)"],
+          ["Paid clients",nf.format(B.paidClients||0),"of "+nf.format(B.totalRegs||0)+" leads","flat","var(--slate)"],
+          ["Outstanding pipeline",kMoney(pipe),hasRev?(pipe/B.target).toFixed(1)+"× target coverage":"expected, still to collect","up","var(--slate)"],
+          ["Commission (eligible)",kMoney(B.commissionKes||0),"from the commission engine","flat","var(--gold)"],
+          ["Daily pace needed",hasRev?kMoney(dailyNeed):"—",daysLeft+" days left this month","flat","var(--amber)"]
         ];
         const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
         const kIcons=[
@@ -506,7 +509,7 @@ if ($bde_is_admin) {
       }
 
       function progressCard(){
-        const p=period();const att=B.actual/B.target;const ps=pace();const daysLeft=Math.max(0,p.working-p.elapsed);
+        const p=period();const att=B.target>0?B.actual/B.target:0;const ps=pace();const daysLeft=Math.max(0,p.working-p.elapsed);
         const motiv=ps.status==="green"?"<b>Keep going:</b> You're at or above required pace. Protect collections, quality and stretch opportunities.":ps.status==="amber"?"<b>Close the gap:</b> You're near pace. Focus on the opportunities nearest to payment and remove today's biggest blocker.":"<b>Recover now:</b> The current pace will miss target. Start a quantified recovery plan today — not at month end.";
         return `<div class="card prog">
           <div class="chead"><h4>Progress to target</h4><span class="chip ${ps.status==="green"?"jade":ps.status==="amber"?"amber":"coral"} num">${pct(att)}</span></div>
