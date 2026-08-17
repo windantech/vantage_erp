@@ -203,7 +203,8 @@ $bde_comm_records = [];
 if ($bde_ru_id > 0) {
     $crq = @mysqli_query($conn, "SELECT commission_type ctype, COALESCE(source_name,'') sname, total_registered treg, qualifying_clients qc,
         total_collected_fees coll, fee_collection_percentage collpct, commission_rate rate, commission_amount amt,
-        COALESCE(commission_currency,'KES') cur, is_eligible elig, COALESCE(status,'') st, COALESCE(eligibility_notes,'') notes, period_start ps, period_end pe
+        COALESCE(commission_currency,'KES') cur, is_eligible elig, COALESCE(status,'') st, COALESCE(eligibility_notes,'') notes, period_start ps, period_end pe,
+        minimum_clients_required minreq, fee_collection_threshold fct, min_clients_met mcm, fee_collection_met fcm
         FROM commission_records WHERE staff_user_id = $bde_ru_id ORDER BY period_start DESC, id DESC LIMIT 40");
     while ($crq && ($crr = mysqli_fetch_assoc($crq))) {
         $bde_comm_records[] = [
@@ -212,6 +213,8 @@ if ($bde_ru_id > 0) {
             'collpct' => (float) $crr['collpct'], 'rate' => (float) $crr['rate'],
             'amount' => (float) $crr['amt'], 'cur' => (string) $crr['cur'],
             'eligible' => (int) $crr['elig'], 'status' => (string) $crr['st'], 'notes' => (string) $crr['notes'],
+            'minreq' => (int) $crr['minreq'], 'fct' => (float) $crr['fct'],
+            'mcm' => (int) $crr['mcm'], 'fcm' => (int) $crr['fcm'],
             'period' => (!empty($crr['ps']) ? date('M j', strtotime((string) $crr['ps'])) : '') . (!empty($crr['pe']) ? ' – ' . date('M j', strtotime((string) $crr['pe'])) : ''),
         ];
     }
@@ -224,6 +227,19 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
 }
 $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : [];
 $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_targets_progress($conn, $bde_ru_id, $bde_metrics['dept'], $bde_from, $bde_to) : null;
+
+// Three-month consistency: real monthly attainment (collected revenue vs the monthly target) for the
+// last 3 months ending at the selected month. Empty if there's no revenue target.
+$bde_three_month = [];
+$bde_month_target = ($bde_tp && $bde_tp['revenue_target'] > 0) ? (float) $bde_tp['revenue_target'] : 0.0;
+if ($bde_ru_id > 0 && $bde_month_target > 0 && function_exists('bde_daily_revenue')) {
+    for ($k = 2; $k >= 0; $k--) {
+        $ref = strtotime("first day of -$k month", strtotime($bde_to));
+        $ms = date('Y-m-01', $ref); $me = date('Y-m-t', $ref);
+        $rev = 0.0; foreach (bde_daily_revenue($conn, $bde_ru_id, $ms, $me) as $amt) { $rev += (float) $amt; }
+        $bde_three_month[] = ['label' => date('M Y', $ref), 'att' => $rev / $bde_month_target, 'rev' => $rev];
+    }
+}
 
 // admin-only "View as" roster (so any BDE can be previewed by name without typing ?as=<id>)
 $bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
@@ -633,6 +649,7 @@ if ($bde_is_admin) {
       B.visits = <?php echo json_encode($bde_visits_data, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.crossSbu = <?php echo json_encode($bde_cross_sbu, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.commRecords = <?php echo json_encode($bde_comm_records, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.threeMonth = <?php echo json_encode($bde_three_month, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -878,7 +895,28 @@ if ($bde_is_admin) {
               <td class="num"><b>${money(r.amount)}</b></td>
               <td>${r.eligible?`<span class="chip jade">${esc(r.status||"eligible")}</span>`:`<span class="chip coral">not eligible</span>`}</td></tr>`).join("")}</tbody></table></div></div>`
           :`<div class="card"><p style="color:var(--muted);margin:6px 2px;font-size:13px">No commission has been calculated for this BDE yet. The engine writes to <code>commission_records</code> per period (run and approved by Finance) — until it runs, there's nothing to show. Eligibility depends on hitting both the client-count and fee-collection thresholds.</p></div>`;
-        return summary + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table;
+        // Eligibility checklist — real gates from each commission record (client-count + fee-collection).
+        const gates=[];
+        recs.forEach(r=>{
+          const nm=r.source||r.type||"Source";
+          if(r.minreq>0) gates.push([`${nm}: ${nf.format(r.minreq)} qualifying clients`, r.mcm?true:(r.qualifying>=r.minreq), `${nf.format(r.qualifying)}`]);
+          if(r.fct>0) gates.push([`${nm}: ${(+r.fct)}% fee collection`, r.fcm?true:(r.collpct>=r.fct), `${pct((r.collpct||0)/100,0)}`]);
+        });
+        const met=gates.filter(g=>g[1]).length;
+        const checklist=gates.length?`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===gates.length?"jade":"gold"}">${met} / ${gates.length} met</span></div><div class="list">${gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>`
+          :`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:6px 2px">The client-count and fee-collection gates appear here once the engine has a record for this BDE.</p></div>`;
+        // Audit trail — commission policy (how it's computed & verified).
+        const audit=[["Revenue source","Finance-cleared payments","Invoices, promises and uncleared amounts are excluded"],["Eligibility","Client-count + fee-collection gates","Both thresholds in your KPI sheet must be met"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Verification","Recorded in commission_records","Calculated per period, approved by Finance before payout"],["Reversals","Refunds and credit notes","Recalculate and preserve the audit history"]];
+        const auditCard=`<div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>`;
+        // Three-month consistency — real monthly attainment.
+        const tm=B.threeMonth||[];
+        const journey=tm.length?`<div class="card"><div class="chead"><h4>Three-month consistency</h4><span class="chip slate">Reward needs 3 in a row</span></div>
+          <div class="steps3">${tm.map(m=>{const ok=m.att>=1;const c=ok?"var(--jade)":m.att>=0.7?"var(--amber)":"var(--coral)";return `<div class="stepbox"><span>${esc(m.label)}</span><b>${ok?"Target met":m.att>=0.7?"Close":"Below"}</b><div class="st" style="color:${c}">${pct(m.att,0)} · ${kMoney(m.rev)}</div></div>`;}).join("")}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:10px">Hit 100% for three consecutive months to unlock the consistency reward (Kshs 50,000 + 20% salary review).</div></div>`:"";
+        return summary
+          + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table
+          + `<section class="grid-2">${checklist}${auditCard}</section>`
+          + journey;
       }
 
       function vReport(){
