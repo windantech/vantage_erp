@@ -602,7 +602,7 @@ if ($bde_is_admin) {
         const F=B.funnel||[];const fv=i=>F[i]?F[i][1]:0;
         const drivers=[
           ["Total leads",nf.format(B.totalLeads||0),"Enquiries assigned to you"],
-          ["Qualified pipeline",nf.format(fv(2)),"Reached qualified or beyond"],
+          ["Paid clients",nf.format(B.paidClients||0),(B.totalLeads?pct((B.paidClients||0)/B.totalLeads,0)+" of leads converted":"cleared & paid")],
           ["Collection rate",(B.collection!=null?pct(B.collection,0):"—"),"Fees settled vs expected"],
           ["WhatsApp to reply",nf.format(B.waUnread||0),(B.waOpen?"unread · of "+nf.format(B.waOpen)+" open chats":"unread chats")],
           ["Commission (eligible)",(B.commissionKes?kMoney(B.commissionKes):"KES 0"),"From the commission engine"]

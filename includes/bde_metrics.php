@@ -281,7 +281,8 @@ if (!function_exists('bde_fetch_metrics')) {
         $out['total_leads'] = $fLeads + $eLeads;
         $out['contacted'] = $fCont + $eCont;
         $out['stale'] = $regStale + $enqStale;
-        $out['funnel'] = [['Leads', $fLeads + $eLeads], ['Contacted', $fCont + $eCont], ['Qualified', $fQual + $eQual], ['Enrolled', $fEnr + $eProp], ['Paid', $fPaid + $eConv]];
+        // Two honest stages — Contacted/Qualified/Enrolled aren't reliably tracked for registrations.
+        $out['funnel'] = [['Leads', $fLeads + $eLeads], ['Paid', $fPaid + $eConv]];
         arsort($sources);
         $srcOut = [];
         foreach (array_slice($sources, 0, 8, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
