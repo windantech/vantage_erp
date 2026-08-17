@@ -10,6 +10,7 @@
  * Phase 1: targets only. The BDE dashboard reads these to show progress; commission comes later.
  */
 session_start();
+ob_start(); // buffer so we can Post/Redirect/Get after header.php has already emitted chrome
 require_once 'header.php'; // auth + $conn (vantage_crm) + $role + chrome/left-nav
 if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); } // live is 8.1+: don't let mysqli throw
 
@@ -41,6 +42,7 @@ if (!$is_admin) { http_response_code(403); exit('Forbidden — admin only.'); }
 
 $me = (int) ($_SESSION['login_id'] ?? 0);
 $flash = ''; $flash_ok = true;
+if (!empty($_SESSION['bt_flash'])) { $flash = (string) $_SESSION['bt_flash']; $flash_ok = !empty($_SESSION['bt_flash_ok']); unset($_SESSION['bt_flash'], $_SESSION['bt_flash_ok']); }
 
 // known metrics (label + default unit) — the form offers these; 'other' allows a custom label
 $METRICS = [
@@ -116,6 +118,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = $ok ? 'Target added.' : 'Insert failed.'; $flash_ok = (bool) $ok;
             }
         }
+    }
+    // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
+    // the same target, and the form comes back empty ready for the next entry.
+    if (in_array($action, ['save', 'delete'], true) && $flash_ok && $flash !== '') {
+        $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
+        header('Location: bde_targets.php'); exit;
     }
 }
 
