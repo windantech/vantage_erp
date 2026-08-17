@@ -429,9 +429,20 @@ if (!function_exists('bde_team_metrics')) {
             WHERE e.assigned_to IN ($ids) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.assigned_to");
         while ($eq && ($er = mysqli_fetch_assoc($eq))) { $id = (int) $er['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $er['rev']; $members[$id]['clients'] += (int) $er['clients']; } }
 
+        // Merge duplicate logins that share a name (e.g. two "Josiah Mwangi") into one row so the
+        // team lists each person once, combining their figures.
+        $byName = [];
         foreach ($members as $mid => $info) {
-            $team[] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => $info['rev'] * $rate, 'clients' => $info['clients'], 'me' => ($mid === $ruId)];
+            $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $info['name'])));
+            if ($key === '') { $key = 'id' . $mid; }
+            if (!isset($byName[$key])) {
+                $byName[$key] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => 0.0, 'clients' => 0, 'me' => false];
+            }
+            $byName[$key]['actual'] += $info['rev'] * $rate;
+            $byName[$key]['clients'] += $info['clients'];
+            if ($mid === $ruId) { $byName[$key]['me'] = true; }
         }
+        $team = array_values($byName);
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
         return $team;
     }
