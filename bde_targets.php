@@ -97,6 +97,12 @@ $DIGITAL_SEED = [
     ['360 Appraisal',                  'revenue',           'First-month fees',      'KES',   1200000, 80,   '100% = Kshs 1.2M · 80% = Kshs 960,000'],
 ];
 
+// International & Corporate: the department target is the SAME for every BDE, so we assign it
+// per person (user-scoped) — no dependence on department data. Names matched space-tolerantly and
+// seeded to ALL matching accounts (handles duplicate logins). Edit these lists to add/correct BDEs.
+$INTL_BDES = ['John Maina', 'Kevin Muhu', 'Erick Ndiema'];   // International — 40 clients/country (80% = 32)
+$CORP_BDES = ['Hannah Wanjiku'];                              // Corporate — Kshs 2,000,000/month
+
 // --- handle writes -----------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -222,10 +228,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = "Seeded $n Digital target(s) — Eval360 (Austin) & 360 Appraisal (Ruth), deconstructed into individual / corporate setup / maintenance.";
             $flash_ok = $n > 0;
         }
+    } else if ($action === 'seed_deptperson') {
+        // per-person Corporate & International targets (no department needed)
+        @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND product IN ('International','Corporate')");
+        $resolveAll = function ($name) use ($conn) {
+            $pat = '%' . str_replace(' ', '%', mysqli_real_escape_string($conn, $name)) . '%';
+            $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '$pat' ORDER BY id");
+            $out = []; while ($q && ($r = mysqli_fetch_assoc($q))) { $out[] = ['id' => (int) $r['id'], 'name' => (string) $r['fullname']]; }
+            return $out;
+        };
+        $seeded = 0; $unresolved = [];
+        // International — clients per country = 40, 80% qualifying (= 32)
+        foreach ($INTL_BDES as $name) {
+            $accts = $resolveAll($name);
+            if (empty($accts)) { $unresolved[] = $name; continue; }
+            foreach ($accts as $a) {
+                $slE = mysqli_real_escape_string($conn, $a['name']);
+                if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                    VALUES ('user','{$a['id']}','$slE','International','clients_per_country','Clients per country','count',40,80,'Per country · 80% qualifying = 32 clients',$me)")) { $seeded++; }
+            }
+        }
+        // Corporate — Kshs 2,000,000 monthly revenue
+        foreach ($CORP_BDES as $name) {
+            $accts = $resolveAll($name);
+            if (empty($accts)) { $unresolved[] = $name; continue; }
+            foreach ($accts as $a) {
+                $slE = mysqli_real_escape_string($conn, $a['name']);
+                if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                    VALUES ('user','{$a['id']}','$slE','Corporate','revenue','Monthly revenue','KES',2000000,NULL,'Kshs 2,000,000 per month',$me)")) { $seeded++; }
+            }
+        }
+        $flash = "Seeded $seeded per-person Corporate/International target(s)"
+            . (empty($unresolved) ? '.' : ". Couldn't match: " . implode(', ', array_unique($unresolved)) . " — send me their exact CRM names.");
+        $flash_ok = $seeded > 0 || empty($unresolved);
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
     // the same target, and the form comes back empty ready for the next entry.
-    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital'], true) && $flash_ok && $flash !== '') {
+    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital', 'seed_deptperson'], true) && $flash_ok && $flash !== '') {
         $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
         header('Location: bde_targets.php'); exit;
     }
@@ -411,6 +450,10 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
             <form method="post" onsubmit="return confirm('Deconstruct the Digital targets (Eval360 + 360 Appraisal) into clean lines? This REPLACES existing Digital department targets.')">
               <input type="hidden" name="action" value="seed_digital">
               <button class="bt-btn ghost mini" type="submit">↧ Seed Digital targets</button>
+            </form>
+            <form method="post" onsubmit="return confirm('Assign Corporate &amp; International targets per person (by name)? REPLACES existing per-person Corporate/International targets.')">
+              <input type="hidden" name="action" value="seed_deptperson">
+              <button class="bt-btn ghost mini" type="submit">↧ Seed Corporate &amp; International (per person)</button>
             </form>
           </div>
         </div>
