@@ -81,6 +81,20 @@ if ($bde_ru_id > 0) {
     }
 }
 
+// Repeat organizations (2+ sign-ups) = expansion / corporate opportunity — for Cross-SBU card.
+$bde_repeat_orgs = [];
+if ($bde_ru_id > 0) {
+    $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $bde_ru_id");
+    $ii = []; while ($iq && ($x = mysqli_fetch_assoc($iq))) { $ii[] = "'" . mysqli_real_escape_string($conn, (string) $x['intake_id']) . "'"; }
+    if (!empty($ii)) {
+        $in = implode(',', $ii);
+        $oq = @mysqli_query($conn, "SELECT r.organization org, COUNT(*) n FROM register r
+            WHERE r.intake_id IN ($in) AND r.organization IS NOT NULL AND TRIM(r.organization) <> ''
+            GROUP BY r.organization HAVING n >= 2 ORDER BY n DESC LIMIT 8");
+        while ($oq && ($orr = mysqli_fetch_assoc($oq))) { $bde_repeat_orgs[] = ['org' => (string) $orr['org'], 'n' => (int) $orr['n']]; }
+    }
+}
+
 // Payment promises from chats: clients whose inbound WhatsApp message mentioned paying.
 $bde_promises = [];
 if ($bde_ru_id > 0) {
@@ -536,9 +550,12 @@ if ($bde_is_admin) {
       B.unreadCount = <?php echo (int) $bde_unread_count; ?>;
       B.quietLeads = <?php echo json_encode($bde_quiet_leads, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.repeatOrgs = <?php echo json_encode($bde_repeat_orgs, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command"};
+      const _views=["command","targets","pipeline","visits","commission","report","strategy"];
+      const _hv=(location.hash||"").replace("#","");
+      const state={p:2,view:_views.indexOf(_hv)>=0?_hv:"command"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -725,8 +742,16 @@ if ($bde_is_admin) {
         if(nProm>0) stale.push({t:`${nProm} client${nProm>1?"s":""} promised to pay in chat`,p:"They said they'd pay on WhatsApp — confirm and close.",c:"amber",act:"promises"});
         if(nQuiet>0) stale.push({t:`${nQuiet} unpaid lead${nQuiet>1?"s":""} gone quiet`,p:"Registered, not yet paid, no recent contact — follow up.",c:"amber",act:"quiet"});
         if(isCorp) stale.push({t:`Proposals awaiting a confirmed review date`,p:"Corporate proposals need a scheduled review.",c:"amber",act:""});
-        const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
-        const cross=["Training client → Eval360 / 360 opportunity","Corporate demo → multi-department rollout","Academic employer → staff appraisal cohort","Alumnus → institutional sponsorship"];
+        // Conversion-quality — derived from this BDE's real numbers.
+        const quality=[];
+        const leadN=(B.totalLeads||B.totalRegs||0);const convR=leadN?((B.paidClients||0)/leadN):0;
+        if(leadN>5&&convR<0.4) quality.push(`Low conversion — only ${pct(convR,0)} of ${nf.format(leadN)} leads have paid`);
+        if(B.collection!=null&&B.collection>0&&B.collection<0.7) quality.push(`Collection at ${pct(B.collection,0)} — fees expected but not fully in`);
+        if((B.quietLeads||[]).length>0) quality.push(`${(B.quietLeads||[]).length} unpaid leads gone quiet — pipeline cooling`);
+        if((B.unreadCount||0)>3) quality.push(`${B.unreadCount} escalated chats unanswered — slow replies cost conversions`);
+        if((B.sources||[]).length===1) quality.push(`All leads from one channel (${B.sources[0][0]}) — diversify sources`);
+        // Cross-SBU / expansion — organizations sending multiple people (real, from registrations).
+        const cross=(B.repeatOrgs||[]).map(o=>`${o.org} — ${o.n} sign-ups`);
         const showPriorities=/digital/i.test(B.dept||"");
         return `
           <section class="grid-2">
@@ -737,8 +762,8 @@ if ($bde_is_admin) {
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>` : ""}
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${stale.length?"coral":"jade"}">${stale.length?stale.length+" flagged":"all clear"}</span></div><div class="list">${stale.length?stale.map(a=>`<div class="arow"><span class="pd ${a.c}"></span><div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div>${a.act?`<span class="abtn hot" data-alert="${a.act}" style="cursor:pointer">Open</span>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now — no unread chats or quiet unpaid leads.</p>'}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality alerts</h4><span class="chip amber">${quality.length} to review</span></div><div class="list">${quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Compare message, audience, ownership and follow-up quality.</p></div><span class="abtn warn">Review</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} open</span></div><div class="list">${cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Record source SBU, receiving owner, value and feedback.</p></div><span class="abtn info">Route</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${quality.length?"amber":"jade"}">${quality.length?quality.length+" to review":"healthy"}</span></div><div class="list">${quality.length?quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Derived from your live conversion, collection and response numbers.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion, collection and response times all look healthy.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Expansion opportunities</h4><span class="chip slate">${cross.length} org${cross.length===1?"":"s"}</span></div><div class="list">${cross.length?cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Multiple sign-ups from one organization — pitch a corporate/bulk deal.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No organizations with repeat sign-ups yet.</p>'}</div></div>
           </section>`;
       }
 
@@ -918,8 +943,10 @@ if ($bde_is_admin) {
         else if(act==="promises"){title="Clients who promised to pay";list=(B.promises||[]).map(c=>({a:c.name||c.phone,b:c.phone||"",w:c.when||"",cid:c.cid}));}
         else if(act==="quiet"){title="Unpaid leads gone quiet";list=(B.quietLeads||[]).map(c=>({a:c.name,b:[c.phone,c.prog].filter(Boolean).join(" · "),w:c.when||""}));}
         else return;
-        const rows=list.length?list.map(r=>{const inner=`<div><b>${esc(r.a)}</b>${r.b?`<small>${esc(r.b)}</small>`:""}</div><span class="amwhen">${esc(r.w)}${r.cid?' ›':''}</span>`;
-          return r.cid?`<a class="amrow" href="wa_thread.php?id=${r.cid}" style="text-decoration:none;color:inherit">${inner}</a>`:`<div class="amrow">${inner}</div>`;}).join(""):'<p style="color:#94a3b8;padding:14px">Nothing here right now.</p>';
+        const rows=list.length?list.map(r=>{
+          const meta=`<div><b>${esc(r.a)}</b>${(r.b||r.w)?`<small>${esc([r.b,r.w].filter(Boolean).join(" · "))}</small>`:""}</div>`;
+          const right=r.cid?`<a class="abtn hot" href="wa_thread.php?id=${r.cid}" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">Open chat →</a>`:`<span class="amwhen">${esc(r.w)}</span>`;
+          return `<div class="amrow">${meta}${right}</div>`;}).join(""):'<p style="color:#94a3b8;padding:14px">Nothing here right now.</p>';
         const ov=document.createElement("div");ov.className="amodal-ov";
         ov.innerHTML=`<div class="amodal"><div class="amodal-h"><h4>${esc(title)} (${list.length})</h4><button class="amodal-x" aria-label="Close">✕</button></div><div class="amodal-b">${rows}</div></div>`;
         ov.addEventListener("click",e=>{if(e.target===ov||e.target.classList.contains("amodal-x"))ov.remove();});
@@ -968,7 +995,9 @@ if ($bde_is_admin) {
       if(va) va.addEventListener("change",function(){var p=new URLSearchParams(location.search);p.set("as",this.value);location.search=p.toString();});
       // Action-alert "Open" buttons → open the list modal (delegated, survives re-render).
       root.addEventListener("click",function(e){var b=e.target.closest("[data-alert]");if(b){e.preventDefault();openAlertModal(b.getAttribute("data-alert"));}});
-      root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
+      root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;try{history.replaceState(null,"","#"+a.dataset.v);}catch(e){location.hash=a.dataset.v;}render();}));
+      // Restore the active tab on load (so a reload / browser-back keeps the tab you were on).
+      root.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.v===state.view));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
       render();
