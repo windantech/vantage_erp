@@ -550,25 +550,22 @@ if ($bde_is_admin) {
         const series=(B.dailyCum&&B.dailyCum.length)?B.dailyCum:[0];
         const dim=Math.max(2,B.daysInMonth||30);
         const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
-        const target=B.target||0, forecast=B.forecast||0;
+        const target=B.target||0;
         const cur=series[series.length-1]||0;
         const w=560,h=200,pd=34;
-        const max=Math.max(target,forecast,cur,...series,1)*1.12;
+        const max=Math.max(target,cur,...series,1)*1.12;
         const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);      // day 1..dim → x
         const Y=v=>h-pd-(v/max)*(h-2*pd);
         const A=series.map((v,i)=>[X(i+1),Y(v)]);       // actual, day 1..dayT
         const aLine=A.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
         const aArea=`M${A[0][0].toFixed(1)},${(h-pd).toFixed(1)} `+A.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${A[A.length-1][0].toFixed(1)},${(h-pd).toFixed(1)} Z`;
-        const proj=`M${X(dayT).toFixed(1)},${Y(cur).toFixed(1)} L${X(dim).toFixed(1)},${Y(forecast).toFixed(1)}`;
         const ty=Y(target),tx=X(dayT);
-        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Month-to-date revenue vs target and forecast">
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Month-to-date cleared revenue vs target">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
           <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
           <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
-          <path d="${proj}" fill="none" stroke="var(--jade)" stroke-width="2" stroke-dasharray="5 4" opacity="0.9"/>
           ${A.map((q,i)=>{const dAmt=(B.dailyAmt&&B.dailyAmt[i])||0;const dLbl=(B.dailyDates&&B.dailyDates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="10" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
-          <circle cx="${X(dim).toFixed(1)}" cy="${Y(forecast).toFixed(1)}" r="3.5" fill="var(--jade)"/><text x="${(X(dim)).toFixed(1)}" y="${(Y(forecast)-8).toFixed(1)}" text-anchor="end" style="font-weight:800;fill:var(--jade)">Proj. ${kMoney(forecast)}</text>
           <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+10,Y(cur)-9).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
           <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (day ${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
@@ -629,7 +626,7 @@ if ($bde_is_admin) {
           </section>
           <div class="card"><div class="chead"><h4>My portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Revenue this month vs target</h4><span class="chip jade">${kMoney(B.forecast)} projected</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px"><b style="color:var(--brand)">Solid</b> = cleared revenue day-by-day this month · <b style="color:var(--jade)">dashed</b> = projected month-end at today's pace · <b>Target</b> line = your goal.</div></div>
+            <div class="card"><div class="chead"><h4>Revenue this month vs target</h4><span class="chip jade">${kMoney(B.actual)} cleared</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px"><b style="color:var(--brand)">Line</b> = cleared revenue building up day-by-day this month (hover a day for that day's amount) · <b>Target</b> line = your monthly goal.</div></div>
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
