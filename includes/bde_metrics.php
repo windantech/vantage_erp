@@ -84,7 +84,7 @@ if (!function_exists('bde_fetch_metrics')) {
         $iq = @mysqli_query($conn, "SELECT ru.fullname, s.job_title, d.department_name
             FROM registered_users ru
             LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-            LEFT JOIN departments d ON s.department_id = d.id
+            LEFT JOIN departments d ON ru.department_id = d.id
             WHERE ru.id = $ruId LIMIT 1");
         if ($iq && ($ir = mysqli_fetch_assoc($iq))) {
             $out['name'] = (string) ($ir['fullname'] ?? '');
@@ -294,12 +294,12 @@ if (!function_exists('bde_team_metrics')) {
         $e = mysqli_real_escape_string($conn, $end_date);
         $rate = bde_usd_to_kes($conn);
 
-        // Resolve the viewed BDE's identity + department once.
+        // Resolve the viewed BDE's identity + department once. Department lives on
+        // registered_users.department_id (that's how BDEs are assigned a department).
         $deptId = 0; $deptName = ''; $meName = '';
-        $dq = @mysqli_query($conn, "SELECT s.department_id, d.department_name, ru.fullname
+        $dq = @mysqli_query($conn, "SELECT ru.department_id, d.department_name, ru.fullname
             FROM registered_users ru
-            LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-            LEFT JOIN departments d ON s.department_id = d.id
+            LEFT JOIN departments d ON ru.department_id = d.id
             WHERE ru.id = $ruId LIMIT 1");
         if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
             $deptId = (int) ($dr['department_id'] ?? 0);
@@ -334,9 +334,12 @@ if (!function_exists('bde_team_metrics')) {
                 $members[$ruId] = ['name' => $meName, 'title' => 'BDE', 'rev' => 0.0, 'clients' => 0];
             }
         } else {
-            // Primary: sellers whose staff record shares this department.
+            // Primary: everyone in the same department, straight from registered_users.department_id.
             if ($deptId > 0) {
-                $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id) WHERE s.department_id = $deptId ORDER BY ru.fullname");
+                $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(s.job_title,'') job_title
+                    FROM registered_users ru
+                    LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
+                    WHERE ru.department_id = $deptId AND ru.status = 1 ORDER BY ru.fullname");
                 while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
             }
             // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
@@ -404,10 +407,9 @@ if (!function_exists('bde_targets_progress')) {
         // department in staff, so we also match department targets by NAME, and fall back to the
         // Digital roster for the unlinked Digital three.
         $deptId = 0; $deptName2 = ''; $meName = '';
-        $dq = @mysqli_query($conn, "SELECT s.department_id, d.department_name, ru.fullname
+        $dq = @mysqli_query($conn, "SELECT ru.department_id, d.department_name, ru.fullname
             FROM registered_users ru
-            LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-            LEFT JOIN departments d ON s.department_id = d.id
+            LEFT JOIN departments d ON ru.department_id = d.id
             WHERE ru.id = $ruId LIMIT 1");
         if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
             $deptId = (int) ($dr['department_id'] ?? 0);

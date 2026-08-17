@@ -159,48 +159,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } else if ($action === 'seed_virtual') {
-        $seeded = 0; $skipped = 0; $unresolved = []; $resolved = [];
+        // Replace all previously-seeded course rows, then insert fresh for EVERY account matching each
+        // owner. Duplicate logins (e.g. two "Maryanne Owuor") therefore BOTH get the same targets.
+        @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND metric='revenue' AND metric_label='Course revenue'");
+        $seeded = 0; $unresolved = []; $resolved = [];
         foreach ($VIRTUAL_SEED as $row) {
             list($owner, $code, $cname, $rev, $clients, $fee) = $row;
             if (!isset($resolved[$owner])) {
-                $uid = 0; $uname = '';
+                $accts = [];
                 foreach (($OWNER_VARIANTS[$owner] ?? [$owner]) as $variant) {
                     $lk = mysqli_real_escape_string($conn, $variant);
-                    // When a name has duplicate accounts, prefer the one with REAL registration data
-                    // (that's the account whose dashboard shows figures), then a Virtual-dept match,
-                    // then lowest id — so targets land where the data lives, not on an empty duplicate.
+                    // all accounts for this name (handles duplicates); data-account first for tidy display
                     $q = @mysqli_query($conn, "SELECT ru.id, ru.fullname
                         FROM registered_users ru
-                        LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-                        LEFT JOIN departments d ON s.department_id = d.id
+                        LEFT JOIN departments d ON ru.department_id = d.id
                         WHERE ru.fullname LIKE '%$lk%'
                         ORDER BY EXISTS(SELECT 1 FROM intake i JOIN register r ON r.intake_id = i.intake_id WHERE i.assigned_to = ru.id) DESC,
-                                 (d.department_name LIKE '%virtual%') DESC, ru.id
-                        LIMIT 1");
-                    if ($q && ($rr = mysqli_fetch_assoc($q))) { $uid = (int) $rr['id']; $uname = (string) $rr['fullname']; break; }
+                                 (d.department_name LIKE '%virtual%') DESC, ru.id");
+                    while ($q && ($rr = mysqli_fetch_assoc($q))) { $accts[] = ['id' => (int) $rr['id'], 'name' => (string) $rr['fullname']]; }
+                    if (!empty($accts)) { break; } // first variant that matches wins
                 }
-                $resolved[$owner] = ['id' => $uid, 'name' => $uname];
+                $resolved[$owner] = $accts;
             }
-            $ownerId = (int) $resolved[$owner]['id']; $ownerName = $resolved[$owner]['name'];
-            if ($ownerId <= 0) { if (!in_array($owner, $unresolved, true)) { $unresolved[] = $owner; } continue; }
+            if (empty($resolved[$owner])) { if (!in_array($owner, $unresolved, true)) { $unresolved[] = $owner; } continue; }
             $product = "$cname ($code)";
             $prE = mysqli_real_escape_string($conn, $product);
-            // self-heal: drop any copy of this course seeded under a different owner (fixes a bad name match)
-            @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND metric='revenue' AND product='$prE' AND scope_ref <> '$ownerId'");
-            // idempotent: skip if a revenue target for this owner+course already exists
-            $ex = @mysqli_query($conn, "SELECT id FROM bde_targets WHERE scope_type='user' AND scope_ref='$ownerId' AND product='$prE' AND metric='revenue' LIMIT 1");
-            if ($ex && mysqli_num_rows($ex) > 0) { $skipped++; continue; }
-            $slE = mysqli_real_escape_string($conn, $ownerName);
             $noteE = mysqli_real_escape_string($conn, "100%: $clients clients × Kshs " . number_format($fee) . " · 70% qualifying");
-            $ok = @mysqli_query($conn, "INSERT INTO bde_targets
-                (scope_type, scope_ref, scope_label, product, metric, metric_label, unit, target_value, threshold_pct, notes, created_by)
-                VALUES ('user','$ownerId','$slE','$prE','revenue','Course revenue','KES'," . (float) $rev . ",70,'$noteE',$me)");
-            if ($ok) { $seeded++; }
+            foreach ($resolved[$owner] as $acct) {
+                $ownerId = (int) $acct['id']; $slE = mysqli_real_escape_string($conn, $acct['name']);
+                $ok = @mysqli_query($conn, "INSERT INTO bde_targets
+                    (scope_type, scope_ref, scope_label, product, metric, metric_label, unit, target_value, threshold_pct, notes, created_by)
+                    VALUES ('user','$ownerId','$slE','$prE','revenue','Course revenue','KES'," . (float) $rev . ",70,'$noteE',$me)");
+                if ($ok) { $seeded++; }
+            }
         }
-        $flash = "Seeded $seeded Virtual course target" . ($seeded === 1 ? '' : 's')
-            . ($skipped ? ", skipped $skipped already present" : '')
-            . (empty($unresolved) ? '.' : ". Couldn't match owner(s): " . implode(', ', $unresolved) . " — add those by hand or send me their exact CRM names.");
-        $flash_ok = empty($unresolved) || $seeded > 0;
+        $flash = "Seeded $seeded Virtual course target(s) across all matching accounts"
+            . (empty($unresolved) ? '.' : ". Couldn't match owner(s): " . implode(', ', $unresolved) . " — send me their exact CRM names.");
+        $flash_ok = $seeded > 0 || empty($unresolved);
     } else if ($action === 'seed_digital') {
         // resolve the Digital Solutions department
         $dq = @mysqli_query($conn, "SELECT id, department_name FROM departments WHERE department_name LIKE '%digital%' ORDER BY id LIMIT 1");

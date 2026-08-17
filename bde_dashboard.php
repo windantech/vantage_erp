@@ -274,6 +274,9 @@ if ($bde_is_admin) {
     .bde-app .tmark{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
     .bde-app .tprog-b{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink);margin-top:6px}
     .bde-app .tprog-none{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+    .bde-app .tmetric{padding-top:10px}
+    .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:10px}
+    .bde-app .tmetric-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
     </style>
 
     <div class="bde-app" id="bdeApp">
@@ -752,11 +755,14 @@ if ($bde_is_admin) {
             <div class="ttrack" style="margin:9px 0"><div class="tfill" style="width:${clamp(att*100,0,100)}%;background:${scol(st)}"></div></div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>${pct(att,0)} of 100% target</span><span class="sbadge s${st[0]}"><span class="dot"></span>${st==="green"?"On / above target":st==="amber"?"Above the 70% line":"Below the 70% line"}</span></div></div>`;
         }
-        const cards=rows.map(r=>{
+        // group targets by product (e.g. all "Eval360 · Individual" lines in one card), so a compound
+        // target reads as one grouped box: Individual, Corporate setup, Maintenance, etc.
+        const order=[], groups={};
+        rows.forEach(r=>{ const k=(r.product&&r.product.trim())?r.product:r.metric_label; if(!groups[k]){groups[k]=[];order.push(k);} groups[k].push(r); });
+        const metricLine=r=>{
           const hasA=r.actual!=null;
           const a=hasA&&r.target?r.actual/r.target:0;
           const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
-          const label=(r.product?esc(r.product)+" · ":"")+esc(r.metric_label);
           const t70=r.threshold_pct!=null?`<div class="tlevel tl-qual"><span class="tl-cap">${(+r.threshold_pct)}% qualifying</span><b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
           const levels=`<div class="tlevels"><div class="tlevel tl-full"><span class="tl-cap">100% target</span><b>${fmtV(r.target,r.unit)}</b></div>${t70}</div>`;
           const thMark=r.threshold_pct!=null?clamp(+r.threshold_pct,0,100):null;
@@ -764,7 +770,11 @@ if ($bde_is_admin) {
             ?`<div class="tprog"><div class="ttrack"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div>${thMark!=null?`<span class="tmark" style="left:${thMark}%"></span>`:""}</div>
                 <div class="tprog-b"><span>Actual <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
             :`<div class="tprog-none">Actual not tracked in the CRM yet</div>`;
-          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${r.scope==="user"?"Personal":"Dept"}</span><b>${label}</b></div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+          return `<div class="tmetric"><div class="tmetric-l">${esc(r.metric_label)}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+        };
+        const cards=order.map(k=>{
+          const grp=groups[k];
+          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${grp[0].scope==="user"?"Personal":"Dept"}</span><b>${esc(k)}</b></div>${grp.map(metricLine).join("")}</div>`;
         }).join("");
         return `<section><div class="eyebrow" style="margin-bottom:10px">Monthly targets · ${esc(B.name)}</div>${head}<div class="tgrid">${cards}</div></section>`;
       }
