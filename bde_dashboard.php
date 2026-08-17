@@ -54,7 +54,7 @@ if ($bde_is_admin) {
     // mapped to their login by email OR staff_id (staff_id is sparsely populated). Dedupe by login id.
     $pq = @mysqli_query($conn, "SELECT ru.id, COALESCE(NULLIF(ru.fullname,''), s.full_name) fullname, COALESCE(d.department_name,'') dept
         FROM staff s
-        JOIN registered_users ru ON (ru.email = s.email OR ru.staff_id = s.id) AND ru.status = 1
+        JOIN registered_users ru ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id) AND ru.status = 1
         LEFT JOIN departments d ON s.department_id = d.id
         WHERE s.onboarding_status IN ('pending','under_review','approved','active')
         ORDER BY d.department_name, fullname");

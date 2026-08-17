@@ -430,26 +430,29 @@ if (!function_exists('bde_targets_progress')) {
         $y = (int) date('Y', strtotime($to));
         $m = (int) date('n', strtotime($to));
 
-        $conds = ["(scope_type='user' AND scope_ref='$ruId')"];
-        if ($deptId > 0) { $conds[] = "(scope_type='department' AND scope_ref='$deptId')"; }
-        if ($deptName2 !== '') {
-            $dnE = mysqli_real_escape_string($conn, $deptName2);
-            // match either direction so "International" ↔ "International Training Dept" etc. align
-            $conds[] = "(scope_type='department' AND (scope_label LIKE '%$dnE%' OR '$dnE' LIKE CONCAT('%', scope_label, '%')))";
-        }
-        $where = implode(' OR ', $conds);
-        $tq = @mysqli_query($conn, "SELECT * FROM bde_targets WHERE active=1 AND ($where)
-            AND (period_year IS NULL OR (period_year=$y AND period_month=$m))
+        // Load this BDE's own (user) targets plus ALL department targets, then decide the department
+        // match in PHP — avoids SQL collation-mix errors from comparing labels to literals.
+        $tq = @mysqli_query($conn, "SELECT * FROM bde_targets
+            WHERE active=1 AND (period_year IS NULL OR (period_year=$y AND period_month=$m))
+            AND ((scope_type='user' AND scope_ref='$ruId') OR scope_type='department')
             ORDER BY scope_type DESC, product, metric");
+        $dnLower = strtolower(trim($deptName2));
         $targets = [];
-        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $targets[] = $tr; }
-        // keep only this Digital BDE's product on department-scoped rows
-        if ($digitalProduct !== '') {
-            $targets = array_values(array_filter($targets, function ($t) use ($digitalProduct) {
-                if ($t['scope_type'] === 'user') { return true; }
-                $p = strtolower((string) $t['product']);
-                return $p === '' || strpos($p, $digitalProduct) !== false;
-            }));
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) {
+            if ($tr['scope_type'] === 'user') { $targets[] = $tr; continue; } // SQL already scoped to this BDE
+            // department target: keep if it matches this BDE's department (by id, or name either direction)
+            $match = ($deptId > 0 && (int) $tr['scope_ref'] === $deptId);
+            if (!$match && $dnLower !== '') {
+                $sl = strtolower(trim((string) $tr['scope_label']));
+                $match = ($sl !== '' && ($sl === $dnLower || strpos($sl, $dnLower) !== false || strpos($dnLower, $sl) !== false));
+            }
+            if (!$match) { continue; }
+            // Digital BDEs each own one product — keep only their product's department rows
+            if ($digitalProduct !== '') {
+                $p = strtolower((string) $tr['product']);
+                if ($p !== '' && strpos($p, $digitalProduct) === false) { continue; }
+            }
+            $targets[] = $tr;
         }
         if (empty($targets)) { return $out; }
 
