@@ -377,3 +377,123 @@ if (!function_exists('bde_team_metrics')) {
         return $team;
     }
 }
+
+if (!function_exists('bde_targets_progress')) {
+    /**
+     * Applicable targets for a BDE — their own (scope=user) plus their department's defaults
+     * (scope=department) — for the month of $to, with the derived threshold value and, where the
+     * CRM can measure it, the actual collected revenue (per course when the target names one).
+     * Everything returned in KES. Returns:
+     *   ['rows'=>[ {scope,scope_label,product,metric,metric_label,unit,target,threshold_pct,
+     *               threshold_value,actual (nullable),notes} ... ],
+     *    'revenue_target'=>float, 'revenue_actual'=>float]
+     */
+    function bde_targets_progress($conn, $ruId, $deptName, $from, $to)
+    {
+        $ruId = (int) $ruId;
+        $out = ['rows' => [], 'revenue_target' => 0.0, 'revenue_actual' => 0.0];
+        if ($ruId <= 0) { return $out; }
+
+        // table may not exist yet (bde_targets.php creates it on first visit)
+        $chk = @mysqli_query($conn, "SHOW TABLES LIKE 'bde_targets'");
+        if (!$chk || mysqli_num_rows($chk) === 0) { return $out; }
+
+        $rate = function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0;
+
+        $deptId = 0;
+        $dq = @mysqli_query($conn, "SELECT s.department_id FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE ru.id = $ruId LIMIT 1");
+        if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $deptId = (int) $dr['department_id']; }
+
+        $y = (int) date('Y', strtotime($to));
+        $m = (int) date('n', strtotime($to));
+
+        $where = "(scope_type='user' AND scope_ref='$ruId')";
+        if ($deptId > 0) { $where .= " OR (scope_type='department' AND scope_ref='$deptId')"; }
+        $tq = @mysqli_query($conn, "SELECT * FROM bde_targets WHERE active=1 AND ($where)
+            AND (period_year IS NULL OR (period_year=$y AND period_month=$m))
+            ORDER BY scope_type DESC, product, metric");
+        $targets = [];
+        while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $targets[] = $tr; }
+        if (empty($targets)) { return $out; }
+
+        // --- actuals: collected revenue (USD) over [from,to], total + per course name ---
+        $s = mysqli_real_escape_string($conn, $from);
+        $e = mysqli_real_escape_string($conn, $to);
+        $paid = [];
+        $pq = @mysqli_query($conn, "SELECT app_id, SUM(TransactionAmount) paid FROM dpo_payment WHERE status = 2 GROUP BY app_id");
+        while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $paid[(string) $pr['app_id']] = (float) $pr['paid']; }
+
+        $intakeCourse = []; $intakeIds = [];
+        $iq = @mysqli_query($conn, "SELECT i.intake_id, c.course cname FROM intake i LEFT JOIN course c ON i.course_id = c.course_id WHERE i.assigned_to = $ruId");
+        while ($iq && ($ir = mysqli_fetch_assoc($iq))) { $iid = (string) $ir['intake_id']; $intakeIds[$iid] = true; $intakeCourse[$iid] = strtolower(trim((string) ($ir['cname'] ?? ''))); }
+
+        $courseRevUsd = []; $totalUsd = 0.0; $seen = [];
+        if (!empty($intakeIds)) {
+            $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, array_keys($intakeIds)));
+            $rq = @mysqli_query($conn, "SELECT entry_id, intake_id FROM register WHERE intake_id IN ($in) AND datee BETWEEN '$s' AND '$e 23:59:59'");
+            while ($rq && ($rr = mysqli_fetch_assoc($rq))) {
+                $eid = (string) $rr['entry_id']; if (isset($seen[$eid])) { continue; } $seen[$eid] = true;
+                $amt = $paid[$eid] ?? 0; if ($amt <= 0) { continue; }
+                $cn = $intakeCourse[(string) $rr['intake_id']] ?? '';
+                if ($cn !== '') { $courseRevUsd[$cn] = ($courseRevUsd[$cn] ?? 0) + $amt; }
+                $totalUsd += $amt;
+            }
+        }
+        // events (international/corporate) → add to total collected
+        $evIds = [];
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
+        if (!empty($evIds)) {
+            $ein = implode(',', $evIds);
+            $tq2 = @mysqli_query($conn, "SELECT SUM(CASE WHEN status=2 THEN amount ELSE 0 END) rev FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59'");
+            if ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) { $totalUsd += (float) $t2['rev']; }
+        }
+        $totalKes = $totalUsd * $rate;
+
+        // --- build rows ---
+        $revTarget = 0.0;
+        foreach ($targets as $t) {
+            $metric = (string) $t['metric'];
+            $unit   = (string) $t['unit'];
+            $valRaw = (float) $t['target_value'];
+            $target = ($unit === 'USD') ? $valRaw * $rate : $valRaw; // display everything in KES/count
+            $unitOut = ($unit === 'USD') ? 'KES' : $unit;
+            $thp = $t['threshold_pct'] !== null ? (float) $t['threshold_pct'] : null;
+            $thv = $thp !== null ? $target * $thp / 100 : null;
+
+            $actual = null;
+            if ($metric === 'revenue') {
+                $revTarget += $target;
+                $product = (string) $t['product'];
+                if ($product !== '') {
+                    // match the course named in the product to the per-course revenue map
+                    $pname = strtolower(trim(preg_replace('/\s*\([^)]*\)\s*$/', '', $product)));
+                    $matchUsd = null;
+                    foreach ($courseRevUsd as $cn => $rv) {
+                        if ($cn !== '' && ($cn === $pname || strpos($cn, $pname) !== false || strpos($pname, $cn) !== false)) { $matchUsd = ($matchUsd ?? 0) + $rv; }
+                    }
+                    if ($matchUsd !== null) { $actual = $matchUsd * $rate; }
+                } else {
+                    $actual = $totalKes; // department-level revenue target → total collected
+                }
+            }
+
+            $out['rows'][] = [
+                'scope' => (string) $t['scope_type'],
+                'scope_label' => (string) $t['scope_label'],
+                'product' => (string) $t['product'],
+                'metric' => $metric,
+                'metric_label' => (string) ($t['metric_label'] ?: $metric),
+                'unit' => $unitOut,
+                'target' => $target,
+                'threshold_pct' => $thp,
+                'threshold_value' => $thv,
+                'actual' => $actual,
+                'notes' => (string) $t['notes'],
+            ];
+        }
+        $out['revenue_target'] = $revTarget;
+        $out['revenue_actual'] = $totalKes;
+        return $out;
+    }
+}

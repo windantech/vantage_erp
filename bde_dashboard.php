@@ -43,6 +43,17 @@ if ($bde_metrics && $bde_metrics['name'] !== '') {
     $bdeInitials = strtoupper(substr($parts[0], 0, 1) . (isset($parts[1]) ? substr($parts[1], 0, 1) : ''));
 }
 $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : [];
+$bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_targets_progress($conn, $bde_ru_id, $bde_metrics['dept'], $bde_from, $bde_to) : null;
+
+// admin-only "View as" roster (so any BDE can be previewed by name without typing ?as=<id>)
+$bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
+$bde_people = [];
+if ($bde_is_admin) {
+    $pq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
+        FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id LEFT JOIN departments d ON s.department_id = d.id
+        WHERE ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
+    while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $bde_people[] = ['id' => (int) $pr['id'], 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']]; }
+}
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -216,12 +227,37 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
     }
     @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
     @media(prefers-reduced-motion:reduce){.bde-app *{transition:none!important}}
+    /* Targets view */
+    .bde-app .tsum{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;box-shadow:var(--shadow-sm)}
+    .bde-app .tsum .pl{font-size:14px;color:var(--ink)}
+    .bde-app .ttrack{height:9px;border-radius:999px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
+    .bde-app .tfill{height:100%;border-radius:999px;transition:width .5s}
+    .bde-app .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+    .bde-app .tcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--shadow-sm)}
+    .bde-app .tcard-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .bde-app .tcard-h b{font-size:13.5px;color:var(--ink);line-height:1.3}
+    .bde-app .pill2{flex:none;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:3px 8px;border-radius:999px;background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+    .bde-app .tbig{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+    .bde-app .tbig span{font-size:12px;font-weight:700;color:var(--muted)}
+    .bde-app .tmeta{font-size:12px;color:var(--ink);margin-top:6px}
+    .bde-app .tnote{font-size:11.5px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
     </style>
 
     <div class="bde-app" id="bdeApp">
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>Performance Command Centre</h1><p>Strategy → daily execution → verified revenue → commission → growth</p></div></div>
         <div class="controls">
+          <?php if ($bde_is_admin && !empty($bde_people)): ?>
+          <div class="control"><label>View as (admin)</label>
+            <select id="viewAs">
+              <?php $curDept = ''; foreach ($bde_people as $p): if ($p['dept'] !== $curDept): if ($curDept !== '') echo '</optgroup>'; $curDept = $p['dept']; ?>
+                <optgroup label="<?php echo htmlspecialchars($curDept !== '' ? $curDept : 'Unassigned'); ?>">
+              <?php endif; ?>
+                <option value="<?php echo $p['id']; ?>"<?php echo $p['id'] === $bde_ru_id ? ' selected' : ''; ?>><?php echo htmlspecialchars($p['name']); ?> (#<?php echo $p['id']; ?>)</option>
+              <?php endforeach; if ($curDept !== '') echo '</optgroup>'; ?>
+            </select>
+          </div>
+          <?php endif; ?>
           <div class="control"><label>Period</label>
             <select id="periodPreset">
               <?php foreach ($bde_presets as $pk => $pv): ?>
@@ -238,6 +274,7 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
       </header>
       <nav class="tabs" aria-label="Dashboard sections">
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
+        <button class="tab" data-v="targets"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>Targets</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
         <button class="tab" data-v="visits"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Field Visits</button>
         <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
@@ -325,6 +362,14 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         commissionKes: <?php echo (float) $bde_metrics['commission_kes']; ?>
       });
       B.team = <?php echo json_encode(!empty($bde_team) ? $bde_team : [['name' => ($bde_metrics['name'] !== '' ? $bde_metrics['name'] : 'You'), 'title' => ($bde_metrics['title'] !== '' ? $bde_metrics['title'] : 'BDE'), 'actual' => (float) $bde_metrics['revenue_kes'], 'clients' => (int) $bde_metrics['paid_clients'], 'me' => true]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+<?php if ($bde_tp): ?>
+      /* ---- real targets (from bde_targets) + progress ---- */
+      B.targets = <?php echo json_encode($bde_tp['rows'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.targetTotal = <?php echo (float) $bde_tp['revenue_target']; ?>;
+      B.targetActual = <?php echo (float) $bde_tp['revenue_actual']; ?>;
+      // replace the demo target with the real monthly revenue target so pace/attainment are honest
+      if (B.targetTotal > 0) { B.target = B.targetTotal; B.actual = B.targetActual; }
+<?php endif; ?>
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -657,9 +702,37 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         if(clr)clr.addEventListener("click",()=>["vf_client","vf_org","vf_loc","vf_val","vf_notes"].forEach(id=>{const e=el(id);if(e)e.value="";}));
       }
 
+      function vTargets(){
+        const rows=B.targets||[];
+        if(!rows.length){
+          return `<section class="strategy"><div><div class="eyebrow">Monthly targets</div><h2>No targets set for ${esc(B.name)} yet</h2><p>An admin can add them under <b>BDE Targets</b> in the left nav — a department default applies to everyone in the department, or set a specific target for this BDE.</p></div></section>`;
+        }
+        const fmtV=(v,unit)=>unit==="count"?nf.format(Math.round(v||0)):kMoney(v||0);
+        const T=B.targetTotal||0,A=B.targetActual||0,att=T?A/T:0;
+        const st=att>=1?"green":att>=.7?"amber":"red";
+        let head="";
+        if(T>0){
+          head=`<div class="tsum"><div class="pl">Revenue vs monthly target · <b class="num">${kMoney(A)} / ${kMoney(T)}</b></div>
+            <div class="ttrack" style="margin:9px 0"><div class="tfill" style="width:${clamp(att*100,0,100)}%;background:${scol(st)}"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>${pct(att,0)} of 100% target</span><span class="sbadge s${st[0]}"><span class="dot"></span>${st==="green"?"On / above target":st==="amber"?"Above the 70% line":"Below the 70% line"}</span></div></div>`;
+        }
+        const cards=rows.map(r=>{
+          const hasA=r.actual!=null;
+          const a=hasA&&r.target?r.actual/r.target:0;
+          const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
+          const label=(r.product?esc(r.product)+" · ":"")+esc(r.metric_label);
+          const th=r.threshold_pct!=null?`<div class="tmeta" style="color:var(--muted)">${(+r.threshold_pct)}% line → <b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
+          const actual=hasA
+            ?`<div class="tmeta">Actual <b>${fmtV(r.actual,r.unit)}</b> · ${pct(a,0)}</div><div class="ttrack" style="margin-top:6px"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div></div>`
+            :`<div class="tmeta" style="color:var(--muted)">Actual not tracked in the CRM yet</div>`;
+          return `<div class="tcard"><div class="tcard-h"><span class="pill2">${r.scope==="user"?"Personal":"Dept"}</span><b>${label}</b></div>
+            <div class="tbig">${fmtV(r.target,r.unit)}<span> · 100%</span></div>${th}${actual}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+        }).join("");
+        return `<section><div class="eyebrow" style="margin-bottom:10px">Monthly targets · ${esc(B.name)}</div>${head}<div class="tgrid">${cards}</div></section>`;
+      }
       function render(){
         const v=state.view;
-        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        el("workspace").innerHTML=v==="command"?vCommand():v==="targets"?vTargets():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
         if(v==="visits")bindVisits();
       }
@@ -694,6 +767,9 @@ $bde_team = ($bde_ru_id > 0 && function_exists('bde_team_metrics')) ? bde_team_m
         if(f) p.set("from",f); else p.delete("from"); if(t) p.set("to",t); else p.delete("to");
         location.search=p.toString();
       });});
+      // Admin "View as" → reload previewing that BDE (?as=<id>), keeping the date range.
+      var va=el("viewAs");
+      if(va) va.addEventListener("change",function(){var p=new URLSearchParams(location.search);p.set("as",this.value);location.search=p.toString();});
       root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
