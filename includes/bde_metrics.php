@@ -361,28 +361,57 @@ if (!function_exists('bde_team_metrics')) {
                 $members[$ruId] = ['name' => $meName, 'title' => 'BDE', 'rev' => 0.0, 'clients' => 0];
             }
         } else {
-            // Primary: the department's staff (from staff.department_id) who have an active login.
-            if ($deptId > 0) {
-                $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(s.job_title,'') job_title
-                    FROM staff s
-                    JOIN registered_users ru ON (ru.staff_id = s.id OR ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci) AND ru.status = 1
-                    WHERE s.department_id = $deptId ORDER BY ru.fullname");
-                while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+            // Per-person cohort (preferred): your team = everyone who shares your target group — all
+            // "International" people, all "Corporate" people, or all Virtual course owners. Built from
+            // the seeded user-scoped targets, so it needs NO department data.
+            $cohortProducts = []; $cohortCourse = false;
+            $mq0 = @mysqli_query($conn, "SELECT DISTINCT product, metric_label FROM bde_targets WHERE scope_type='user' AND scope_ref='$ruId'");
+            while ($mq0 && ($m0 = mysqli_fetch_assoc($mq0))) {
+                $p = (string) $m0['product'];
+                if (in_array($p, ['International', 'Corporate'], true)) { $cohortProducts[$p] = true; }
+                if ((string) $m0['metric_label'] === 'Course revenue') { $cohortCourse = true; }
             }
-            // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
-            // group by selling peers instead: everyone assigned the same way you are (intakes vs events).
-            if (count($members) < 2) {
-                $ci = @mysqli_query($conn, "SELECT 1 FROM intake WHERE assigned_to = $ruId LIMIT 1");
-                $hasIntake = $ci && mysqli_num_rows($ci) > 0;
-                $peer = @mysqli_query($conn, $hasIntake
-                    ? "SELECT DISTINCT assigned_to FROM intake WHERE assigned_to > 0"
-                    : "SELECT DISTINCT assigned_to FROM Event WHERE assigned_to > 0");
-                $pids = [$ruId => true];
-                while ($peer && ($pr = mysqli_fetch_assoc($peer))) { $pids[(int) $pr['assigned_to']] = true; }
-                $pin = implode(',', array_map('intval', array_keys($pids)));
-                $members = [];
-                $mq2 = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id WHERE ru.id IN ($pin)");
-                while ($mq2 && ($mr = mysqli_fetch_assoc($mq2))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+            $cohortIds = [];
+            if (!empty($cohortProducts)) {
+                $pin = implode(',', array_map(function ($p) use ($conn) { return "'" . mysqli_real_escape_string($conn, $p) . "'"; }, array_keys($cohortProducts)));
+                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND product IN ($pin)");
+                while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $cohortIds[(int) $cr['scope_ref']] = true; }
+            }
+            if ($cohortCourse) {
+                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND metric_label='Course revenue'");
+                while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $cohortIds[(int) $cr['scope_ref']] = true; }
+            }
+
+            if (!empty($cohortIds)) {
+                $cin = implode(',', array_map('intval', array_keys($cohortIds)));
+                $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(s.job_title,'') job_title
+                    FROM registered_users ru
+                    LEFT JOIN staff s ON (ru.staff_id = s.id OR ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci)
+                    WHERE ru.id IN ($cin)");
+                while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+            } else {
+                // No cohort: try the department's staff (if a department is set)...
+                if ($deptId > 0) {
+                    $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(s.job_title,'') job_title
+                        FROM staff s
+                        JOIN registered_users ru ON (ru.staff_id = s.id OR ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci) AND ru.status = 1
+                        WHERE s.department_id = $deptId ORDER BY ru.fullname");
+                    while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+                }
+                // ...else fall back to selling peers (everyone assigned the same way you are).
+                if (count($members) < 2) {
+                    $ci = @mysqli_query($conn, "SELECT 1 FROM intake WHERE assigned_to = $ruId LIMIT 1");
+                    $hasIntake = $ci && mysqli_num_rows($ci) > 0;
+                    $peer = @mysqli_query($conn, $hasIntake
+                        ? "SELECT DISTINCT assigned_to FROM intake WHERE assigned_to > 0"
+                        : "SELECT DISTINCT assigned_to FROM Event WHERE assigned_to > 0");
+                    $pids = [$ruId => true];
+                    while ($peer && ($pr = mysqli_fetch_assoc($peer))) { $pids[(int) $pr['assigned_to']] = true; }
+                    $pin = implode(',', array_map('intval', array_keys($pids)));
+                    $members = [];
+                    $mq2 = @mysqli_query($conn, "SELECT ru.id, ru.fullname, s.job_title FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id WHERE ru.id IN ($pin)");
+                    while ($mq2 && ($mr = mysqli_fetch_assoc($mq2))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
+                }
             }
         }
         if (empty($members)) { return $team; }
