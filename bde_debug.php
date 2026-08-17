@@ -1,0 +1,62 @@
+<?php
+/**
+ * bde_debug.php — admin-only diagnostic for BDE dashboard target/team matching.
+ * Usage: bde_debug.php?as=<registered_users.id>
+ * Prints how the viewed BDE's department resolves and which targets/team members match, so we can
+ * see exactly why targets or the team table are empty. Read-only.
+ */
+session_start();
+require_once 'header.php';
+if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
+if (!isset($role) || !is_array($role) || !in_array(777, $role)) { http_response_code(403); exit('Forbidden — admin only.'); }
+
+$id = (int) ($_GET['as'] ?? ($_SESSION['login_id'] ?? 0));
+echo '<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:16px 20px;background:#fff;color:#0e1726">';
+echo "BDE DEBUG — registered_users.id = $id\n=====================================\n\n";
+
+$ru = null;
+$r = @mysqli_query($conn, "SELECT id, fullname, email, status, user_type, department_id, staff_id FROM registered_users WHERE id = $id LIMIT 1");
+if ($r && ($ru = mysqli_fetch_assoc($r))) {
+    echo "-- registered_users row --\n";
+    foreach ($ru as $k => $v) { echo "  " . str_pad($k, 15) . ": " . (string) $v . "\n"; }
+    $did = (int) $ru['department_id'];
+    $dr = @mysqli_query($conn, "SELECT department_name FROM departments WHERE id = $did LIMIT 1");
+    echo "  " . str_pad('-> dept name', 15) . ": " . ($dr && ($d = mysqli_fetch_assoc($dr)) ? $d['department_name'] : '(department_id ' . $did . ' not found in departments)') . "\n";
+} else {
+    echo "!! No registered_users row for id $id\n";
+}
+
+echo "\n-- all departments --\n";
+$r = @mysqli_query($conn, "SELECT id, department_name FROM departments ORDER BY id");
+$anyD = false;
+while ($r && ($d = mysqli_fetch_assoc($r))) { $anyD = true; echo "  {$d['id']} = {$d['department_name']}\n"; }
+if (!$anyD) { echo "  (none)\n"; }
+
+echo "\n-- ALL department-scoped targets in bde_targets --\n";
+$r = @mysqli_query($conn, "SELECT scope_ref, scope_label, product, metric, target_value FROM bde_targets WHERE scope_type='department' ORDER BY scope_ref, id");
+$anyT = false;
+while ($r && ($t = mysqli_fetch_assoc($r))) { $anyT = true; echo "  dept#{$t['scope_ref']} (\"{$t['scope_label']}\") | " . ($t['product'] ?: '—') . " | {$t['metric']} = {$t['target_value']}\n"; }
+if (!$anyT) { echo "  (none)\n"; }
+
+echo "\n-- user-scoped targets for THIS id ($id) --\n";
+$r = @mysqli_query($conn, "SELECT scope_label, product, metric, target_value FROM bde_targets WHERE scope_type='user' AND scope_ref='$id' ORDER BY id");
+$anyU = false;
+while ($r && ($t = mysqli_fetch_assoc($r))) { $anyU = true; echo "  \"{$t['scope_label']}\" | " . ($t['product'] ?: '—') . " | {$t['metric']} = {$t['target_value']}\n"; }
+if (!$anyU) { echo "  (none)\n"; }
+
+if ($ru) {
+    $did = (int) $ru['department_id'];
+    echo "\n-- team: registered_users with department_id = $did (status=1) --\n";
+    $r = @mysqli_query($conn, "SELECT id, fullname, status FROM registered_users WHERE department_id = $did AND status = 1 ORDER BY fullname");
+    $n = 0;
+    while ($r && ($m = mysqli_fetch_assoc($r))) { $n++; echo "  #{$m['id']} {$m['fullname']}\n"; }
+    echo "  => $n member(s)\n";
+
+    echo "\n-- accounts sharing this name (duplicate check) --\n";
+    $nm = mysqli_real_escape_string($conn, (string) $ru['fullname']);
+    $r = @mysqli_query($conn, "SELECT id, fullname, department_id, status FROM registered_users WHERE fullname LIKE '%$nm%' ORDER BY id");
+    while ($r && ($m = mysqli_fetch_assoc($r))) { echo "  #{$m['id']} \"{$m['fullname']}\" dept={$m['department_id']} status={$m['status']}\n"; }
+}
+
+echo '</pre>';
+require_once 'footer.php';

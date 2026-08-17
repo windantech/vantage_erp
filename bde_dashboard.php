@@ -276,7 +276,15 @@ if ($bde_is_admin) {
     .bde-app .tprog-none{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
     .bde-app .tmetric{padding-top:10px}
     .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:10px}
+    .bde-app .tmetric-h{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
     .bde-app .tmetric-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+    .bde-app .tchip{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 9px;border-radius:999px;white-space:nowrap}
+    .bde-app .tchip-count{background:#e0edff;color:#1d4ed8}
+    .bde-app .tchip-money{background:#e3f6ec;color:#0f7a43}
+    .bde-app .tl-count b{color:#1d4ed8}
+    .bde-app .tl-count.tl-full{border-left-color:#1d4ed8}
+    .bde-app .tl-money b{color:#0f7a43}
+    .bde-app .tl-money.tl-full{border-left-color:#0f7a43}
     </style>
 
     <div class="bde-app" id="bdeApp">
@@ -760,17 +768,21 @@ if ($bde_is_admin) {
         const order=[], groups={};
         rows.forEach(r=>{ const k=(r.product&&r.product.trim())?r.product:r.metric_label; if(!groups[k]){groups[k]=[];order.push(k);} groups[k].push(r); });
         const metricLine=r=>{
+          const isCount=r.unit==="count";
+          const tcls=isCount?"tl-count":"tl-money";
+          const cword=r.metric==="active_users"?"Users":r.metric==="paid_staff"?"Staff":(r.metric==="corporate_clients"||/client/i.test(r.metric_label))?"Clients":"Number";
+          const chip=isCount?`<span class="tchip tchip-count"># ${cword}</span>`:`<span class="tchip tchip-money">KES Amount</span>`;
           const hasA=r.actual!=null;
           const a=hasA&&r.target?r.actual/r.target:0;
           const s=!hasA?"amber":a>=1?"green":(r.threshold_pct!=null&&r.actual>=r.threshold_value)?"amber":"red";
-          const t70=r.threshold_pct!=null?`<div class="tlevel tl-qual"><span class="tl-cap">${(+r.threshold_pct)}% qualifying</span><b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
-          const levels=`<div class="tlevels"><div class="tlevel tl-full"><span class="tl-cap">100% target</span><b>${fmtV(r.target,r.unit)}</b></div>${t70}</div>`;
+          const t70=r.threshold_pct!=null?`<div class="tlevel tl-qual ${tcls}"><span class="tl-cap">${(+r.threshold_pct)}% qualifying</span><b>${fmtV(r.threshold_value,r.unit)}</b></div>`:"";
+          const levels=`<div class="tlevels"><div class="tlevel tl-full ${tcls}"><span class="tl-cap">100% target</span><b>${fmtV(r.target,r.unit)}</b></div>${t70}</div>`;
           const thMark=r.threshold_pct!=null?clamp(+r.threshold_pct,0,100):null;
           const prog=hasA
             ?`<div class="tprog"><div class="ttrack"><div class="tfill" style="width:${clamp(a*100,0,100)}%;background:${scol(s)}"></div>${thMark!=null?`<span class="tmark" style="left:${thMark}%"></span>`:""}</div>
                 <div class="tprog-b"><span>Actual <b>${fmtV(r.actual,r.unit)}</b></span><b style="color:${scol(s)}">${pct(a,0)} of 100%</b></div></div>`
             :`<div class="tprog-none">Actual not tracked in the CRM yet</div>`;
-          return `<div class="tmetric"><div class="tmetric-l">${esc(r.metric_label)}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
+          return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}${prog}${r.notes?`<div class="tnote">${esc(r.notes)}</div>`:""}</div>`;
         };
         const cards=order.map(k=>{
           const grp=groups[k];
