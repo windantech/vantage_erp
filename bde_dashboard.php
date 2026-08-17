@@ -47,12 +47,19 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 
 // admin-only "View as" roster (so any BDE can be previewed by name without typing ?as=<id>)
 $bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
-$bde_people = [];
+$bde_people = []; $bde_current_listed = false;
 if ($bde_is_admin) {
+    // active employees only (staff.onboarding_status = 'active') who have a login — same basis as the HR tab
     $pq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
-        FROM registered_users ru LEFT JOIN staff s ON ru.staff_id = s.id LEFT JOIN departments d ON s.department_id = d.id
+        FROM registered_users ru
+        JOIN staff s ON ru.staff_id = s.id AND s.onboarding_status = 'active'
+        LEFT JOIN departments d ON s.department_id = d.id
         WHERE ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
-    while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $bde_people[] = ['id' => (int) $pr['id'], 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']]; }
+    while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
+        $pid = (int) $pr['id'];
+        $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
+        if ($pid === $bde_ru_id) { $bde_current_listed = true; }
+    }
 }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
@@ -250,6 +257,9 @@ if ($bde_is_admin) {
           <?php if ($bde_is_admin && !empty($bde_people)): ?>
           <div class="control"><label>View as (admin)</label>
             <select id="viewAs">
+              <?php if (!$bde_current_listed && $bde_ru_id > 0): ?>
+                <option value="<?php echo $bde_ru_id; ?>" selected>Currently viewing: <?php echo htmlspecialchars($bde_metrics && $bde_metrics['name'] !== '' ? $bde_metrics['name'] : ('#' . $bde_ru_id)); ?></option>
+              <?php endif; ?>
               <?php $curDept = ''; foreach ($bde_people as $p): if ($p['dept'] !== $curDept): if ($curDept !== '') echo '</optgroup>'; $curDept = $p['dept']; ?>
                 <optgroup label="<?php echo htmlspecialchars($curDept !== '' ? $curDept : 'Unassigned'); ?>">
               <?php endif; ?>
