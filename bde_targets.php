@@ -79,7 +79,7 @@ $OWNER_VARIANTS = [
     'MaryAnne' => ['MaryAnne', 'Mary Anne', 'Maryanne'],
     'Dorcas'   => ['Dorcas'],
     'Lucky'    => ['Lucky'],
-    'Joy'      => ['Joy'],
+    'Joy'      => ['Joy Kendi', 'Kendi'], // NOT bare 'Joy' — that matches "Joyce Wanjiku"
     'Rachael'  => ['Rachael', 'Rachel'],
 ];
 
@@ -161,6 +161,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($ownerId <= 0) { if (!in_array($owner, $unresolved, true)) { $unresolved[] = $owner; } continue; }
             $product = "$cname ($code)";
             $prE = mysqli_real_escape_string($conn, $product);
+            // self-heal: drop any copy of this course seeded under a different owner (fixes a bad name match)
+            @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND metric='revenue' AND product='$prE' AND scope_ref <> '$ownerId'");
             // idempotent: skip if a revenue target for this owner+course already exists
             $ex = @mysqli_query($conn, "SELECT id FROM bde_targets WHERE scope_type='user' AND scope_ref='$ownerId' AND product='$prE' AND metric='revenue' LIMIT 1");
             if ($ex && mysqli_num_rows($ex) > 0) { $skipped++; continue; }
