@@ -400,15 +400,32 @@ if (!function_exists('bde_targets_progress')) {
 
         $rate = function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0;
 
-        $deptId = 0;
-        $dq = @mysqli_query($conn, "SELECT s.department_id FROM registered_users ru JOIN staff s ON ru.staff_id = s.id WHERE ru.id = $ruId LIMIT 1");
-        if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $deptId = (int) $dr['department_id']; }
+        // Resolve the BDE's department (id + name) and their name. Some BDEs aren't linked to a
+        // department in staff, so we also match department targets by NAME, and fall back to the
+        // Digital roster for the unlinked Digital three.
+        $deptId = 0; $deptName2 = ''; $meName = '';
+        $dq = @mysqli_query($conn, "SELECT s.department_id, d.department_name, ru.fullname
+            FROM registered_users ru
+            LEFT JOIN staff s ON ru.staff_id = s.id
+            LEFT JOIN departments d ON s.department_id = d.id
+            WHERE ru.id = $ruId LIMIT 1");
+        if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
+            $deptId = (int) ($dr['department_id'] ?? 0);
+            $deptName2 = (string) ($dr['department_name'] ?? '');
+            $meName = (string) ($dr['fullname'] ?? '');
+        }
+        if ($deptName2 === '' && (string) $deptName !== '') { $deptName2 = (string) $deptName; }
+        if ($deptName2 === '' && function_exists('bde_digital_roster') && $meName !== '') {
+            foreach (bde_digital_roster() as $dn) { if (stripos($meName, $dn) !== false) { $deptName2 = 'Digital Solutions'; break; } }
+        }
 
         $y = (int) date('Y', strtotime($to));
         $m = (int) date('n', strtotime($to));
 
-        $where = "(scope_type='user' AND scope_ref='$ruId')";
-        if ($deptId > 0) { $where .= " OR (scope_type='department' AND scope_ref='$deptId')"; }
+        $conds = ["(scope_type='user' AND scope_ref='$ruId')"];
+        if ($deptId > 0) { $conds[] = "(scope_type='department' AND scope_ref='$deptId')"; }
+        if ($deptName2 !== '') { $dnE = mysqli_real_escape_string($conn, $deptName2); $conds[] = "(scope_type='department' AND scope_label LIKE '%$dnE%')"; }
+        $where = implode(' OR ', $conds);
         $tq = @mysqli_query($conn, "SELECT * FROM bde_targets WHERE active=1 AND ($where)
             AND (period_year IS NULL OR (period_year=$y AND period_month=$m))
             ORDER BY scope_type DESC, product, metric");

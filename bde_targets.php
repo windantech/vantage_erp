@@ -73,14 +73,15 @@ $VIRTUAL_SEED = [
     ['Rachael',  'PA',             'Practical Accounting',                     882805, 35, 25223],
     ['Rachael',  'ADVANCED EXCEL', 'Advanced Excel',                           756690, 30, 25223],
 ];
-// name variants to resolve each owner against registered_users.fullname
+// name variants to resolve each owner — FULL name first (specific), first-name only as last resort.
+// Resolution also prefers the Virtual department, so a loose first name can't grab the wrong person.
 $OWNER_VARIANTS = [
     'Purity'   => ['Purity'],
-    'MaryAnne' => ['MaryAnne', 'Mary Anne', 'Maryanne'],
-    'Dorcas'   => ['Dorcas'],
-    'Lucky'    => ['Lucky'],
-    'Joy'      => ['Joy Kendi', 'Kendi'], // NOT bare 'Joy' — that matches "Joyce Wanjiku"
-    'Rachael'  => ['Rachael', 'Rachel'],
+    'MaryAnne' => ['Maryanne Owuor', 'Maryanne', 'Mary Anne'],
+    'Dorcas'   => ['Dorcas Mukami', 'Dorcas'],
+    'Lucky'    => ['Lucky Anindo', 'Lucky'],
+    'Joy'      => ['Joy Kendi', 'Kendi'], // NOT bare 'Joy' — matches "Joyce Wanjiku"
+    'Rachael'  => ['Rachael Wambui', 'Rachael', 'Rachel'],
 ];
 
 // --- handle writes -----------------------------------------------------------
@@ -152,7 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $uid = 0; $uname = '';
                 foreach (($OWNER_VARIANTS[$owner] ?? [$owner]) as $variant) {
                     $lk = mysqli_real_escape_string($conn, $variant);
-                    $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '%$lk%' ORDER BY id LIMIT 1");
+                    // prefer an employee in the Virtual department (stops a same-first-name person elsewhere winning)
+                    $q = @mysqli_query($conn, "SELECT ru.id, ru.fullname FROM registered_users ru
+                        LEFT JOIN staff s ON ru.staff_id = s.id
+                        LEFT JOIN departments d ON s.department_id = d.id
+                        WHERE ru.fullname LIKE '%$lk%' AND d.department_name LIKE '%virtual%' ORDER BY ru.id LIMIT 1");
+                    if (!$q || mysqli_num_rows($q) === 0) {
+                        $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '%$lk%' ORDER BY id LIMIT 1");
+                    }
                     if ($q && ($rr = mysqli_fetch_assoc($q))) { $uid = (int) $rr['id']; $uname = (string) $rr['fullname']; break; }
                 }
                 $resolved[$owner] = ['id' => $uid, 'name' => $uname];
