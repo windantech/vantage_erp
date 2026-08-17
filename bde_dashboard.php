@@ -198,6 +198,25 @@ while ($cq && ($cr = mysqli_fetch_assoc($cq))) {
     $bde_cross_sbu[] = $lbl;
 }
 
+// Real commission records from the engine (commission_records) for this BDE.
+$bde_comm_records = [];
+if ($bde_ru_id > 0) {
+    $crq = @mysqli_query($conn, "SELECT commission_type ctype, COALESCE(source_name,'') sname, total_registered treg, qualifying_clients qc,
+        total_collected_fees coll, fee_collection_percentage collpct, commission_rate rate, commission_amount amt,
+        COALESCE(commission_currency,'KES') cur, is_eligible elig, COALESCE(status,'') st, COALESCE(eligibility_notes,'') notes, period_start ps, period_end pe
+        FROM commission_records WHERE staff_user_id = $bde_ru_id ORDER BY period_start DESC, id DESC LIMIT 40");
+    while ($crq && ($crr = mysqli_fetch_assoc($crq))) {
+        $bde_comm_records[] = [
+            'type' => (string) $crr['ctype'], 'source' => (string) $crr['sname'],
+            'registered' => (int) $crr['treg'], 'qualifying' => (int) $crr['qc'],
+            'collpct' => (float) $crr['collpct'], 'rate' => (float) $crr['rate'],
+            'amount' => (float) $crr['amt'], 'cur' => (string) $crr['cur'],
+            'eligible' => (int) $crr['elig'], 'status' => (string) $crr['st'], 'notes' => (string) $crr['notes'],
+            'period' => (!empty($crr['ps']) ? date('M j', strtotime((string) $crr['ps'])) : '') . (!empty($crr['pe']) ? ' – ' . date('M j', strtotime((string) $crr['pe'])) : ''),
+        ];
+    }
+}
+
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
     $parts = preg_split('/\s+/', trim($bde_metrics['name']));
@@ -613,6 +632,7 @@ if ($bde_is_admin) {
       B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.visits = <?php echo json_encode($bde_visits_data, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.crossSbu = <?php echo json_encode($bde_cross_sbu, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.commRecords = <?php echo json_encode($bde_comm_records, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -828,29 +848,37 @@ if ($bde_is_admin) {
       }
 
       function vCommission(){
-        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;const met=c.gates.filter(g=>g[1]).length;
-        const audit=[["Rule version","COMM-2026-09-v1","Effective-dated and locked after month close"],["Revenue source","Finance-cleared payments","Invoices and promises excluded"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Hold-back","Balance / support gate","Displayed separately from payable amount"],["Reversals","Refunds and credit notes","Recalculate and preserve audit history"]];
-        return `
+        const recs=B.commRecords||[];
+        const elig=B.commissionKes||0, paid=B.commissionPaidKes||0, att=B.target>0?B.actual/B.target:0;
+        const shown=clamp(att,0,1.2)/1.2;
+        const eligN=recs.filter(r=>r.eligible).length;
+        const cur=recs.length?(recs[0].cur||"KES"):"KES";
+        const money=v=>cur==="KES"?kMoney(v):(cur+" "+nf.format(Math.round(v)));
+        const summary=`
           <section class="hero">
             <div class="card">
-              <div class="chead"><h4>Your transparent commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Current estimate":"Locked"}</span></div>
+              <div class="chead"><h4>Commission — from the engine</h4><span class="chip ${elig>0?"jade":"gold"}">${elig>0?"Eligible":"Not yet eligible"}</span></div>
               <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
-              <div class="mini3"><div class="cm gold"><span>Estimated now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Additional earning</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
-              <div class="nextstep"><b>How it's earned:</b> individual-tier commission, 3% corporate setup, 2.5% maintenance and a KES 25,000 balanced bonus when both individual and corporate targets are met.</div>
+              <div class="mini3"><div class="cm gold"><span>Eligible now</span><b class="num">${kMoney(elig)}</b></div><div class="cm"><span>Paid to date</span><b class="num">${kMoney(paid)}</b></div><div class="cm"><span>Target attainment</span><b class="num">${pct(att,0)}</b></div></div>
+              <div class="nextstep"><b>Real figures from <code>commission_records</code></b> — Finance-verified. Commission unlocks on the client-count and fee-collection gates in your KPI sheet; it isn't estimated here.</div>
             </div>
-            <div class="card"><div class="chead"><h4>Next earning milestone</h4></div>
-              <div style="font-size:30px;font-weight:850;letter-spacing:-.03em;margin:6px 0 4px" class="num">${kMoney(Math.max(0,B.target-B.actual))}</div>
-              <div style="color:var(--muted);font-size:12.5px">remaining to the full revenue target</div>
-              <div class="nextstep"><b>Recommended push:</b> ${esc(c.unlock)} Concentrate on verified opportunities nearest to payment rather than adding unqualified activity.</div>
+            <div class="card"><div class="chead"><h4>Records eligible</h4><span class="chip slate">${recs.length} total</span></div>
+              <div style="font-size:30px;font-weight:850;letter-spacing:-.03em;margin:6px 0 4px" class="num">${nf.format(eligN)} / ${nf.format(recs.length)}</div>
+              <div style="color:var(--muted);font-size:12.5px">commission records currently eligible</div>
+              <div class="nextstep"><b>Remaining to target:</b> ${kMoney(Math.max(0,B.target-B.actual))} — collections (not just registrations) drive eligibility.</div>
             </div>
-          </section>
-          <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===c.gates.length?"jade":"gold"}">${met} / ${c.gates.length} met</span></div><div class="list">${c.gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>
-          </section>
-          <div class="card"><div class="chead"><h4>Three-month consistency journey</h4><span class="chip slate">Month 2 of 3</span></div>
-            <div class="steps3"><div class="stepbox"><span>Month 1</span><b>Target achieved</b><div class="st" style="color:var(--jade)">✓ Verified</div></div><div class="stepbox"><span>Month 2</span><b>${att>=1?"On track":"Recovery required"}</b><div class="st" style="color:${att>=1?"var(--jade)":"var(--amber)"}">${pct(att)} current attainment</div></div><div class="stepbox"><span>Month 3</span><b>Future period</b><div class="st" style="color:var(--slate)">Consistency reward pending</div></div></div>
-          </div>`;
+          </section>`;
+        const table=recs.length
+          ?`<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Period</th><th>Source</th><th>Clients (qual/reg)</th><th>Collection</th><th>Rate</th><th>Commission</th><th>Status</th></tr></thead><tbody>${recs.map(r=>`<tr>
+              <td>${esc(r.period||"—")}</td>
+              <td><b>${esc(r.source||r.type||"—")}</b>${(r.notes&&!r.eligible)?`<span style="display:block;font-size:11px;color:var(--coral)">${esc(r.notes)}</span>`:""}</td>
+              <td class="num">${nf.format(r.qualifying)} / ${nf.format(r.registered)}</td>
+              <td class="num">${pct((r.collpct||0)/100,0)}</td>
+              <td class="num">${r.rate?r.rate+"%":"—"}</td>
+              <td class="num"><b>${money(r.amount)}</b></td>
+              <td>${r.eligible?`<span class="chip jade">${esc(r.status||"eligible")}</span>`:`<span class="chip coral">not eligible</span>`}</td></tr>`).join("")}</tbody></table></div></div>`
+          :`<div class="card"><p style="color:var(--muted);margin:6px 2px;font-size:13px">No commission has been calculated for this BDE yet. The engine writes to <code>commission_records</code> per period (run and approved by Finance) — until it runs, there's nothing to show. Eligibility depends on hitting both the client-count and fee-collection thresholds.</p></div>`;
+        return summary + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table;
       }
 
       function vReport(){
