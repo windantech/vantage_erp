@@ -49,12 +49,13 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 $bde_is_admin = isset($role) && is_array($role) && in_array(777, $role);
 $bde_people = []; $bde_current_listed = false;
 if ($bde_is_admin) {
-    // active employees only (staff.onboarding_status = 'active') who have a login — same basis as the HR tab
+    // active accounts only (registered_users.status = 1 — the same flag login checks), grouped by
+    // department. Not tied to staff onboarding_status, so dept-unlinked BDEs still appear.
     $pq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
         FROM registered_users ru
-        JOIN staff s ON ru.staff_id = s.id AND s.onboarding_status = 'active'
+        LEFT JOIN staff s ON ru.staff_id = s.id
         LEFT JOIN departments d ON s.department_id = d.id
-        WHERE ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
+        WHERE ru.status = 1 AND ru.fullname <> '' ORDER BY d.department_name, ru.fullname");
     while ($pq && ($pr = mysqli_fetch_assoc($pq))) {
         $pid = (int) $pr['id'];
         $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
