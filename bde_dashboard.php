@@ -732,8 +732,6 @@ if ($bde_is_admin) {
         const leadN=(B.totalLeads||B.totalRegs||0);const convR=leadN?((B.paidClients||0)/leadN):0;
         if(leadN>5&&convR<0.4) quality.push(`Low conversion — only ${pct(convR,0)} of ${nf.format(leadN)} leads have paid`);
         if(B.collection!=null&&B.collection>0&&B.collection<0.7) quality.push(`Collection at ${pct(B.collection,0)} — fees expected but not fully in`);
-        if((B.quietLeads||[]).length>0) quality.push(`${(B.quietLeads||[]).length} unpaid leads gone quiet — pipeline cooling`);
-        if((B.unreadCount||0)>3) quality.push(`${B.unreadCount} escalated chats unanswered — slow replies cost conversions`);
         if((B.sources||[]).length===1) quality.push(`All leads from one channel (${B.sources[0][0]}) — diversify sources`);
         // Cross-SBU — opportunities another department logged (via field visits) for this BDE's SBU.
         const cross=(B.crossSbu||[]);
