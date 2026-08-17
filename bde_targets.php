@@ -57,6 +57,32 @@ $METRICS = [
     'other'               => ['Other (set label)', 'count'],
 ];
 
+// Virtual is course-based: each course is owned by a BDE and carries a 100% revenue target
+// (70% is derived from the threshold). Seed data from the approved course sheet.
+// [owner first-name, course code, course name, 100% revenue, 100% clients, fee/client]
+$VIRTUAL_SEED = [
+    ['Purity',   'SMC',            'Senior Management Course',               1600000, 50, 32000],
+    ['Purity',   'PS',             'Public Speaking',                         882805, 35, 25223],
+    ['MaryAnne', 'SLDP',           'Senior Leadership Development Programme', 1448720, 35, 41392],
+    ['MaryAnne', 'SSP',            'Supervisory Skills Programme',            1008920, 40, 25223],
+    ['Dorcas',   'PM',             'Project Management',                       882805, 35, 25223],
+    ['Lucky',    'M&E',            'Monitoring & Evaluation',                 1267600, 40, 31690],
+    ['Lucky',    'RM',             'Resource Mobilisation',                   1008920, 40, 25223],
+    ['Joy',      'DATA ANALYSIS',  'Data Analysis',                            882805, 35, 25223],
+    ['Joy',      'TOT',            'Training of Trainers',                     882805, 35, 25223],
+    ['Rachael',  'PA',             'Practical Accounting',                     882805, 35, 25223],
+    ['Rachael',  'ADVANCED EXCEL', 'Advanced Excel',                           756690, 30, 25223],
+];
+// name variants to resolve each owner against registered_users.fullname
+$OWNER_VARIANTS = [
+    'Purity'   => ['Purity'],
+    'MaryAnne' => ['MaryAnne', 'Mary Anne', 'Maryanne'],
+    'Dorcas'   => ['Dorcas'],
+    'Lucky'    => ['Lucky'],
+    'Joy'      => ['Joy'],
+    'Rachael'  => ['Rachael', 'Rachel'],
+];
+
 // --- handle writes -----------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -118,10 +144,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = $ok ? 'Target added.' : 'Insert failed.'; $flash_ok = (bool) $ok;
             }
         }
+    } else if ($action === 'seed_virtual') {
+        $seeded = 0; $skipped = 0; $unresolved = []; $resolved = [];
+        foreach ($VIRTUAL_SEED as $row) {
+            list($owner, $code, $cname, $rev, $clients, $fee) = $row;
+            if (!isset($resolved[$owner])) {
+                $uid = 0; $uname = '';
+                foreach (($OWNER_VARIANTS[$owner] ?? [$owner]) as $variant) {
+                    $lk = mysqli_real_escape_string($conn, $variant);
+                    $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '%$lk%' ORDER BY id LIMIT 1");
+                    if ($q && ($rr = mysqli_fetch_assoc($q))) { $uid = (int) $rr['id']; $uname = (string) $rr['fullname']; break; }
+                }
+                $resolved[$owner] = ['id' => $uid, 'name' => $uname];
+            }
+            $ownerId = (int) $resolved[$owner]['id']; $ownerName = $resolved[$owner]['name'];
+            if ($ownerId <= 0) { if (!in_array($owner, $unresolved, true)) { $unresolved[] = $owner; } continue; }
+            $product = "$cname ($code)";
+            $prE = mysqli_real_escape_string($conn, $product);
+            // idempotent: skip if a revenue target for this owner+course already exists
+            $ex = @mysqli_query($conn, "SELECT id FROM bde_targets WHERE scope_type='user' AND scope_ref='$ownerId' AND product='$prE' AND metric='revenue' LIMIT 1");
+            if ($ex && mysqli_num_rows($ex) > 0) { $skipped++; continue; }
+            $slE = mysqli_real_escape_string($conn, $ownerName);
+            $noteE = mysqli_real_escape_string($conn, "100%: $clients clients × Kshs " . number_format($fee) . " · 70% qualifying");
+            $ok = @mysqli_query($conn, "INSERT INTO bde_targets
+                (scope_type, scope_ref, scope_label, product, metric, metric_label, unit, target_value, threshold_pct, notes, created_by)
+                VALUES ('user','$ownerId','$slE','$prE','revenue','Course revenue','KES'," . (float) $rev . ",70,'$noteE',$me)");
+            if ($ok) { $seeded++; }
+        }
+        $flash = "Seeded $seeded Virtual course target" . ($seeded === 1 ? '' : 's')
+            . ($skipped ? ", skipped $skipped already present" : '')
+            . (empty($unresolved) ? '.' : ". Couldn't match owner(s): " . implode(', ', $unresolved) . " — add those by hand or send me their exact CRM names.");
+        $flash_ok = empty($unresolved) || $seeded > 0;
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
     // the same target, and the form comes back empty ready for the next entry.
-    if (in_array($action, ['save', 'delete'], true) && $flash_ok && $flash !== '') {
+    if (in_array($action, ['save', 'delete', 'seed_virtual'], true) && $flash_ok && $flash !== '') {
         $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
         header('Location: bde_targets.php'); exit;
     }
@@ -297,8 +354,12 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
       </div>
 
       <div class="bt-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
           <strong style="font-size:15px">Current targets (<?php echo count($rows); ?>)</strong>
+          <form method="post" onsubmit="return confirm('Auto-fill the 11 Virtual course revenue targets (100% + derived 70%)? Existing ones are skipped.')">
+            <input type="hidden" name="action" value="seed_virtual">
+            <button class="bt-btn ghost mini" type="submit">↧ Seed Virtual course targets</button>
+          </form>
         </div>
         <?php if (empty($rows)): ?>
           <p style="color:#94a3b8;margin:8px 0">No targets yet. Add the first one above.</p>
@@ -314,7 +375,12 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
                   <td><span class="pill <?php echo $r['scope_type'] === 'user' ? 'user' : 'dept'; ?>"><?php echo $r['scope_type'] === 'user' ? 'BDE' : 'Dept'; ?></span> <?php echo htmlspecialchars($r['scope_label'] ?: $r['scope_ref']); ?></td>
                   <td><?php echo htmlspecialchars($r['product'] ?: '—'); ?></td>
                   <td><?php echo htmlspecialchars($r['metric_label'] ?: $r['metric']); ?></td>
-                  <td><strong><?php echo htmlspecialchars(fmt_value($r['target_value'], $r['unit'])); ?></strong></td>
+                  <td>
+                    <strong><?php echo htmlspecialchars(fmt_value($r['target_value'], $r['unit'])); ?></strong>
+                    <?php if ($r['threshold_pct'] !== null): $thpct = (float) $r['threshold_pct']; ?>
+                      <div style="color:#64748b;font-size:11px"><?php echo htmlspecialchars(rtrim(rtrim(number_format($thpct, 2), '0'), '.')); ?>% → <?php echo htmlspecialchars(fmt_value((float) $r['target_value'] * $thpct / 100, $r['unit'])); ?></div>
+                    <?php endif; ?>
+                  </td>
                   <td><?php echo $r['threshold_pct'] !== null ? htmlspecialchars(rtrim(rtrim(number_format((float) $r['threshold_pct'], 2), '0'), '.')) . '%' : '—'; ?></td>
                   <td><?php echo htmlspecialchars(fmt_period($r['period_year'], $r['period_month'])); ?></td>
                   <td style="white-space:nowrap;text-align:right">
