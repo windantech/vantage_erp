@@ -8,6 +8,7 @@
 // `.bde-app` container so it neither leaks into nor is overridden by the admin
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
+ob_start(); // buffer so we can Post/Redirect/Get after logging a field visit
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 require_once 'includes/bde_metrics.php';
 if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); } // live is 8.1+: a bad query must fail soft, not throw & blank the page
@@ -18,6 +19,50 @@ if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); } // 
 $bde_ru_id = (int) ($_SESSION['login_id'] ?? 0);
 if (isset($_GET['as']) && isset($role) && is_array($role) && in_array(777, $role)) {
     $bde_ru_id = (int) $_GET['as'];
+}
+
+// --- Field visits: self-migrating table + log handler (Post/Redirect/Get back to #visits) ---
+@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS bde_visits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    bde_user_id INT NOT NULL,
+    visit_date DATE NOT NULL,
+    client VARCHAR(160) NOT NULL DEFAULT '',
+    organization VARCHAR(200) NOT NULL DEFAULT '',
+    location VARCHAR(160) NOT NULL DEFAULT '',
+    product VARCHAR(120) NOT NULL DEFAULT '',
+    outcome ENUM('visited','interested','registered','no_show') NOT NULL DEFAULT 'visited',
+    value DECIMAL(15,2) NOT NULL DEFAULT 0,
+    contact_phone VARCHAR(50) NOT NULL DEFAULT '',
+    followup_date DATE DEFAULT NULL,
+    opportunity_for_dept VARCHAR(120) NOT NULL DEFAULT '',
+    opportunity_note VARCHAR(255) NOT NULL DEFAULT '',
+    notes VARCHAR(600) NOT NULL DEFAULT '',
+    created_by INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_bde (bde_user_id), KEY idx_oppdept (opportunity_for_dept)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'log_visit' && $bde_ru_id > 0) {
+    $client = trim((string) ($_POST['client'] ?? ''));
+    if ($client !== '') {
+        $vd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['visit_date'] ?? '')) ? $_POST['visit_date'] : date('Y-m-d');
+        $fd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['followup_date'] ?? '')) ? $_POST['followup_date'] : null;
+        $oc = in_array(($_POST['outcome'] ?? 'visited'), ['visited', 'interested', 'registered', 'no_show'], true) ? $_POST['outcome'] : 'visited';
+        $E = function ($k) use ($conn) { return mysqli_real_escape_string($conn, trim((string) ($_POST[$k] ?? ''))); };
+        $me_id = (int) ($_SESSION['login_id'] ?? 0);
+        $val = (float) ($_POST['value'] ?? 0);
+        $fdSql = $fd ? "'" . mysqli_real_escape_string($conn, $fd) . "'" : 'NULL';
+        @mysqli_query($conn, "INSERT INTO bde_visits
+            (bde_user_id, visit_date, client, organization, location, product, outcome, value, contact_phone, followup_date, opportunity_for_dept, opportunity_note, notes, created_by)
+            VALUES ($bde_ru_id, '" . mysqli_real_escape_string($conn, $vd) . "', '" . $E('client') . "', '" . $E('organization') . "', '" . $E('location') . "', '" . $E('product') . "', '$oc', $val, '" . $E('contact_phone') . "', $fdSql, '" . $E('opportunity_for_dept') . "', '" . $E('opportunity_note') . "', '" . $E('notes') . "', $me_id)");
+    }
+    $qs = [];
+    if (isset($_GET['as'])) { $qs[] = 'as=' . (int) $_GET['as']; }
+    if (isset($_GET['from'])) { $qs[] = 'from=' . urlencode((string) $_GET['from']); }
+    if (isset($_GET['to'])) { $qs[] = 'to=' . urlencode((string) $_GET['to']); }
+    header('Location: bde_dashboard.php' . ($qs ? '?' . implode('&', $qs) : '') . '#visits');
+    exit;
 }
 // Date range filter (calendar). Defaults to THIS MONTH (targets are monthly).
 // ?from=YYYY-MM-DD&to=YYYY-MM-DD scopes it explicitly.
@@ -125,6 +170,41 @@ if ($bde_ru_id > 0) {
     }
 }
 $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, $bde_to) : null;
+
+// Field visits logged by this BDE (real).
+$bde_visits_data = [];
+if ($bde_ru_id > 0) {
+    $vq = @mysqli_query($conn, "SELECT visit_date, client, organization, location, product, outcome, value, notes
+        FROM bde_visits WHERE bde_user_id = $bde_ru_id ORDER BY visit_date DESC, id DESC LIMIT 200");
+    while ($vq && ($vr = mysqli_fetch_assoc($vq))) {
+        $bde_visits_data[] = ['date' => (string) $vr['visit_date'], 'client' => (string) $vr['client'], 'org' => (string) $vr['organization'],
+            'location' => (string) $vr['location'], 'product' => (string) $vr['product'], 'outcome' => (string) $vr['outcome'],
+            'value' => (float) $vr['value'], 'notes' => (string) $vr['notes']];
+    }
+}
+// Cross-SBU opportunities routed to this BDE's department (logged by anyone else on a field visit).
+$bde_cross_sbu = [];
+$bde_dept_name = $bde_metrics ? (string) $bde_metrics['dept'] : '';
+if ($bde_dept_name === '' && function_exists('bde_resolve_dept')) { $rdc = bde_resolve_dept($conn, $bde_ru_id); $bde_dept_name = (string) $rdc['name']; }
+if ($bde_dept_name !== '') {
+    $dcE = mysqli_real_escape_string($conn, $bde_dept_name);
+    $cq = @mysqli_query($conn, "SELECT v.client, v.organization, v.value, v.opportunity_note, ru.fullname lb
+        FROM bde_visits v LEFT JOIN registered_users ru ON ru.id = v.bde_user_id
+        WHERE v.opportunity_for_dept LIKE '%$dcE%' AND v.bde_user_id <> $bde_ru_id
+        ORDER BY v.visit_date DESC, v.id DESC LIMIT 12");
+    while ($cq && ($cr = mysqli_fetch_assoc($cq))) {
+        $lbl = trim((string) $cr['client'] . ((string) $cr['organization'] !== '' ? ' · ' . (string) $cr['organization'] : ''));
+        if ((float) $cr['value'] > 0) { $lbl .= ' — KES ' . number_format((float) $cr['value']); }
+        if ((string) $cr['lb'] !== '') { $lbl .= ' · by ' . (string) $cr['lb']; }
+        if ((string) $cr['opportunity_note'] !== '') { $lbl .= ' — ' . (string) $cr['opportunity_note']; }
+        $bde_cross_sbu[] = $lbl;
+    }
+}
+// department list for the "opportunity for" dropdown
+$bde_dept_list = [];
+$dql = @mysqli_query($conn, "SELECT department_name FROM departments ORDER BY department_name");
+while ($dql && ($drl = mysqli_fetch_assoc($dql))) { $bde_dept_list[] = (string) $drl['department_name']; }
+
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
     $parts = preg_split('/\s+/', trim($bde_metrics['name']));
@@ -538,6 +618,9 @@ if ($bde_is_admin) {
       B.unreadCount = <?php echo (int) $bde_unread_count; ?>;
       B.quietLeads = <?php echo json_encode($bde_quiet_leads, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.visits = <?php echo json_encode($bde_visits_data, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.crossSbu = <?php echo json_encode($bde_cross_sbu, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.deptList = <?php echo json_encode($bde_dept_list, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -830,7 +913,7 @@ if ($bde_is_admin) {
       }
 
       /* ---------- field visit tracker (visuals; real data wired later) ---------- */
-      const VISIT_PRODUCTS=["Eval360","360 Appraisal","Data Analysis","M&E System"];
+      const VISIT_PRODUCTS=["Virtual course","Corporate training","International event","Academic program","Eval360","360 Appraisal","Data Analysis","M&E System","Other"];
       const VISIT_OUTCOMES=[["visited","Visited","slate"],["interested","Interested","amber"],["registered","Registered","jade"]];
       function visitStats(){
         const v=B.visits||[];
@@ -861,22 +944,27 @@ if ($bde_is_admin) {
         return `
           <div class="section-tag"><h3>Field visit tracker</h3><span>Log every client you visit in the field — visits roll up to your department (BDO) and the BDM</span><div class="rule"></div></div>
           ${kpiRow}
-          <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
+          <form method="post" class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
+            <input type="hidden" name="action" value="log_visit">
             <div class="form-grid">
-              <div class="field"><label>Client / contact person</label><input id="vf_client" type="text" placeholder="e.g. Grace Wanjiru"></div>
-              <div class="field"><label>Organization</label><input id="vf_org" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
-              <div class="field"><label>Location / area</label><input id="vf_loc" type="text" placeholder="e.g. Nairobi CBD"></div>
-              <div class="field"><label>Product of interest</label><select id="vf_prod">${prodOpts}</select></div>
-              <div class="field"><label>Outcome</label><select id="vf_out">${outOpts}</select></div>
-              <div class="field"><label>Potential value (KES)</label><input id="vf_val" type="number" min="0" placeholder="0"></div>
-              <div class="field"><label>Visit date</label><input id="vf_date" type="date" value="${todayStr()}"></div>
-              <div class="field span2"><label>Notes</label><textarea id="vf_notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
+              <div class="field"><label>Client / contact person</label><input name="client" type="text" required placeholder="e.g. Grace Wanjiru"></div>
+              <div class="field"><label>Organization</label><input name="organization" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
+              <div class="field"><label>Contact phone</label><input name="contact_phone" type="text" placeholder="07…"></div>
+              <div class="field"><label>Location / area</label><input name="location" type="text" placeholder="e.g. Nairobi CBD"></div>
+              <div class="field"><label>Product of interest</label><select name="product">${prodOpts}</select></div>
+              <div class="field"><label>Outcome</label><select name="outcome">${outOpts}</select></div>
+              <div class="field"><label>Potential value (KES)</label><input name="value" type="number" min="0" placeholder="0"></div>
+              <div class="field"><label>Visit date</label><input name="visit_date" type="date" value="${todayStr()}"></div>
+              <div class="field"><label>Follow-up date</label><input name="followup_date" type="date"></div>
+              <div class="field"><label>Cross-SBU opportunity for <span style="text-transform:none;color:var(--muted)">(another department)</span></label><select name="opportunity_for_dept"><option value="">— none —</option>${(B.deptList||[]).map(d=>`<option>${esc(d)}</option>`).join("")}</select></div>
+              <div class="field span2"><label>Opportunity note <span style="text-transform:none;color:var(--muted)">(what they need from that SBU)</span></label><input name="opportunity_note" type="text" placeholder="e.g. HR wants staff appraisals for 40 staff"></div>
+              <div class="field span2"><label>Notes</label><textarea name="notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
             </div>
-            <div class="report-actions"><button class="tbtn solid" id="vf_save" type="button">Log visit</button><button class="tbtn" id="vf_clear" type="button">Clear</button></div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>Tip:</b> log visits the same day while the details are fresh. "Registered" is auto-confirmed against Finance-verified payments once real data is connected — you only log the visit. Every field visit is visible to your BDO and the BDM.</div>
-          </div>
+            <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button><button class="tbtn" id="vf_clear" type="reset">Clear</button></div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>Tip:</b> log visits the same day while details are fresh. Flag a <b>cross-SBU opportunity</b> for another department and it appears on their dashboard. Every visit is visible to your BDO and the BDM.</div>
+          </form>
           <div class="section-tag"><h3>My recent field visits</h3><span>${nf.format((B.visits||[]).length)} logged</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:18px">No field visits logged yet — use the form above to add your first one.</td></tr>'}</tbody></table></div></div>`;
       }
       function bindVisits(){
         const save=el("vf_save"); if(!save)return;
