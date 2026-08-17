@@ -182,28 +182,21 @@ if ($bde_ru_id > 0) {
             'value' => (float) $vr['value'], 'notes' => (string) $vr['notes']];
     }
 }
-// Cross-SBU opportunities routed to this BDE's department (logged by anyone else on a field visit).
+// Cross-SBU opportunities: every opportunity a colleague flagged on a field visit — visible to all
+// for awareness (not targeted to a department).
 $bde_cross_sbu = [];
-$bde_dept_name = $bde_metrics ? (string) $bde_metrics['dept'] : '';
-if ($bde_dept_name === '' && function_exists('bde_resolve_dept')) { $rdc = bde_resolve_dept($conn, $bde_ru_id); $bde_dept_name = (string) $rdc['name']; }
-if ($bde_dept_name !== '') {
-    $dcE = mysqli_real_escape_string($conn, $bde_dept_name);
-    $cq = @mysqli_query($conn, "SELECT v.client, v.organization, v.value, v.opportunity_note, ru.fullname lb
-        FROM bde_visits v LEFT JOIN registered_users ru ON ru.id = v.bde_user_id
-        WHERE v.opportunity_for_dept LIKE '%$dcE%' AND v.bde_user_id <> $bde_ru_id
-        ORDER BY v.visit_date DESC, v.id DESC LIMIT 12");
-    while ($cq && ($cr = mysqli_fetch_assoc($cq))) {
-        $lbl = trim((string) $cr['client'] . ((string) $cr['organization'] !== '' ? ' · ' . (string) $cr['organization'] : ''));
-        if ((float) $cr['value'] > 0) { $lbl .= ' — KES ' . number_format((float) $cr['value']); }
-        if ((string) $cr['lb'] !== '') { $lbl .= ' · by ' . (string) $cr['lb']; }
-        if ((string) $cr['opportunity_note'] !== '') { $lbl .= ' — ' . (string) $cr['opportunity_note']; }
-        $bde_cross_sbu[] = $lbl;
-    }
+$cq = @mysqli_query($conn, "SELECT v.client, v.organization, v.value, v.opportunity_note, ru.fullname lb
+    FROM bde_visits v LEFT JOIN registered_users ru ON ru.id = v.bde_user_id
+    WHERE TRIM(v.opportunity_note) <> '' AND v.bde_user_id <> $bde_ru_id
+    ORDER BY v.visit_date DESC, v.id DESC LIMIT 15");
+while ($cq && ($cr = mysqli_fetch_assoc($cq))) {
+    $lbl = (string) $cr['opportunity_note'];
+    $ctx = trim((string) $cr['client'] . ((string) $cr['organization'] !== '' ? ' · ' . (string) $cr['organization'] : ''));
+    if ($ctx !== '') { $lbl .= ' — ' . $ctx; }
+    if ((float) $cr['value'] > 0) { $lbl .= ' (KES ' . number_format((float) $cr['value']) . ')'; }
+    if ((string) $cr['lb'] !== '') { $lbl .= ' · by ' . (string) $cr['lb']; }
+    $bde_cross_sbu[] = $lbl;
 }
-// department list for the "opportunity for" dropdown
-$bde_dept_list = [];
-$dql = @mysqli_query($conn, "SELECT department_name FROM departments ORDER BY department_name");
-while ($dql && ($drl = mysqli_fetch_assoc($dql))) { $bde_dept_list[] = (string) $drl['department_name']; }
 
 $bdeInitials = 'AA';
 if ($bde_metrics && $bde_metrics['name'] !== '') {
@@ -620,7 +613,6 @@ if ($bde_is_admin) {
       B.promises = <?php echo json_encode($bde_promises, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.visits = <?php echo json_encode($bde_visits_data, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.crossSbu = <?php echo json_encode($bde_cross_sbu, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
-      B.deptList = <?php echo json_encode($bde_dept_list, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -831,7 +823,7 @@ if ($bde_is_admin) {
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${stale.length?"coral":"jade"}">${stale.length?stale.length+" flagged":"all clear"}</span></div><div class="list">${stale.length?stale.map(a=>`<div class="arow"><span class="pd ${a.c}"></span><div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div>${a.act?`<span class="abtn hot" data-alert="${a.act}" style="cursor:pointer">Open</span>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now — no unread chats or quiet unpaid leads.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${quality.length?"amber":"jade"}">${quality.length?quality.length+" to review":"healthy"}</span></div><div class="list">${quality.length?quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Derived from your live conversion, collection and response numbers.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion, collection and response times all look healthy.</p>'}</div></div>
-            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} routed</span></div><div class="list">${cross.length?cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Spotted on a field visit by a colleague in another department — follow up and record the outcome.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing routed to you yet. These appear when anyone, in any department, logs a field-visit opportunity that fits your SBU.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${cross.length} shared</span></div><div class="list">${cross.length?cross.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged by a colleague on a field visit — pick it up if it fits your SBU.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here for everyone\'s awareness.</p>'}</div></div>
           </section>`;
       }
 
@@ -956,8 +948,7 @@ if ($bde_is_admin) {
               <div class="field"><label>Potential value (KES)</label><input name="value" type="number" min="0" placeholder="0"></div>
               <div class="field"><label>Visit date</label><input name="visit_date" type="date" value="${todayStr()}"></div>
               <div class="field"><label>Follow-up date</label><input name="followup_date" type="date"></div>
-              <div class="field"><label>Cross-SBU opportunity for <span style="text-transform:none;color:var(--muted)">(another department)</span></label><select name="opportunity_for_dept"><option value="">— none —</option>${(B.deptList||[]).map(d=>`<option>${esc(d)}</option>`).join("")}</select></div>
-              <div class="field span2"><label>Opportunity note <span style="text-transform:none;color:var(--muted)">(what they need from that SBU)</span></label><input name="opportunity_note" type="text" placeholder="e.g. HR wants staff appraisals for 40 staff"></div>
+              <div class="field span2"><label>Cross-SBU opportunity <span style="text-transform:none;color:var(--muted)">(optional — visible to everyone, any department, for awareness)</span></label><input name="opportunity_note" type="text" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
               <div class="field span2"><label>Notes</label><textarea name="notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
             </div>
             <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button><button class="tbtn" id="vf_clear" type="reset">Clear</button></div>
