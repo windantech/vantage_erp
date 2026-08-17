@@ -19,6 +19,39 @@ if (!function_exists('bde_usd_to_kes')) {
     }
 }
 
+if (!function_exists('bde_resolve_dept')) {
+    /**
+     * Resolve a BDE's department, trying every place it might live:
+     *   1) registered_users.department_id
+     *   2) their staff record (linked by staff_id OR email) → staff.department_id
+     * Returns ['id'=>int, 'name'=>string]; id=0 if none found.
+     */
+    function bde_resolve_dept($conn, $ruId)
+    {
+        $ruId = (int) $ruId;
+        $out = ['id' => 0, 'name' => ''];
+        if ($ruId <= 0) { return $out; }
+        // 1) directly on registered_users
+        $r = @mysqli_query($conn, "SELECT ru.department_id, d.department_name
+            FROM registered_users ru LEFT JOIN departments d ON ru.department_id = d.id
+            WHERE ru.id = $ruId LIMIT 1");
+        if ($r && ($row = mysqli_fetch_assoc($r)) && (int) ($row['department_id'] ?? 0) > 0) {
+            return ['id' => (int) $row['department_id'], 'name' => (string) $row['department_name']];
+        }
+        // 2) via the staff record (staff_id or email match), where department is actually set
+        $r = @mysqli_query($conn, "SELECT s.department_id, d.department_name
+            FROM registered_users ru
+            JOIN staff s ON (ru.staff_id = s.id OR ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci)
+            LEFT JOIN departments d ON s.department_id = d.id
+            WHERE ru.id = $ruId AND s.department_id IS NOT NULL AND s.department_id > 0
+            ORDER BY (ru.staff_id = s.id) DESC LIMIT 1");
+        if ($r && ($row = mysqli_fetch_assoc($r)) && (int) ($row['department_id'] ?? 0) > 0) {
+            return ['id' => (int) $row['department_id'], 'name' => (string) $row['department_name']];
+        }
+        return $out;
+    }
+}
+
 if (!function_exists('bde_mandate')) {
     /** Per-department strategic mandate + today's focus, chosen by department name. */
     function bde_mandate($dept)
@@ -81,16 +114,16 @@ if (!function_exists('bde_fetch_metrics')) {
         $rate = bde_usd_to_kes($conn);
 
         // --- identity + mandate ---
-        $iq = @mysqli_query($conn, "SELECT ru.fullname, s.job_title, d.department_name
+        $iq = @mysqli_query($conn, "SELECT ru.fullname, s.job_title
             FROM registered_users ru
             LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-            LEFT JOIN departments d ON ru.department_id = d.id
             WHERE ru.id = $ruId LIMIT 1");
         if ($iq && ($ir = mysqli_fetch_assoc($iq))) {
             $out['name'] = (string) ($ir['fullname'] ?? '');
             $out['title'] = (string) ($ir['job_title'] ?? '');
-            $out['dept'] = (string) ($ir['department_name'] ?? '');
         }
+        $rdI = bde_resolve_dept($conn, $ruId);
+        $out['dept'] = (string) $rdI['name'];
         $out['mandate'] = bde_mandate($out['dept']);
 
         // --- cleared payment totals, keyed by app_id (= register.entry_id) ---
@@ -294,18 +327,12 @@ if (!function_exists('bde_team_metrics')) {
         $e = mysqli_real_escape_string($conn, $end_date);
         $rate = bde_usd_to_kes($conn);
 
-        // Resolve the viewed BDE's identity + department once. Department lives on
-        // registered_users.department_id (that's how BDEs are assigned a department).
-        $deptId = 0; $deptName = ''; $meName = '';
-        $dq = @mysqli_query($conn, "SELECT ru.department_id, d.department_name, ru.fullname
-            FROM registered_users ru
-            LEFT JOIN departments d ON ru.department_id = d.id
-            WHERE ru.id = $ruId LIMIT 1");
-        if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
-            $deptId = (int) ($dr['department_id'] ?? 0);
-            $deptName = (string) ($dr['department_name'] ?? '');
-            $meName = (string) ($dr['fullname'] ?? '');
-        }
+        // Resolve the viewed BDE's identity + department (department may live on registered_users
+        // OR on their staff record — bde_resolve_dept tries both).
+        $rd = bde_resolve_dept($conn, $ruId);
+        $deptId = (int) $rd['id']; $deptName = (string) $rd['name']; $meName = '';
+        $dq = @mysqli_query($conn, "SELECT fullname FROM registered_users WHERE id = $ruId LIMIT 1");
+        if ($dq && ($dr = mysqli_fetch_assoc($dq))) { $meName = (string) ($dr['fullname'] ?? ''); }
 
         // Digital Solutions: its BDEs exist as users but have NO intake/event assignments (their
         // products — Eval360, 360 Appraisal — aren't tracked in the CRM revenue tables). So the
@@ -334,12 +361,12 @@ if (!function_exists('bde_team_metrics')) {
                 $members[$ruId] = ['name' => $meName, 'title' => 'BDE', 'rev' => 0.0, 'clients' => 0];
             }
         } else {
-            // Primary: everyone in the same department, straight from registered_users.department_id.
+            // Primary: the department's staff (from staff.department_id) who have an active login.
             if ($deptId > 0) {
                 $mq = @mysqli_query($conn, "SELECT ru.id, ru.fullname, COALESCE(s.job_title,'') job_title
-                    FROM registered_users ru
-                    LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
-                    WHERE ru.department_id = $deptId AND ru.status = 1 ORDER BY ru.fullname");
+                    FROM staff s
+                    JOIN registered_users ru ON (ru.staff_id = s.id OR ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci) AND ru.status = 1
+                    WHERE s.department_id = $deptId ORDER BY ru.fullname");
                 while ($mq && ($mr = mysqli_fetch_assoc($mq))) { $members[(int) $mr['id']] = ['name' => (string) $mr['fullname'], 'title' => (string) ($mr['job_title'] ?? ''), 'rev' => 0.0, 'clients' => 0]; }
             }
             // Fallback: department linkage incomplete (teammates not tied to staff.department_id) —
@@ -406,14 +433,10 @@ if (!function_exists('bde_targets_progress')) {
         // Resolve the BDE's department (id + name) and their name. Some BDEs aren't linked to a
         // department in staff, so we also match department targets by NAME, and fall back to the
         // Digital roster for the unlinked Digital three.
-        $deptId = 0; $deptName2 = ''; $meName = '';
-        $dq = @mysqli_query($conn, "SELECT ru.department_id, d.department_name, ru.fullname
-            FROM registered_users ru
-            LEFT JOIN departments d ON ru.department_id = d.id
-            WHERE ru.id = $ruId LIMIT 1");
+        $rd = bde_resolve_dept($conn, $ruId);
+        $deptId = (int) $rd['id']; $deptName2 = (string) $rd['name']; $meName = '';
+        $dq = @mysqli_query($conn, "SELECT fullname FROM registered_users WHERE id = $ruId LIMIT 1");
         if ($dq && ($dr = mysqli_fetch_assoc($dq))) {
-            $deptId = (int) ($dr['department_id'] ?? 0);
-            $deptName2 = (string) ($dr['department_name'] ?? '');
             $meName = (string) ($dr['fullname'] ?? '');
         }
         if ($deptName2 === '' && (string) $deptName !== '') { $deptName2 = (string) $deptName; }

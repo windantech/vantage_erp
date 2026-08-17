@@ -26,6 +26,21 @@ if ($r && ($ru = mysqli_fetch_assoc($r))) {
     echo "!! No registered_users row for id $id\n";
 }
 
+if ($ru) {
+    echo "\n-- staff record matched by email / name (where department may actually live) --\n";
+    $em = mysqli_real_escape_string($conn, (string) ($ru['email'] ?? ''));
+    $nm = mysqli_real_escape_string($conn, (string) ($ru['fullname'] ?? ''));
+    $r = @mysqli_query($conn, "SELECT id, full_name, email, department_id, onboarding_status FROM staff WHERE email = '$em' OR full_name LIKE '%$nm%' LIMIT 8");
+    $anyS = false;
+    while ($r && ($sr = mysqli_fetch_assoc($r))) {
+        $anyS = true; $sd = (int) $sr['department_id']; $dn = '';
+        $dq = @mysqli_query($conn, "SELECT department_name FROM departments WHERE id = $sd LIMIT 1");
+        if ($dq && ($d = mysqli_fetch_assoc($dq))) { $dn = $d['department_name']; }
+        echo "  staff#{$sr['id']} \"{$sr['full_name']}\" email={$sr['email']} dept={$sr['department_id']} ($dn) status={$sr['onboarding_status']}\n";
+    }
+    if (!$anyS) { echo "  (no staff row matches this email or name)\n"; }
+}
+
 echo "\n-- all departments --\n";
 $r = @mysqli_query($conn, "SELECT id, department_name FROM departments ORDER BY id");
 $anyD = false;

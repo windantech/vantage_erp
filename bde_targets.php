@@ -169,13 +169,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $accts = [];
                 foreach (($OWNER_VARIANTS[$owner] ?? [$owner]) as $variant) {
                     $lk = mysqli_real_escape_string($conn, $variant);
-                    // all accounts for this name (handles duplicates); data-account first for tidy display
+                    $pat = '%' . str_replace(' ', '%', $lk) . '%'; // tolerate extra/odd spacing between name parts
+                    // all accounts for this name (handles duplicate logins); data-account first for tidy display
                     $q = @mysqli_query($conn, "SELECT ru.id, ru.fullname
                         FROM registered_users ru
-                        LEFT JOIN departments d ON ru.department_id = d.id
-                        WHERE ru.fullname LIKE '%$lk%'
-                        ORDER BY EXISTS(SELECT 1 FROM intake i JOIN register r ON r.intake_id = i.intake_id WHERE i.assigned_to = ru.id) DESC,
-                                 (d.department_name LIKE '%virtual%') DESC, ru.id");
+                        WHERE ru.fullname LIKE '$pat'
+                        ORDER BY EXISTS(SELECT 1 FROM intake i JOIN register r ON r.intake_id = i.intake_id WHERE i.assigned_to = ru.id) DESC, ru.id");
                     while ($q && ($rr = mysqli_fetch_assoc($q))) { $accts[] = ['id' => (int) $rr['id'], 'name' => (string) $rr['fullname']]; }
                     if (!empty($accts)) { break; } // first variant that matches wins
                 }
