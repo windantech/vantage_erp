@@ -10,6 +10,7 @@
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 require_once 'includes/bde_metrics.php';
+if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); } // live is 8.1+: a bad query must fail soft, not throw & blank the page
 
 // Real data (phase 1): the BDE sees their OWN attributed figures. Admins can preview any
 // person's real numbers with ?as=<registered_users.id>. Date range is all-time for this first
