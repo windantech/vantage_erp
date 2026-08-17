@@ -786,8 +786,7 @@ if ($bde_is_admin) {
           // to just the goal structure (100% + qualifying line).
           return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}</div>`;
         };
-        const single=order.length===1;
-        const body=order.map(k=>`<div class="tgroup">${single?"":`<div class="tgroup-h">${esc(k)}</div>`}${groups[k].map(metricLine).join("")}</div>`).join("");
+        const body=order.map(k=>`<div class="tgroup"><div class="tgroup-h">${esc(k)}</div>${groups[k].map(metricLine).join("")}</div>`).join("");
         return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
       }
       function render(){
