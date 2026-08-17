@@ -84,6 +84,19 @@ $OWNER_VARIANTS = [
     'Rachael'  => ['Rachael Wambui', 'Rachael', 'Rachel'],
 ];
 
+// Digital Solutions is product-based and compound. Deconstruct the two KPI sheets into clean lines
+// (department-scoped; each Digital BDE sees only their product via the dashboard's product filter):
+// Eval360 (Austin) and 360 Appraisal (Ruth). [product, metric, metric_label, unit, target, threshold%, note]
+$DIGITAL_SEED = [
+    ['Eval360 · Individual',           'active_users',      'Active paying users',   'count', 100,     80,   '$29 each · sold to individual users'],
+    ['Eval360 · Individual',           'revenue',           'Fees collected',        'KES',   350000,  80,   'At least Kshs 350,000 collected'],
+    ['Eval360 · Corporate setup',      'corporate_clients', 'New corporate clients', 'count', 2,       null, 'Signed, fully paid & onboarded'],
+    ['Eval360 · Corporate setup',      'revenue',           'Setup fee',             'KES',   900000,  null, 'Kshs 900,000 per client, paid in full'],
+    ['Eval360 · Corporate maintenance','revenue',           'Maintenance fee',       'KES',   100000,  null, 'Kshs 100,000 per client / month × 12 · all active corporate clients'],
+    ['360 Appraisal',                  'paid_staff',        'Active paid staff',     'count', 600,     80,   'Kshs 2,000 per staff'],
+    ['360 Appraisal',                  'revenue',           'First-month fees',      'KES',   1200000, 80,   '100% = Kshs 1.2M · 80% = Kshs 960,000'],
+];
+
 // --- handle writes -----------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -185,10 +198,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             . ($skipped ? ", skipped $skipped already present" : '')
             . (empty($unresolved) ? '.' : ". Couldn't match owner(s): " . implode(', ', $unresolved) . " — add those by hand or send me their exact CRM names.");
         $flash_ok = empty($unresolved) || $seeded > 0;
+    } else if ($action === 'seed_digital') {
+        // resolve the Digital Solutions department
+        $dq = @mysqli_query($conn, "SELECT id, department_name FROM departments WHERE department_name LIKE '%digital%' ORDER BY id LIMIT 1");
+        $ddid = 0; $dlabel = 'Digital Solutions';
+        if ($dq && ($drow = mysqli_fetch_assoc($dq))) { $ddid = (int) $drow['id']; $dlabel = (string) $drow['department_name']; }
+        if ($ddid <= 0) {
+            $flash = "Couldn't find a Digital Solutions department to attach these to — create it first, or tell me the name."; $flash_ok = false;
+        } else {
+            // replace: clear existing Digital department targets for these products (removes the old compound rows)
+            @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='department' AND (product LIKE '%eval%' OR product LIKE '%appraisal%' OR product LIKE '%360%')");
+            $slE = mysqli_real_escape_string($conn, $dlabel);
+            $n = 0;
+            foreach ($DIGITAL_SEED as $row) {
+                list($product, $metric, $mlabel, $unit, $target, $thr, $note) = $row;
+                $prE = mysqli_real_escape_string($conn, $product);
+                $mE  = mysqli_real_escape_string($conn, $metric);
+                $mlE = mysqli_real_escape_string($conn, $mlabel);
+                $noE = mysqli_real_escape_string($conn, $note);
+                $thSql = $thr === null ? 'NULL' : (float) $thr;
+                $ok = @mysqli_query($conn, "INSERT INTO bde_targets
+                    (scope_type, scope_ref, scope_label, product, metric, metric_label, unit, target_value, threshold_pct, notes, created_by)
+                    VALUES ('department','$ddid','$slE','$prE','$mE','$mlE','$unit'," . (float) $target . ",$thSql,'$noE',$me)");
+                if ($ok) { $n++; }
+            }
+            $flash = "Seeded $n Digital target(s) — Eval360 (Austin) & 360 Appraisal (Ruth), deconstructed into individual / corporate setup / maintenance.";
+            $flash_ok = $n > 0;
+        }
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
     // the same target, and the form comes back empty ready for the next entry.
-    if (in_array($action, ['save', 'delete', 'seed_virtual'], true) && $flash_ok && $flash !== '') {
+    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital'], true) && $flash_ok && $flash !== '') {
         $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
         header('Location: bde_targets.php'); exit;
     }
@@ -366,10 +406,16 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
       <div class="bt-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
           <strong style="font-size:15px">Current targets (<?php echo count($rows); ?>)</strong>
-          <form method="post" onsubmit="return confirm('Auto-fill the 11 Virtual course revenue targets (100% + derived 70%)? Existing ones are skipped.')">
-            <input type="hidden" name="action" value="seed_virtual">
-            <button class="bt-btn ghost mini" type="submit">↧ Seed Virtual course targets</button>
-          </form>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <form method="post" onsubmit="return confirm('Auto-fill the 11 Virtual course revenue targets (100% + derived 70%)? Existing ones are skipped.')">
+              <input type="hidden" name="action" value="seed_virtual">
+              <button class="bt-btn ghost mini" type="submit">↧ Seed Virtual course targets</button>
+            </form>
+            <form method="post" onsubmit="return confirm('Deconstruct the Digital targets (Eval360 + 360 Appraisal) into clean lines? This REPLACES existing Digital department targets.')">
+              <input type="hidden" name="action" value="seed_digital">
+              <button class="bt-btn ghost mini" type="submit">↧ Seed Digital targets</button>
+            </form>
+          </div>
         </div>
         <?php if (empty($rows)): ?>
           <p style="color:#94a3b8;margin:8px 0">No targets yet. Add the first one above.</p>
