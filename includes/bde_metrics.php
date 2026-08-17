@@ -224,14 +224,23 @@ if (!function_exists('bde_fetch_metrics')) {
             $ein = implode(',', array_map('intval', array_keys($events)));
             $tq2 = @mysqli_query($conn, "SELECT event_id, COUNT(*) AS regs,
                 SUM(CASE WHEN status=2 AND amount>0 THEN 1 ELSE 0 END) AS paidc,
-                SUM(CASE WHEN status=2 THEN amount ELSE 0 END) AS rev
+                SUM(CASE WHEN status=2 THEN amount ELSE 0 END) AS rev,
+                SUM(CASE WHEN lead_status IN ('contacted','qualified','registered','attended') THEN 1 ELSE 0 END) AS contactedc,
+                SUM(CASE WHEN lead_status IN ('qualified','registered','attended') THEN 1 ELSE 0 END) AS qualifiedc,
+                SUM(CASE WHEN lead_status IN ('registered','attended') THEN 1 ELSE 0 END) AS enrolledc
                 FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY event_id");
             while ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) {
                 $regs = (int) $t2['regs']; $pc = (int) $t2['paidc']; $rev = (float) $t2['rev'];
                 $out['total_regs'] += $regs; $out['paid_clients'] += $pc;
                 $out['revenue_usd'] += $rev; $out['rev_events_usd'] += $rev;
                 $out['expected_usd'] += $regs * ($events[(int) $t2['event_id']] ?? 0);
-                $fLeads += $regs; $fCont += $pc; $fQual += $pc; $fEnr += $pc; $fPaid += $pc;
+                // real staged funnel from ticket_congress.lead_status (paid always counts as reached)
+                $fLeads += $regs;
+                $fCont += max((int) $t2['contactedc'], $pc);
+                $fQual += max((int) $t2['qualifiedc'], $pc);
+                $fEnr  += max((int) $t2['enrolledc'], $pc);
+                $fPaid += $pc;
+                $sources['Event registration'] = ($sources['Event registration'] ?? 0) + $regs;
             }
         }
 
