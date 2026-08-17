@@ -433,6 +433,8 @@ if ($bde_is_admin) {
       B.periodLabel = <?php echo json_encode($bde_pace_label, JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>;
       // real outstanding pipeline = expected revenue on their registrations not yet collected (KES)
       B.pipelineKes = <?php echo (float) (max(0.0, ((float) $bde_metrics['expected_usd'] - (float) $bde_metrics['revenue_usd'])) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
+      // real commission from the engine (commission_records): eligible (KES) + paid to date (KES)
+      B.commissionPaidKes = <?php echo (float) (((float) ($bde_metrics['commission_paid_usd'] ?? 0)) * (function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0)); ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const state={p:2,view:"command"};
@@ -537,12 +539,12 @@ if ($bde_is_admin) {
       }
 
       function commissionMini(){
-        const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;
+        const elig=B.commissionKes||0;const paid=B.commissionPaidKes||0;const att=B.target>0?B.actual/B.target:0;const shown=clamp(att,0,1.2)/1.2;
         return `<div class="card">
-          <div class="chead"><h4>Commission journey</h4><span class="chip ${c.current>0?"jade":"gold"}">${c.current>0?"Eligible":"Not yet unlocked"}</span></div>
+          <div class="chead"><h4>Commission</h4><span class="chip ${elig>0?"jade":"gold"}">${elig>0?"Eligible":"Not yet eligible"}</span></div>
           <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
-          <div class="mini3"><div class="cm gold"><span>Estimate now</span><b class="num">${kMoney(c.current)}</b></div><div class="cm"><span>At target</span><b class="num">${kMoney(c.atTarget)}</b></div><div class="cm"><span>Extra available</span><b class="num">${kMoney(Math.max(0,c.atTarget-c.current))}</b></div></div>
-          <div class="nextstep"><b>Next step:</b> ${esc(c.unlock)}</div>
+          <div class="mini3"><div class="cm gold"><span>Eligible now</span><b class="num">${kMoney(elig)}</b></div><div class="cm"><span>Paid to date</span><b class="num">${kMoney(paid)}</b></div><div class="cm"><span>Target attainment</span><b class="num">${pct(att,0)}</b></div></div>
+          <div class="nextstep"><b>From the CRM commission engine.</b> Full per-target commission projection comes with the commission phase.</div>
         </div>`;
       }
 
@@ -804,9 +806,9 @@ if ($bde_is_admin) {
       function genReport(){
         const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
         root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
-        const att=B.actual/B.target;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
-        lines.push("Qualified pipeline: "+kMoney(B.pipeline)+". Collection: "+pct(B.collection,0)+".");
-        lines.push("Commission estimate: "+kMoney(commission().current)+".");
+        const att=B.target>0?B.actual/B.target:0;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
+        lines.push("Outstanding pipeline: "+kMoney(B.pipelineKes||0)+". Collection: "+pct(B.collection,0)+".");
+        lines.push("Commission (eligible): "+kMoney(B.commissionKes||0)+".");
         lines.push("All figures subject to CRM evidence and Finance verification.");
         el("reportPreview").textContent=lines.join("\n");
       }
