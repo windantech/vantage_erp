@@ -5,6 +5,9 @@ require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
 require_once 'includes/wa_voice.php';          // after wa_functions.php — uses wa_import_normalize_phone()
+require_once 'includes/wa_csrf.php';
+require_once 'includes/wa_call_config.php';
+require_once 'includes/wa_call_permissions.php';
 wa_use_nairobi_time($conn);
 
 if (!in_array(WA_ROLE, $role)) {
@@ -155,25 +158,61 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                         );
                         if ($callConfirmJs === false) { $callConfirmJs = '"Call this client using the Vantage Africa WhatsApp calling line?"'; }
                         ?>
+                        <?php
+                        // Phase 1.1: what the customer has actually permitted. Meta refuses
+                        // a call without permission, so a bare dial link on a fresh contact
+                        // just disconnects — which is what this replaces.
+                        $perm    = wa_call_status($conn, (int)$conv['contact_id'], WA_CALL_PHONE_ID);
+                        $permBtn = $perm['button'];
+                        ?>
                         <div class="text-end">
-                            <?php if ($callUri !== ''): ?>
-                                <a href="<?php echo wa_e($callUri); ?>"
-                                   class="btn btn-sm btn-outline-success"
-                                   title="Dial <?php echo wa_e($callNum); ?> through the Vantage calling line"
-                                   onclick="return confirm(<?php echo wa_e($callConfirmJs); ?>);">
-                                    <i class="bi bi-telephone-outbound me-1"></i>Call using Linphone
-                                </a>
-                            <?php else: ?>
+                            <?php if ($callUri === ''): ?>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" disabled
                                         title="This contact does not have a valid callable phone number.">
                                     <i class="bi bi-telephone-x me-1"></i>Call using Linphone
                                 </button>
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    This contact does not have a valid callable phone number.
+                                </div>
+
+                            <?php elseif ($permBtn['action'] === 'call'): ?>
+                                <?php /* Permission granted and inside the calling window — this is
+                                          the Phase 1 markup, deliberately unchanged. */ ?>
+                                <a href="<?php echo wa_e($callUri); ?>"
+                                   class="btn btn-sm btn-outline-success"
+                                   title="Dial <?php echo wa_e($callNum); ?> through the Vantage calling line"
+                                   onclick="return confirm(<?php echo wa_e($callConfirmJs); ?>);">
+                                    <i class="bi bi-telephone-outbound me-1"></i>Call now
+                                </a>
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    Requires Linphone to be installed and registered on this device.
+                                </div>
+
+                            <?php elseif ($permBtn['action'] === 'request'): ?>
+                                <form method="post" action="includes/wa_process.php" class="m-0 d-inline"
+                                      onsubmit="return confirm('Send <?php echo wa_e($callName); ?> a WhatsApp request for permission to call them?');">
+                                    <?php echo wa_csrf_field(); ?>
+                                    <input type="hidden" name="action" value="call_request_permission">
+                                    <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-telephone-plus me-1"></i><?php echo wa_e($permBtn['label']); ?>
+                                    </button>
+                                </form>
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    WhatsApp requires the customer's permission before we can call.
+                                </div>
+
+                            <?php else: ?>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled
+                                        title="<?php echo wa_e($permBtn['hint']); ?>">
+                                    <i class="bi bi-telephone-x me-1"></i><?php echo wa_e($permBtn['label']); ?>
+                                </button>
+                                <?php if ($permBtn['hint'] !== ''): ?>
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    <?php echo wa_e($permBtn['hint']); ?>
+                                </div>
+                                <?php endif; ?>
                             <?php endif; ?>
-                            <div class="text-muted" style="font-size:.7rem;">
-                                <?php echo $callUri !== ''
-                                    ? 'Requires Linphone to be installed and registered on this device.'
-                                    : 'This contact does not have a valid callable phone number.'; ?>
-                            </div>
                         </div>
                         <form method="post" action="includes/wa_process.php" class="m-0 d-flex align-items-center gap-2">
                             <input type="hidden" name="action" value="handler">

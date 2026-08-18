@@ -604,6 +604,62 @@ switch ($action) {
         wa_redirect('../wa_inbox.php');
     }
 
+    // ---- Thread: ask the customer for permission to call them (Phase 1.1) ----
+    // Two-phase on purpose: claim the slot under a row lock, THEN call 360dialog.
+    // Doing the API call inside the lock would hold it across a network round trip,
+    // and doing it before the claim would let two rapid clicks send two prompts.
+    case 'call_request_permission': {
+        require_once __DIR__ . '/wa_csrf.php';
+        require_once __DIR__ . '/wa_call_config.php';
+        require_once __DIR__ . '/wa_call_permissions.php';
+        require_once __DIR__ . '/wa_call_api.php';
+
+        $conv_id = (int)($_POST['id'] ?? 0);
+        // CSRF first: this action messages a real customer and spends one of only
+        // two requests allowed in seven days, so a forged POST has a real cost.
+        if (!wa_csrf_check()) {
+            wa_flash('danger', 'Security check failed — please reload the page and try again.');
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+        $conv = wa_load_conversation($conn, $conv_id);
+        if (!wa_can_touch($conv, $is_supervisor, $staff_id)) {
+            wa_flash('warning', 'That conversation is not assigned to you.');
+            wa_redirect('../wa_inbox.php');
+        }
+        $reason = wa_call_unavailable_reason();
+        if ($reason !== '') {
+            wa_flash('warning', $reason);
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+        // Validate through the Phase 1 helper so the number we ask about is the
+        // same one the Call button would dial.
+        require_once __DIR__ . '/wa_voice.php';
+        $e164 = wa_voice_e164($conv['wa_id'] ?? '');
+        if ($e164 === '') {
+            wa_flash('warning', 'This contact does not have a valid callable phone number.');
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+
+        $cid   = (int)$conv['contact_id'];
+        $claim = wa_call_claim_request($conn, $cid, $staff_id, WA_CALL_PHONE_ID);
+        if (empty($claim['ok'])) {
+            wa_flash('warning', $claim['reason'] ?: 'Cannot request permission right now.');
+            wa_redirect('../wa_thread.php?id=' . $conv_id);
+        }
+
+        $send = wa_call_send_permission_template($e164);
+        if (!empty($send['ok'])) {
+            wa_call_confirm_request($conn, $cid, $staff_id, $send['message_id'], WA_CALL_PHONE_ID);
+            wa_flash('success', 'Call-permission request sent. The customer will see it on WhatsApp.');
+        } else {
+            // Roll the state back so the rep is not stuck on "Permission requested"
+            // for a prompt that was never delivered — and do not burn a slot.
+            wa_call_fail_request($conn, $cid, $staff_id, $claim['previous'], $send['error'], WA_CALL_PHONE_ID);
+            wa_flash('danger', 'Could not send the request: ' . $send['error']);
+        }
+        wa_redirect('../wa_thread.php?id=' . $conv_id);
+    }
+
     default:
         wa_redirect('../wa_inbox.php');
 }
