@@ -985,7 +985,7 @@ if ($bde_is_admin) {
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
             </div>
-            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">⭳ Download</button></div>
+            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button"><svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg> Download</button></div>
           </div>
           <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Fill in the fields above, then hit <b>Generate report summary</b> to compile your numbers and narrative into a shareable summary. Use <b>Download</b> to save it.</div></div>
           <div class="section-tag"><h3>How this report works</h3><span>Numbers are automatic · you add the judgement · your manager reviews</span><div class="rule"></div></div>
@@ -1134,13 +1134,32 @@ if ($bde_is_admin) {
         var d=el("dlReport"); if(d) d.addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
       }
       function genReport(){
-        const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
-        root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
-        const att=B.target>0?B.actual/B.target:0;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
-        lines.push("Outstanding pipeline: "+kMoney(B.pipelineKes||0)+". Collection: "+pct(B.collection,0)+".");
-        lines.push("Commission (eligible): "+kMoney(B.commissionKes||0)+".");
-        lines.push("All figures subject to CRM evidence and Finance verification.");
-        el("reportPreview").textContent=lines.join("\n");
+        const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+        const L=[];
+        L.push("═══════════════════════════════════════════════");
+        L.push("   VANTAGE AFRICA SCHOOL OF LEADERSHIP");
+        L.push("   Daily Execution Report");
+        L.push("═══════════════════════════════════════════════");
+        L.push("Date          : "+today);
+        L.push("Consultant    : "+B.name);
+        L.push("Role          : "+(B.title||"BDE")+(B.dept?"  ·  "+B.dept:""));
+        L.push("");
+        L.push("──── TODAY'S NUMBERS ──────────────────────────");
+        root.querySelectorAll("#reportForm input").forEach(x=>L.push("  "+(x.dataset.label+"").padEnd(34," ")+" "+(x.value.trim()||"—")));
+        L.push("");
+        L.push("──── NARRATIVE ────────────────────────────────");
+        root.querySelectorAll("#reportForm textarea").forEach(x=>{L.push("  "+x.dataset.label+":");L.push("    "+(x.value.trim()||"—").replace(/\n/g,"\n    "));L.push("");});
+        L.push("──── DASHBOARD POSITION ───────────────────────");
+        const att=B.target>0?B.actual/B.target:0;
+        L.push("  Cleared vs target     : "+kMoney(B.actual)+"  /  "+kMoney(B.target)+"  ("+pct(att)+")");
+        L.push("  Outstanding pipeline  : "+kMoney(B.pipelineKes||0));
+        L.push("  Collection            : "+pct(B.collection,0));
+        L.push("  Commission (eligible) : "+kMoney(B.commissionKes||0));
+        L.push("");
+        L.push("───────────────────────────────────────────────");
+        L.push("All figures are subject to CRM evidence and Finance verification.");
+        L.push("Generated "+today+".");
+        el("reportPreview").textContent=L.join("\n");
       }
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
