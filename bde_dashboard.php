@@ -491,6 +491,10 @@ if ($bde_is_admin) {
     .amrow small{font-size:11.5px;color:#64748b}
     .amwhen{font-size:11px;color:#94a3b8;white-space:nowrap}
     .amodal-f{padding:12px 20px;border-top:1px solid #eef2f7;display:flex;justify-content:flex-end;gap:8px}
+    .bde-app .autopill{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;background:var(--jade-soft);color:var(--jade-deep);padding:2px 6px;border-radius:999px;margin-left:6px;vertical-align:middle}
+    .bde-app .howcard{position:relative}
+    .bde-app .howicon{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:9px;background:var(--surface2);border:1px solid var(--line);margin-bottom:8px}
+    .bde-app .howicon svg{width:19px;height:19px;stroke:var(--brand);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
     .bde-app .tgroup{padding-top:12px}
     .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:12px}
     .bde-app .tgroup-h{font-weight:800;font-size:13.5px;color:var(--ink);margin-bottom:2px}
@@ -946,37 +950,47 @@ if ($bde_is_admin) {
       }
 
       function vReport(){
-        const p=period();
+        const days=B.daysInMonth||period().working||22;
+        const today=(B.dailyAmt&&B.dailyAmt.length)?Math.round(B.dailyAmt[B.dailyAmt.length-1]):0;
+        // [label, type, prefill, auto?]  — auto=true means it's filled from live data (still editable).
         const fields=[
-          ["Daily revenue target","number",Math.round(B.target/p.working)],
-          ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
-          ["New enquiries / accounts","number",38],
-          ["Qualified leads","number",19],
-          ["Calls / meaningful conversations","number",14],
-          ["Demos / sessions run","number",3],
-          ["Proposals / payment links sent","number",7],
-          ["Payments / activations today","number",5],
-          ["Top opportunities and next actions","textarea","1. Priority organization — decision call tomorrow\n2. Payment promise — follow up 10:00 AM\n3. Demo prospect — send tailored agenda"],
-          ["Marketing / automation / product observation","textarea","Best source, weakest source, an AI issue, a broken link, onboarding friction or a message that converted."],
-          ["What worked and what prevented conversion","textarea","Record evidence and learning, not general narration."],
-          ["Support required and tomorrow's plan","textarea","Named support owner, deadline, top five prospects and tomorrow's target."]
+          ["Daily revenue target (KES)","number",Math.round((B.target||0)/days),true],
+          ["Cleared revenue today (KES)","number",today,true],
+          ["Cleared this month (KES)","number",Math.round(B.actual||0),true],
+          ["Leads this month","number",B.totalLeads||0,true],
+          ["Paid clients this month","number",B.paidClients||0,true],
+          ["Escalated chats to reply","number",B.unreadCount||0,true],
+          ["Calls / meaningful conversations","number","",false],
+          ["Demos / sessions run","number","",false],
+          ["Top opportunities and next actions","textarea","1) Priority org — decision call\n2) Payment promise — follow up\n3) Demo — send agenda",false],
+          ["Why performance moved / what's blocked","textarea","Explain the movement and any blockers — evidence, not narration.",false],
+          ["What worked &amp; what prevented conversion","textarea","What converted, what didn't, and why.",false],
+          ["Support needed &amp; tomorrow's plan","textarea","Named support owner, deadline, top prospects, tomorrow's target.",false]
         ];
-        const fieldHTML=f=>`<div class="field ${f[1]==="textarea"?"span2":""}"><label>${esc(f[0])}</label>${f[1]==="textarea"?`<textarea data-label="${esc(f[0])}">${esc(f[2])}</textarea>`:`<input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}">`}</div>`;
+        const fieldHTML=f=>f[1]==="textarea"
+          ?`<div class="field span2"><label>${f[0]}</label><textarea data-label="${f[0]}" placeholder="${esc(f[2])}"></textarea></div>`
+          :`<div class="field"><label>${esc(f[0])}${f[3]?'<span class="autopill">auto</span>':''}</label><input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
+        const how=[
+          ['<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>',"Auto-filled from your data","Target, cleared revenue, leads, paid clients and escalated chats are pulled live — check and adjust if needed."],
+          ['<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.5-4.2 3.7 1.3 5.5L12 20l-5.1 2.7 1.3-5.5L4 8.5 9.6 8z"/></svg>',"Your judgement","Explain why the numbers moved, what's blocked, what you learned and what support or decision you need."],
+          ['<svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-9-9"/></svg>',"Manager review","Your supervisor reviews, comments, approves or returns it, and turns your commitments into tracked actions."]
+        ];
         return `
           <div class="card"><div class="chead"><h4>BDE daily execution report</h4><span class="chip jade">Auto-prefilled</span></div>
             <div id="reportForm">
-              <div class="form-sub">Today's numbers <i>· auto-prefilled</i></div>
+              <div class="form-sub">Today's numbers <i>· auto-prefilled from live data, editable</i></div>
               <div class="form-grid">${nums}</div>
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
             </div>
-            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">Download</button><button class="tbtn" id="clrReport" type="button">Clear narrative</button></div>
+            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">⭳ Download</button></div>
           </div>
-          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Select "Generate report summary" to compile the dashboard data and your explanations.</div></div>
+          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Fill in the fields above, then hit <b>Generate report summary</b> to compile your numbers and narrative into a shareable summary. Use <b>Download</b> to save it.</div></div>
+          <div class="section-tag"><h3>How this report works</h3><span>Numbers are automatic · you add the judgement · your manager reviews</span><div class="rule"></div></div>
           <section class="grid-3">
-            ${[["Automatic evidence","Revenue, payments, activity logs, opportunities, meetings, proposals and CRM completeness are system-calculated."],["Required human judgement","You explain why performance moved, what is blocked, what was learned and which support or decision is required."],["Manager workflow","Your supervisor reviews, comments, approves or returns the report and converts commitments into tracked actions."]].map(([a,b])=>`<div class="card"><h4>${esc(a)}</h4><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5">${esc(b)}</p></div>`).join("")}
+            ${how.map(([ic,a,b])=>`<div class="card howcard"><span class="howicon">${ic}</span><h4>${esc(a)}</h4><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5">${esc(b)}</p></div>`).join("")}
           </section>`;
       }
 
@@ -1116,9 +1130,8 @@ if ($bde_is_admin) {
         if(v==="visits")bindVisits();
       }
       function bindReport(){
-        el("genReport").addEventListener("click",genReport);
-        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDE_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
-        el("clrReport").addEventListener("click",()=>root.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
+        var g=el("genReport"); if(g) g.addEventListener("click",genReport);
+        var d=el("dlReport"); if(d) d.addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
       }
       function genReport(){
         const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
