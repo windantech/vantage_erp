@@ -264,9 +264,10 @@ if (!function_exists('bde_fetch_metrics')) {
             $lab = (string) $er['src'];
             $sources[$lab] = ($sources[$lab] ?? 0) + 1;
         }
-        // WhatsApp channel: chats assigned to this BDE are their WhatsApp enquiries — count as a source.
+        // WhatsApp channel: only chats ESCALATED to this BDE count as leads (routed for a human) —
+        // not every AI-handled conversation. This keeps the lead count realistic.
         $waq = @mysqli_query($conn, "SELECT COUNT(*) n FROM wa_conversations
-            WHERE assigned_user_id = $ruId AND created_at BETWEEN '$s' AND '$e 23:59:59'");
+            WHERE assigned_user_id = $ruId AND escalated = 1 AND created_at BETWEEN '$s' AND '$e 23:59:59'");
         if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $sources['WhatsApp'] = ($sources['WhatsApp'] ?? 0) + (int) $war['n']; }
 
         // WhatsApp follow-ups: open conversations assigned to this BDE with an unread message
