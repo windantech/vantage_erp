@@ -1132,6 +1132,9 @@ if ($bde_is_admin) {
       function downloadReport(){
         if(!window.__reportBlob)genReport();
         const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+        // After saving, reset the report to a fresh state (soft re-render — no full page reload).
+        window.__reportBlob=null;
+        setTimeout(()=>{if(state.view==="report"){render();var ws=el("workspace");if(ws&&ws.scrollIntoView)ws.scrollIntoView({behavior:"smooth",block:"start"});}},450);
       }
       function bindReport(){
         var g=el("genReport"); if(g) g.addEventListener("click",genReport);
