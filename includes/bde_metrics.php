@@ -737,7 +737,9 @@ if (!function_exists('bdo_rollup')) {
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
             if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
             if (!isset($byName[$key])) { $byName[$key] = ['name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0]; }
-            $byName[$key]['target']  += $memTarget[$bid] ?? 0.0;
+            // target is seeded identically on each duplicate login of the same person — take it ONCE
+            // (max), never summed, or a duplicate login doubles the target (e.g. Josiah #69+#98 → 4M).
+            $byName[$key]['target']  = max($byName[$key]['target'], $memTarget[$bid] ?? 0.0);
             $byName[$key]['actual']  += (float) $m['revenue_kes'];
             $byName[$key]['clients'] += (int) $m['paid_clients'];
             $byName[$key]['pipeline'] += max(0.0, ((float) $m['expected_usd'] - (float) $m['revenue_usd'])) * $rate;
