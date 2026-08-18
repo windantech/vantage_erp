@@ -927,10 +927,9 @@ if ($bde_is_admin) {
           ["Revenue counted", kMoney(B.actual||0), "Finance-cleared payments only — invoices, promises and uncleared amounts excluded"],
           ["Fees expected → collected", `${kMoney(expFees)} → ${kMoney(B.actual||0)} (${pct(B.collection||0,0)})`, "Commission follows collected money, not registrations"],
           ["Eligible commission", kMoney(B.commissionKes||0), "From the engine once a period is calculated; confirmed by Finance"],
-          ["Paid to date", kMoney(B.commissionPaidKes||0), "Disbursed through payroll"],
-          ["Ownership", "CRM acquisition owner", "Joint splits require prior written approval"]
+          ["Paid to date", kMoney(B.commissionPaidKes||0), "Disbursed through payroll"]
         ];
-        if(recs.length){const r=recs[0];audit.splice(4,0,["Latest record",(r.status||"calculated")+(r.period?" · "+r.period:""),"Recorded per period in the commission engine"]);}
+        if(recs.length){const r=recs[0];audit.push(["Latest record",(r.status||"calculated")+(r.period?" · "+r.period:""),"Recorded per period in the commission engine"]);}
         const auditCard=`<div class="card"><div class="chead"><h4>Commission basis &amp; audit</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>`;
         // Three-month consistency — real monthly attainment, from the restructuring month onward.
         const tm=B.threeMonth||[];
