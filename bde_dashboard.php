@@ -233,11 +233,19 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 $bde_three_month = [];
 $bde_month_target = ($bde_tp && $bde_tp['revenue_target'] > 0) ? (float) $bde_tp['revenue_target'] : 0.0;
 if ($bde_ru_id > 0 && $bde_month_target > 0 && function_exists('bde_daily_revenue')) {
-    for ($k = 2; $k >= 0; $k--) {
-        $ref = strtotime("first day of -$k month", strtotime($bde_to));
-        $ms = date('Y-m-01', $ref); $me = date('Y-m-t', $ref);
-        $rev = 0.0; foreach (bde_daily_revenue($conn, $bde_ru_id, $ms, $me) as $amt) { $rev += (float) $amt; }
-        $bde_three_month[] = ['label' => date('M Y', $ref), 'att' => $rev / $bde_month_target, 'rev' => $rev];
+    // Consistency window starts at the restructuring month (Aug 2026) — earlier months aren't comparable.
+    $restructure = strtotime('2026-08-01');
+    $curMonth = strtotime(date('Y-m-01', strtotime($bde_to)));
+    $startMonth = max($restructure, strtotime('-2 month', $curMonth));
+    for ($i = 0; $i < 3; $i++) {
+        $ref = strtotime("+$i month", $startMonth);
+        if ($ref > $curMonth) {
+            $bde_three_month[] = ['label' => date('M Y', $ref), 'att' => null, 'rev' => 0.0, 'future' => true];
+        } else {
+            $ms = date('Y-m-01', $ref); $me = date('Y-m-t', $ref);
+            $rev = 0.0; foreach (bde_daily_revenue($conn, $bde_ru_id, $ms, $me) as $amt) { $rev += (float) $amt; }
+            $bde_three_month[] = ['label' => date('M Y', $ref), 'att' => $rev / $bde_month_target, 'rev' => $rev, 'future' => false];
+        }
     }
 }
 
@@ -913,14 +921,25 @@ if ($bde_is_admin) {
         const met=gates.filter(g=>g[1]).length;
         const checklist=gates.length?`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===gates.length?"jade":"gold"}">${met} / ${gates.length} met</span></div><div class="list">${gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${n}</b><small>${ok?"Qualifying line reached":"Below the qualifying line"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin:8px 12px 2px">Gates come from your targets; the payable amount is confirmed by Finance.</div></div>`
           :`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No qualifying thresholds set on your targets yet — add a threshold % under BDE Targets.</p></div>`;
-        // Audit trail — commission policy (how it's computed & verified).
-        const audit=[["Revenue source","Finance-cleared payments","Invoices, promises and uncleared amounts are excluded"],["Eligibility","Client-count + fee-collection gates","Both thresholds in your KPI sheet must be met"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Verification","Recorded in commission_records","Calculated per period, approved by Finance before payout"],["Reversals","Refunds and credit notes","Recalculate and preserve the audit history"]];
-        const auditCard=`<div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>`;
-        // Three-month consistency — real monthly attainment.
+        // Audit trail — real commission basis for this BDE + the policy that governs it.
+        const expFees=(B.actual||0)+(B.pipelineKes||0); // collected + outstanding = fees expected
+        const audit=[
+          ["Revenue counted", kMoney(B.actual||0), "Finance-cleared payments only — invoices, promises and uncleared amounts excluded"],
+          ["Fees expected → collected", `${kMoney(expFees)} → ${kMoney(B.actual||0)} (${pct(B.collection||0,0)})`, "Commission follows collected money, not registrations"],
+          ["Eligible commission", kMoney(B.commissionKes||0), "From the engine once a period is calculated; confirmed by Finance"],
+          ["Paid to date", kMoney(B.commissionPaidKes||0), "Disbursed through payroll"],
+          ["Ownership", "CRM acquisition owner", "Joint splits require prior written approval"]
+        ];
+        if(recs.length){const r=recs[0];audit.splice(4,0,["Latest record",(r.status||"calculated")+(r.period?" · "+r.period:""),"Recorded per period in the commission engine"]);}
+        const auditCard=`<div class="card"><div class="chead"><h4>Commission basis &amp; audit</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>`;
+        // Three-month consistency — real monthly attainment, from the restructuring month onward.
         const tm=B.threeMonth||[];
         const journey=tm.length?`<div class="card"><div class="chead"><h4>Three-month consistency</h4><span class="chip slate">Reward needs 3 in a row</span></div>
-          <div class="steps3">${tm.map(m=>{const ok=m.att>=1;const c=ok?"var(--jade)":m.att>=0.7?"var(--amber)":"var(--coral)";return `<div class="stepbox"><span>${esc(m.label)}</span><b>${ok?"Target met":m.att>=0.7?"Close":"Below"}</b><div class="st" style="color:${c}">${pct(m.att,0)} · ${kMoney(m.rev)}</div></div>`;}).join("")}</div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:10px">Hit 100% for three consecutive months to unlock the consistency reward (Kshs 50,000 + 20% salary review).</div></div>`:"";
+          <div class="steps3">${tm.map(m=>{
+            if(m.future) return `<div class="stepbox"><span>${esc(m.label)}</span><b>Upcoming</b><div class="st" style="color:var(--slate)">— not started</div></div>`;
+            const ok=m.att>=1;const c=ok?"var(--jade)":m.att>=0.7?"var(--amber)":"var(--coral)";
+            return `<div class="stepbox"><span>${esc(m.label)}</span><b>${ok?"Target met":m.att>=0.7?"Close":"Below"}</b><div class="st" style="color:${c}">${pct(m.att,0)} · ${kMoney(m.rev)}</div></div>`;}).join("")}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:10px">Hit 100% for three consecutive months (from Aug 2026) to unlock the consistency reward (Kshs 50,000 + 20% salary review).</div></div>`:"";
         return summary
           + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table
           + `<section class="grid-2">${checklist}${auditCard}</section>`
