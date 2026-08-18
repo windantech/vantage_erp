@@ -1145,22 +1145,22 @@ if ($bde_is_admin) {
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#151d28;background:#eef2f6;padding:26px}
 .wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(16,24,40,.13)}
-.rhead{background:linear-gradient(120deg,#3d2416,#25130a);color:#fff;padding:26px 36px;display:flex;justify-content:space-between;align-items:center;gap:20px;border-bottom:4px solid #ec6e2d}
+.rhead{background:linear-gradient(120deg,#3d2416,#25130a);color:#fff;padding:26px 36px;display:flex;justify-content:space-between;align-items:center;gap:20px;border-bottom:4px solid #e0982e}
 .rhead h1{font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
 .rhead p{opacity:.82;font-size:12.5px;margin-top:6px;letter-spacing:.03em;text-transform:uppercase}
 .rlogo{flex:none;background:#fff;border-radius:12px;padding:9px 12px;display:flex;align-items:center}
 .rlogo img{height:46px;width:auto;display:block}
 .meta{width:100%;border-collapse:collapse}
 .meta td{padding:12px 36px;border-bottom:1px solid #eef2f7;font-size:14px}
-.meta td.ml{width:150px;color:#8a4a1e;font-weight:700;background:#fbeee4}
-.sbar{background:#ec6e2d;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px;border-left:5px solid #f0a640}
+.meta td.ml{width:150px;color:#94641f;font-weight:700;background:#fbf1e0}
+.sbar{background:#dd9a2e;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px;border-left:5px solid #f2bd52}
 table.nums{width:100%;border-collapse:collapse}
 table.nums td{padding:9px 36px;border-bottom:1px solid #f1f5f9;font-size:13.5px}
 table.nums tr:nth-child(even) td{background:#fafcfb}
 table.nums td.k{color:#3b4756}
 table.nums td.v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:#151d28}
 .nblock{padding:12px 36px;border-bottom:1px solid #f1f5f9}
-.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#c85a1e;font-weight:800;margin-bottom:5px}
+.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#94641f;font-weight:800;margin-bottom:5px}
 .ntext{font-size:13.5px;color:#151d28;line-height:1.55;white-space:pre-wrap}
 footer{padding:16px 36px;font-size:11.5px;color:#6a7886;background:#f8fafc;border-top:1px solid #eef2f7}
 @media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none}}
