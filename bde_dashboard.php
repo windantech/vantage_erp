@@ -233,16 +233,20 @@ $bde_tp = ($bde_metrics && function_exists('bde_targets_progress')) ? bde_target
 // department is unambiguous from their TARGET SHEET (product = Eval360 / 360 Appraisal / Corporate /
 // International / a course). Infer it so the Strategy mandate + tag match the person.
 if ($bde_metrics) {
+    // Lowercase blob of the BDE's target sheet (products/labels) — used to infer department + product.
+    $blob = '';
+    if ($bde_tp && !empty($bde_tp['rows'])) {
+        foreach ($bde_tp['rows'] as $tr) {
+            $blob .= ' ' . strtolower((string) ($tr['product'] ?? '') . ' ' . (string) ($tr['scope_label'] ?? '') . ' ' . (string) ($tr['metric_label'] ?? ''));
+        }
+    }
+    // (a) Infer department when it doesn't resolve the normal way (blank department_id / no CRM assignment).
     $dlow = strtolower((string) $bde_metrics['dept']);
     $known = false;
     foreach (['digital', 'virtual', 'corporate', 'international', 'academ'] as $k) {
         if ($dlow !== '' && strpos($dlow, $k) !== false) { $known = true; break; }
     }
-    if (!$known && $bde_tp && !empty($bde_tp['rows'])) {
-        $blob = '';
-        foreach ($bde_tp['rows'] as $tr) {
-            $blob .= ' ' . strtolower((string) ($tr['product'] ?? '') . ' ' . (string) ($tr['scope_label'] ?? '') . ' ' . (string) ($tr['metric_label'] ?? ''));
-        }
+    if (!$known && $blob !== '') {
         $inferred = '';
         if (preg_match('/eval\s*360|360\s*appraisal|m&e|data analysis|digital/', $blob)) { $inferred = 'Digital Solutions'; }
         elseif (strpos($blob, 'corporate') !== false) { $inferred = 'Corporate'; }
@@ -251,6 +255,16 @@ if ($bde_metrics) {
         if ($inferred !== '') {
             $bde_metrics['dept'] = $inferred;
             $bde_metrics['mandate'] = bde_mandate($inferred);
+        }
+    }
+    // (b) Digital Solutions BDEs each own ONE product (Austin → Eval360, Ruth → 360 Appraisal).
+    //     Name THEIR product in the mandate instead of listing both.
+    if (isset($bde_metrics['mandate']['tag']) && $bde_metrics['mandate']['tag'] === 'Digital Solutions' && $blob !== '') {
+        $prods = [];
+        if (preg_match('/eval\s*360/', $blob)) { $prods[] = 'Eval360'; }
+        if (preg_match('/360\s*appraisal/', $blob)) { $prods[] = '360 Appraisal'; }
+        if (count($prods) === 1) {
+            $bde_metrics['mandate']['mission'] = 'Turn ' . $prods[0] . ' into a visible, trusted and fast-growing recurring-revenue solution.';
         }
     }
 }
@@ -463,7 +477,7 @@ if ($bde_is_admin) {
     .bde-app .timeline{display:grid;gap:2px} .bde-app .time-row{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)} .bde-app .time-row:last-child{border-bottom:0} .bde-app .time-row time{font-size:12px;font-weight:850;color:var(--brand)} .bde-app .time-row div{font-size:12.5px;color:var(--ink2)}
     .bde-app .principles{display:grid;grid-template-columns:repeat(3,1fr);gap:11px} .bde-app .principle{border-left:3px solid var(--brand);background:var(--surface2);border-radius:var(--radius-sm);padding:13px 15px} .bde-app .principle b{font-size:12.5px} .bde-app .principle p{font-size:11.5px;color:var(--muted);margin:4px 0 0;line-height:1.5}
     .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;border-radius:99px;background:linear-gradient(90deg,#2f5f9e,#4d8bd6)} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
-    .bde-app .scard{display:grid;gap:15px} .bde-app .scrow{display:grid;gap:6px} .bde-app .scrow .st{display:flex;justify-content:space-between;align-items:baseline;gap:10px} .bde-app .scrow .st label{font-size:12.5px;font-weight:700} .bde-app .scrow .st .w{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.03em;white-space:nowrap} .bde-app .scrow .sv{font-size:11.5px;color:var(--muted)} .bde-app .scrow .sv b{color:var(--ink2);font-weight:800} .bde-app .scrow .sb{height:8px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scrow .sb>i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--brand-deep))}
+    .bde-app .scard{display:grid} .bde-app .scrow{display:grid;gap:6px;padding:14px 0} .bde-app .scrow:first-child{padding-top:2px} .bde-app .scrow+.scrow{border-top:1px solid var(--line)} .bde-app .scrow .st{display:flex;justify-content:space-between;align-items:baseline;gap:10px} .bde-app .scrow .st label{font-size:12.5px;font-weight:700} .bde-app .scrow .st .w{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.03em;white-space:nowrap} .bde-app .scrow .sv{font-size:11.5px;color:var(--muted)} .bde-app .scrow .sv b{color:var(--ink2);font-weight:800} .bde-app .scrow .sb{height:8px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scrow .sb>i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--brand-deep))}
 
     .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
     .bde-app .field label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);font-weight:800}
@@ -1025,15 +1039,13 @@ if ($bde_is_admin) {
       function vStrategy(){
         const clamp=x=>Math.max(0,Math.min(1,x||0));
         const att=B.target>0?B.actual/B.target:0, coll=B.collection||0, conv=B.totalLeads>0?(B.paidClients||0)/B.totalLeads:0;
-        const visitsN=(B.visits&&B.visits.length)||0, goal=B.visitGoal||60, channels=(B.sources||[]).filter(s=>(+s[1]||0)>0).length;
-        // [dimension, weight%, real value from live data, bar fraction | null = manager-assessed]
+        const channels=(B.sources||[]).filter(s=>(+s[1]||0)>0).length;
+        // [dimension, weight%, real value from live data, bar fraction]
         const score=[
           ["Revenue / qualifying volume",35,`${kMoney(B.actual)} of ${kMoney(B.target)}`,clamp(att)],
           ["Pipeline & conversion",20,`${B.paidClients||0} paid from ${B.totalLeads||0} leads · ${pct(conv)}`,clamp(conv)],
           ["CRM & collection quality",15,`${pct(coll)} of billed revenue collected`,clamp(coll)],
-          ["Strategic execution — field",10,`${visitsN} field visit${visitsN===1?"":"s"} logged`,clamp(visitsN/goal)],
-          ["Channel coverage",10,`${channels} active lead channel${channels===1?"":"s"}`,clamp(channels/6)],
-          ["Client experience & reporting",10,"Manager-assessed",null]
+          ["Channel coverage",10,`${channels} active lead channel${channels===1?"":"s"}`,clamp(channels/6)]
         ];
         return `
           <div class="card"><div class="chead"><h4>Role mandate</h4><span class="chip jade">Personal execution</span></div><div class="motiv green"><b>${esc(B.mandate)}</b><br>${esc(B.mandateText)}</div></div>
