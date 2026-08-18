@@ -540,8 +540,8 @@ if ($bde_is_admin) {
     .bde-app .tgroup{padding-top:9px}
     .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:9px}
     .bde-app .tgroup-h{font-weight:800;font-size:13px;color:var(--ink);margin-bottom:2px}
-    .bde-app .tmetric{padding-top:7px}
-    .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:7px}
+    .bde-app .tmgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px 14px;margin-top:8px}
+    .bde-app .tmetric{min-width:0}
     .bde-app .tmetric-h{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
     .bde-app .tmetric-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
     .bde-app .tchip{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 9px;border-radius:999px;white-space:nowrap}
@@ -1153,7 +1153,7 @@ if ($bde_is_admin) {
           // to just the goal structure (100% + qualifying line).
           return `<div class="tmetric"><div class="tmetric-h"><span class="tmetric-l">${esc(r.metric_label)}</span>${chip}</div>${levels}</div>`;
         };
-        const body=order.map(k=>`<div class="tgroup"><div class="tgroup-h">${esc(k)}</div>${groups[k].map(metricLine).join("")}</div>`).join("");
+        const body=order.map(k=>`<div class="tgroup"><div class="tgroup-h">${esc(k)}</div><div class="tmgrid">${groups[k].map(metricLine).join("")}</div></div>`).join("");
         return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
       }
       function openAlertModal(act){
