@@ -263,10 +263,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             . (empty($matchedC) ? '' : ' Corporate → ' . implode(', ', $matchedC) . '.')
             . (empty($unresolved) ? '' : ' COULD NOT MATCH: ' . implode(', ', array_unique($unresolved)) . ' — send exact CRM names.');
         $flash_ok = $seeded > 0 || empty($unresolved);
+    } else if ($action === 'seed_bdo') {
+        // HOD / BDO department-total targets, attached to each HOD's login by id.
+        // Revenue departments carry the department monthly revenue target (80% qualifying).
+        // International's HOD target is the COMBINED target its BDEs already carry
+        // ("HOD-sponsored staff are a subset, not extra revenue") — aggregated from bde_targets.
+        $BDO_REV = [
+            ['id' => 118, 'name' => 'Edwin Otieno',    'product' => 'Corporate',         'target' => 10000000, 'label' => 'Department revenue'],
+            ['id' => 125, 'name' => 'Francesca Ingaa',  'product' => 'Virtual',           'target' => 11504875, 'label' => 'Department revenue (11 course fees)'],
+            ['id' => 132, 'name' => 'Alein Kagunza',    'product' => 'Digital Solutions', 'target' => 4850000,  'label' => 'Department revenue'],
+        ];
+        @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND metric IN ('dept_revenue','dept_participants')");
+        $seeded = 0; $done = [];
+        foreach ($BDO_REV as $b) {
+            $slE = mysqli_real_escape_string($conn, $b['name']);
+            $prE = mysqli_real_escape_string($conn, $b['product']);
+            $lbE = mysqli_real_escape_string($conn, $b['label']);
+            $th80 = round($b['target'] * 0.8);
+            $noE = mysqli_real_escape_string($conn, 'HOD/BDO department total · 80% qualifying = Kshs ' . number_format($th80));
+            if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                VALUES ('user','{$b['id']}','$slE','$prE','dept_revenue','$lbE','KES',{$b['target']},80,'$noE',$me)")) { $seeded++; $done[] = $b['name'] . ' #' . $b['id'] . ' (Kshs ' . number_format($b['target']) . ')'; }
+        }
+        // International HOD (Erick Ndiema #121): combined M&E + Data target aggregated from the International BDEs.
+        $intlTarget = 0.0; $intlN = 0;
+        $agg = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t, COUNT(*) n FROM bde_targets
+            WHERE scope_type='user' AND product='International' AND metric<>'dept_participants' AND scope_ref<>'121'");
+        if ($agg && ($ar = mysqli_fetch_assoc($agg))) { $intlTarget = (float) $ar['t']; $intlN = (int) $ar['n']; }
+        if ($intlTarget > 0) {
+            $noE = mysqli_real_escape_string($conn, 'Combined M&E + Data target from ' . $intlN . ' International BDE target(s) · 80% country quorum');
+            if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                VALUES ('user','121','Erick Ndiema','International','dept_participants','Combined M&E + Data (paid clients)','count'," . (float) $intlTarget . ",80,'$noE',$me)")) { $seeded++; $done[] = 'Erick Ndiema #121 (' . (int) $intlTarget . ' combined clients, from BDEs)'; }
+        } else {
+            $done[] = 'Erick Ndiema #121 SKIPPED — no International BDE targets found to combine';
+        }
+        $flash = "Seeded $seeded HOD/BDO target(s): " . implode('; ', $done) . '. (Academic HOD not provided yet.)';
+        $flash_ok = $seeded > 0;
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
     // the same target, and the form comes back empty ready for the next entry.
-    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital', 'seed_deptperson'], true) && $flash_ok && $flash !== '') {
+    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital', 'seed_deptperson', 'seed_bdo'], true) && $flash_ok && $flash !== '') {
         $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
         header('Location: bde_targets.php'); exit;
     }
@@ -456,6 +491,10 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
             <form method="post" onsubmit="return confirm('Assign Corporate &amp; International targets per person (by name)? REPLACES existing per-person Corporate/International targets.')">
               <input type="hidden" name="action" value="seed_deptperson">
               <button class="bt-btn ghost mini" type="submit">↧ Seed Corporate &amp; International (per person)</button>
+            </form>
+            <form method="post" onsubmit="return confirm('Seed HOD/BDO department-total targets? Corporate #118 = 10M, Virtual #125 = 11.5M, Digital #132 = 4.85M (80% qualifying), International #121 = combined from its BDEs. REPLACES existing HOD/BDO targets.')">
+              <input type="hidden" name="action" value="seed_bdo">
+              <button class="bt-btn ghost mini" type="submit">↧ Seed HOD/BDO (department totals)</button>
             </form>
           </div>
         </div>
