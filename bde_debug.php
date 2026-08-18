@@ -11,6 +11,8 @@ if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
 if (!isset($role) || !is_array($role) || !in_array(777, $role)) { http_response_code(403); exit('Forbidden — admin only.'); }
 
 $id = (int) ($_GET['as'] ?? ($_SESSION['login_id'] ?? 0));
+$from = isset($_GET['from']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['from']) : date('Y-m-01');
+$to   = isset($_GET['to'])   ? preg_replace('/[^0-9\-]/', '', (string) $_GET['to'])   : date('Y-m-d');
 echo '<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:16px 20px;background:#fff;color:#0e1726">';
 echo "BDE DEBUG — registered_users.id = $id\n=====================================\n\n";
 
@@ -101,6 +103,48 @@ if ($ru) {
     echo "\n-- enquiry_sources lookup table --\n";
     $r = @mysqli_query($conn, "SELECT id, name FROM enquiry_sources ORDER BY id");
     while ($r && ($x = mysqli_fetch_assoc($r))) { echo "  {$x['id']} = {$x['name']}\n"; }
+}
+
+if ($ru) {
+    $id2 = (int) $ru['id'];
+    echo "\n\n=== EVENTS / TRAININGS (how International + Corporate revenue is attributed) ===\n";
+    echo "period: $from .. $to\n";
+
+    echo "\n-- (A) events the DASHBOARD attributes to this BDE (Event.assigned_to = $id2, current logic) --\n";
+    $r = @mysqli_query($conn, "SELECT event_id, event_title, assigned_to, status FROM Event WHERE assigned_to = $id2 ORDER BY event_id DESC LIMIT 30");
+    $codeEv = []; while ($r && ($e = mysqli_fetch_assoc($r))) { $codeEv[(string) $e['event_id']] = $e; }
+    if (!$codeEv) { echo "  (none — the dashboard attributes NO events to this BDE)\n"; }
+    foreach ($codeEv as $e) { echo "  event#{$e['event_id']} \"" . substr((string) $e['event_title'], 0, 55) . "\" assigned_to='{$e['assigned_to']}' status={$e['status']}\n"; }
+
+    echo "\n-- (B) events a ROBUST match finds (FIND_IN_SET — handles '6,' and multi-assignee lists) --\n";
+    $r = @mysqli_query($conn, "SELECT event_id, event_title, assigned_to, status FROM Event WHERE FIND_IN_SET('$id2', REPLACE(assigned_to,' ','')) > 0 ORDER BY event_id DESC LIMIT 30");
+    $robEv = []; while ($r && ($e = mysqli_fetch_assoc($r))) { $robEv[(string) $e['event_id']] = $e; }
+    if (!$robEv) { echo "  (none)\n"; }
+    foreach ($robEv as $e) { echo "  event#{$e['event_id']} \"" . substr((string) $e['event_title'], 0, 55) . "\" assigned_to='{$e['assigned_to']}' status={$e['status']}\n"; }
+    if (count($robEv) > count($codeEv)) { echo "  !! ROBUST match finds MORE events than the dashboard — attribution is MISSING some (assigned_to is a comma-list varchar).\n"; }
+
+    $allEv = $codeEv + $robEv;
+    foreach ($allEv as $evid => $e) {
+        $evidE = mysqli_real_escape_string($conn, (string) $evid);
+        echo "\n-- tickets for event#$evid \"" . substr((string) $e['event_title'], 0, 45) . "\" --\n";
+        $r = @mysqli_query($conn, "SELECT status, COUNT(*) n, SUM(CAST(amount AS DECIMAL(12,2))) amt, MIN(date_sent) mn, MAX(date_sent) mx FROM ticket_congress WHERE event_id = '$evidE' GROUP BY status ORDER BY status");
+        $any = false; while ($r && ($t = mysqli_fetch_assoc($r))) { $any = true; echo "  status={$t['status']}: {$t['n']} tickets, amount=" . number_format((float) $t['amt']) . " ({$t['mn']} .. {$t['mx']})\n"; }
+        if (!$any) { echo "  (no ticket_congress rows for this event)\n"; }
+        $r = @mysqli_query($conn, "SELECT COUNT(*) n, SUM(status=2) paid, SUM(CASE WHEN status=2 THEN CAST(amount AS DECIMAL(12,2)) ELSE 0 END) paidamt FROM ticket_congress WHERE event_id='$evidE' AND date_sent BETWEEN '$from 00:00:00' AND '$to 23:59:59'");
+        if ($r && ($t = mysqli_fetch_assoc($r))) { echo "  -> in period $from..$to: {$t['n']} tickets, {$t['paid']} PAID (status=2), paid amount=" . number_format((float) $t['paidamt']) . "\n"; }
+    }
+
+    echo "\n-- (C) tickets assigned DIRECTLY to this BDE (ticket_congress.assigned_to = $id2) — the dashboard does NOT read this column --\n";
+    $r = @mysqli_query($conn, "SELECT COUNT(*) n, SUM(status=2) paid, MIN(date_sent) mn, MAX(date_sent) mx FROM ticket_congress WHERE assigned_to = $id2");
+    if ($r && ($t = mysqli_fetch_assoc($r))) { echo "  total {$t['n']} tickets, {$t['paid']} paid, ({$t['mn']} .. {$t['mx']})\n  If this is non-zero while (A) is empty, trainings are attributed at the TICKET level and the dashboard is missing them.\n"; }
+
+    echo "\n-- (D) recent trainings (any event with ticket activity in the last 30 days) + who they're assigned to --\n";
+    $r = @mysqli_query($conn, "SELECT e.event_id, e.event_title, e.assigned_to, COUNT(tc.id) tickets, SUM(tc.status=2) paid, MAX(tc.date_sent) last_ticket
+        FROM Event e JOIN ticket_congress tc ON tc.event_id = e.event_id
+        WHERE tc.date_sent >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        GROUP BY e.event_id ORDER BY last_ticket DESC LIMIT 15");
+    $any = false; while ($r && ($e = mysqli_fetch_assoc($r))) { $any = true; echo "  event#{$e['event_id']} \"" . substr((string) $e['event_title'], 0, 45) . "\" assigned_to='{$e['assigned_to']}' — {$e['tickets']} tickets, {$e['paid']} paid, last {$e['last_ticket']}\n"; }
+    if (!$any) { echo "  (no training/ticket activity in the last 30 days)\n"; }
 }
 
 echo '</pre>';
