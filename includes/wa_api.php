@@ -368,6 +368,7 @@ if ($action === 'inbox') {
                     SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
                       AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
                  THEN 1 ELSE 0 END) AS reengaged_responded,
+               " . wa_window_left_sql('c') . " AS win_left,
                " . wa_triage_sql('cv') . " AS is_triage,
                " . wa_mine_sql($staff_id, 'cv') . " AS is_mine,
                CASE cv.ref_type
@@ -409,6 +410,11 @@ if ($action === 'inbox') {
                 'reengaged' => (int)$r['reengaged_responded'],
                 'triage'    => (int)$r['is_triage'],
                 'mine'      => (int)$r['is_mine'],
+                // Seconds left on the 24h window; null when they have never written.
+                // The inbox counts down from this, so it must come from the server.
+                'win_left'  => $r['win_left'] === null ? null : (int)$r['win_left'],
+                'closing'   => ($r['win_left'] !== null && (int)$r['win_left'] > 0
+                                && (int)$r['win_left'] <= WA_CLOSING_SECS) ? 1 : 0,
             ];
         }
     }

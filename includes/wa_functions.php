@@ -2715,6 +2715,21 @@ function wa_within_window($lastInbound) {
     return $lastInbound && (time() - strtotime($lastInbound)) < 24 * 3600;
 }
 
+/** How close to the window shutting still counts as "closing soon" (seconds). */
+if (!defined('WA_CLOSING_SECS')) { define('WA_CLOSING_SECS', 3600); }
+
+/**
+ * SQL expression for the seconds left on a contact's 24-hour service window.
+ * NULL when they have never written to us; zero or negative once it has shut.
+ *
+ * Computed in SQL on purpose: the inbox countdown must be anchored to server time.
+ * A rep whose laptop clock is a few minutes fast would otherwise be told a window
+ * is still open after it has closed, and their free-form reply would be rejected.
+ */
+function wa_window_left_sql($c = 'c') {
+    return "TIMESTAMPDIFF(SECOND, NOW(), DATE_ADD($c.last_inbound_at, INTERVAL 24 HOUR))";
+}
+
 /** Send a free-form text reply (enforces the 24h window unless $force). Records outbound. */
 function wa_send_text($conn, $waId, $body, $force = false) {
     // Sandbox capture mode: the test console sets $GLOBALS['WA_CAPTURE'] to an
