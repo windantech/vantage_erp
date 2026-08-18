@@ -438,7 +438,7 @@ if ($bde_is_admin) {
     .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;border-radius:99px;background:linear-gradient(90deg,#2f5f9e,#4d8bd6)} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
 
     .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
-    .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
+    .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2);font-weight:800}
     .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)} .bde-app .field input:hover,.bde-app .field textarea:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))} .bde-app .field input[type=number]{font-variant-numeric:tabular-nums;font-weight:650}
     .bde-app .field select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 34px 10px 12px;font-size:13px;width:100%;font-weight:650;color:var(--ink);appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 16px) 18px,calc(100% - 11px) 18px;background-size:5px 5px;background-repeat:no-repeat;cursor:pointer}
     .bde-app .field select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
@@ -969,7 +969,7 @@ if ($bde_is_admin) {
         ];
         const fieldHTML=f=>f[1]==="textarea"
           ?`<div class="field span2"><label>${f[0]}</label><textarea data-label="${f[0]}" placeholder="${esc(f[2])}"></textarea></div>`
-          :`<div class="field"><label>${esc(f[0])}${f[3]?'<span class="autopill">auto</span>':''}</label><input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}"></div>`;
+          :`<div class="field"><label>${esc(f[0])}${f[3]?'<span class="autopill">auto</span>':''}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
         const how=[
