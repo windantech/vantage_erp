@@ -1131,35 +1131,54 @@ if ($bde_is_admin) {
       }
       function bindReport(){
         var g=el("genReport"); if(g) g.addEventListener("click",genReport);
-        var d=el("dlReport"); if(d) d.addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
+        var d=el("dlReport"); if(d) d.addEventListener("click",()=>{if(!window.__reportBlob)genReport();const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+      }
+      function buildReportHTML(){
+        const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+        const att=B.target>0?B.actual/B.target:0;
+        const numRows=[...root.querySelectorAll("#reportForm input")].map(x=>`<tr><td class="k">${esc(x.dataset.label)}</td><td class="v">${esc(x.value.trim()||"—")}</td></tr>`).join("");
+        const narr=[...root.querySelectorAll("#reportForm textarea")].map(x=>`<div class="nblock"><div class="nlabel">${esc(x.dataset.label)}</div><div class="ntext">${esc(x.value.trim()||"—")}</div></div>`).join("");
+        const dash=[["Cleared vs target",`${kMoney(B.actual)} / ${kMoney(B.target)} (${pct(att)})`],["Outstanding pipeline",kMoney(B.pipelineKes||0)],["Collection",pct(B.collection,0)],["Commission (eligible)",kMoney(B.commissionKes||0)]]
+          .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Execution Report — ${esc(B.name)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#151d28;background:#eef2f6;padding:26px}
+.wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(16,24,40,.13)}
+.rhead{background:linear-gradient(120deg,#0e9e79,#0a7a5e);color:#fff;padding:30px 36px;display:flex;justify-content:space-between;align-items:center}
+.rhead h1{font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.rhead p{opacity:.92;font-size:12.5px;margin-top:6px;letter-spacing:.03em;text-transform:uppercase}
+.rmark{display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:none}
+.rmark i{width:28px;height:28px;border-radius:7px;display:block}
+.meta{width:100%;border-collapse:collapse}
+.meta td{padding:12px 36px;border-bottom:1px solid #eef2f7;font-size:14px}
+.meta td.ml{width:150px;color:#0a7a5e;font-weight:700;background:#f4f9f7}
+.sbar{background:#0e9e79;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px}
+table.nums{width:100%;border-collapse:collapse}
+table.nums td{padding:9px 36px;border-bottom:1px solid #f1f5f9;font-size:13.5px}
+table.nums tr:nth-child(even) td{background:#fafcfb}
+table.nums td.k{color:#3b4756}
+table.nums td.v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:#151d28}
+.nblock{padding:12px 36px;border-bottom:1px solid #f1f5f9}
+.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#0a7a5e;font-weight:800;margin-bottom:5px}
+.ntext{font-size:13.5px;color:#151d28;line-height:1.55;white-space:pre-wrap}
+footer{padding:16px 36px;font-size:11.5px;color:#6a7886;background:#f8fafc;border-top:1px solid #eef2f7}
+@media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none}}
+</style></head><body>
+<div class="wrap">
+  <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rmark"><i style="background:#eef3f0"></i><i style="background:#ec6e2d"></i><i style="background:#c98a1c"></i><i style="background:#f6b8a0"></i></div></div>
+  <table class="meta"><tr><td class="ml">Date</td><td>${today}</td></tr><tr><td class="ml">Consultant</td><td><b>${esc(B.name)}</b></td></tr><tr><td class="ml">Role</td><td>${esc(B.title||"BDE")}${B.dept?" · "+esc(B.dept):""}</td></tr></table>
+  <div class="sbar">Today's numbers</div><table class="nums">${numRows}</table>
+  <div class="sbar">Narrative</div>${narr}
+  <div class="sbar">Dashboard position</div><table class="nums">${dash}</table>
+  <footer>All figures are subject to CRM evidence and Finance verification. &middot; Generated ${today}.</footer>
+</div></body></html>`;
       }
       function genReport(){
-        const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
-        const L=[];
-        L.push("═══════════════════════════════════════════════");
-        L.push("   VANTAGE AFRICA SCHOOL OF LEADERSHIP");
-        L.push("   Daily Execution Report");
-        L.push("═══════════════════════════════════════════════");
-        L.push("Date          : "+today);
-        L.push("Consultant    : "+B.name);
-        L.push("Role          : "+(B.title||"BDE")+(B.dept?"  ·  "+B.dept:""));
-        L.push("");
-        L.push("──── TODAY'S NUMBERS ──────────────────────────");
-        root.querySelectorAll("#reportForm input").forEach(x=>L.push("  "+(x.dataset.label+"").padEnd(34," ")+" "+(x.value.trim()||"—")));
-        L.push("");
-        L.push("──── NARRATIVE ────────────────────────────────");
-        root.querySelectorAll("#reportForm textarea").forEach(x=>{L.push("  "+x.dataset.label+":");L.push("    "+(x.value.trim()||"—").replace(/\n/g,"\n    "));L.push("");});
-        L.push("──── DASHBOARD POSITION ───────────────────────");
-        const att=B.target>0?B.actual/B.target:0;
-        L.push("  Cleared vs target     : "+kMoney(B.actual)+"  /  "+kMoney(B.target)+"  ("+pct(att)+")");
-        L.push("  Outstanding pipeline  : "+kMoney(B.pipelineKes||0));
-        L.push("  Collection            : "+pct(B.collection,0));
-        L.push("  Commission (eligible) : "+kMoney(B.commissionKes||0));
-        L.push("");
-        L.push("───────────────────────────────────────────────");
-        L.push("All figures are subject to CRM evidence and Finance verification.");
-        L.push("Generated "+today+".");
-        el("reportPreview").textContent=L.join("\n");
+        const html=buildReportHTML();
+        window.__reportBlob=new Blob([html],{type:"text/html;charset=utf-8"});
+        const pv=el("reportPreview");
+        pv.innerHTML=`<iframe title="Report preview" style="width:100%;height:600px;border:1px solid #dce4eb;border-radius:10px;background:#fff" src="${URL.createObjectURL(window.__reportBlob)}"></iframe>`;
       }
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
