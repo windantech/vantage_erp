@@ -510,10 +510,10 @@ if ($bde_is_admin) {
     .bde-app .tbig span{font-size:12px;font-weight:700;color:var(--muted)}
     .bde-app .tmeta{font-size:12px;color:var(--ink);margin-top:6px}
     .bde-app .tnote{font-size:11.5px;color:var(--muted);margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
-    .bde-app .tlevels{display:flex;gap:10px;margin:12px 0 10px}
-    .bde-app .tlevel{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
-    .bde-app .tlevel .tl-cap{display:block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
-    .bde-app .tlevel b{font-size:16.5px;font-weight:800;color:var(--ink);letter-spacing:-.01em;line-height:1.1}
+    .bde-app .tlevels{display:flex;gap:8px;margin:7px 0 5px}
+    .bde-app .tlevel{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:6px 10px}
+    .bde-app .tlevel .tl-cap{display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:2px}
+    .bde-app .tlevel b{font-size:14.5px;font-weight:800;color:var(--ink);letter-spacing:-.01em;line-height:1.1}
     .bde-app .tl-full{border-left:3px solid var(--brand)}
     .bde-app .tl-qual{border-left:3px solid var(--amber)}
     .bde-app .tprog{margin-top:2px}
@@ -537,12 +537,12 @@ if ($bde_is_admin) {
     .bde-app .howcard{position:relative}
     .bde-app .howicon{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:9px;background:var(--surface2);border:1px solid var(--line);margin-bottom:8px}
     .bde-app .howicon svg{width:19px;height:19px;stroke:var(--brand);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-    .bde-app .tgroup{padding-top:12px}
-    .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:12px}
-    .bde-app .tgroup-h{font-weight:800;font-size:13.5px;color:var(--ink);margin-bottom:2px}
-    .bde-app .tmetric{padding-top:10px}
-    .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:10px}
-    .bde-app .tmetric-h{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+    .bde-app .tgroup{padding-top:9px}
+    .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:9px}
+    .bde-app .tgroup-h{font-weight:800;font-size:13px;color:var(--ink);margin-bottom:2px}
+    .bde-app .tmetric{padding-top:7px}
+    .bde-app .tmetric + .tmetric{border-top:1px solid var(--line);margin-top:7px}
+    .bde-app .tmetric-h{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
     .bde-app .tmetric-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
     .bde-app .tchip{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 9px;border-radius:999px;white-space:nowrap}
     .bde-app .tchip-count{background:#e0edff;color:#1d4ed8}
