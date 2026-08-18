@@ -278,11 +278,14 @@ if (!function_exists('bde_fetch_metrics')) {
 
         // --- roll-ups (register + enquiries combined) ---
         $out['units'] = $out['paid_clients'];
-        $out['total_leads'] = $fLeads + $eLeads;
+        // Total leads = every source channel combined (registrations + enquiries + WhatsApp chats),
+        // so the funnel's "Leads" reconciles with the lead-source breakdown.
+        $leadTotal = array_sum($sources);
+        $out['total_leads'] = $leadTotal;
         $out['contacted'] = $fCont + $eCont;
         $out['stale'] = $regStale + $enqStale;
         // Two honest stages — Contacted/Qualified/Enrolled aren't reliably tracked for registrations.
-        $out['funnel'] = [['Leads', $fLeads + $eLeads], ['Paid', $fPaid + $eConv]];
+        $out['funnel'] = [['Leads', $leadTotal], ['Paid', $fPaid + $eConv]];
         arsort($sources);
         $srcOut = [];
         foreach (array_slice($sources, 0, 8, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
