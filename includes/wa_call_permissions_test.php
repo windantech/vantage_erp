@@ -274,6 +274,56 @@ check('pending TTL 7 days', 7 * 86400, WA_CALL_PENDING_TTL);
 check('call window 24h',        86400, WA_CALL_WINDOW_TTL);
 check('max 2 requests',             2, WA_CALL_MAX_REQUESTS);
 
+echo "\n-- secrets resolve from constants --\n";
+
+// The resolver is memoised, so exercise the constant path in a subprocess with the
+// constants pre-defined. This is the route a server admin takes when they add the
+// defines to wa_call_config.php or wa_config.php rather than creating a new file.
+$probe = <<<'PROBE'
+<?php
+define('WA_CALL_DIALOG_KEY',    'test-key-abcdef0123456789');
+define('WA_CALL_WEBHOOK_TOKEN', 'test-token-9876543210');
+define('WA_CALL_TEMPLATE_NAME', 'course_call_permission_v1');
+define('WA_CALL_TEMPLATE_LANG', 'en');
+require __DIR__ . '/wa_call_config.php';
+$s = wa_call_secrets();
+echo json_encode([
+    'key'        => $s['key'],
+    'token'      => $s['webhook_token'],
+    'template'   => $s['template'],
+    'lang'       => $s['lang'],
+    'configured' => wa_call_configured(),
+    'template_ok'=> wa_call_template_configured(),
+    'reason'     => wa_call_unavailable_reason(),
+    'scrubbed'   => wa_call_scrub('boom test-key-abcdef0123456789 boom'),
+]);
+PROBE;
+$probeFile = sys_get_temp_dir() . '/wa_call_const_probe.php';
+file_put_contents($probeFile, str_replace("__DIR__ . '/wa_call_config.php'",
+    var_export(__DIR__ . '/wa_call_config.php', true), $probe));
+$got = json_decode((string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($probeFile)), true);
+@unlink($probeFile);
+
+check('key read from a constant',        'test-key-abcdef0123456789', $got['key'] ?? null);
+check('webhook token read from a constant','test-token-9876543210',   $got['token'] ?? null);
+check('template name read from a constant','course_call_permission_v1',$got['template'] ?? null);
+check('language read from a constant',   'en',   $got['lang'] ?? null);
+check('channel reports configured',      true,   $got['configured'] ?? null);
+check('template reports configured',     true,   $got['template_ok'] ?? null);
+check('nothing is unavailable',          '',     $got['reason'] ?? null);
+check('scrub removes a constant-sourced key', 'boom [redacted] boom', $got['scrubbed'] ?? null);
+
+// A placeholder left behind must not count as configured, or the button would go
+// live and every send would fail against 360dialog with a useless error.
+$probe2 = str_replace("'test-key-abcdef0123456789'", "'YOUR_CALL_API_KEY'", $probe);
+$probeFile2 = sys_get_temp_dir() . '/wa_call_const_probe2.php';
+file_put_contents($probeFile2, str_replace("__DIR__ . '/wa_call_config.php'",
+    var_export(__DIR__ . '/wa_call_config.php', true), $probe2));
+$got2 = json_decode((string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($probeFile2)), true);
+@unlink($probeFile2);
+check('YOUR_ placeholder is not treated as a key', '',    $got2['key'] ?? null);
+check('placeholder leaves the channel unconfigured', false, $got2['configured'] ?? null);
+
 echo "\n-- phone masking in logs (requirement 11) --\n";
 
 check('254745811248 masked',  '2547****1248', wa_call_mask_msisdn('254745811248'));

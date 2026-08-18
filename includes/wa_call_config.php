@@ -2,7 +2,8 @@
 /**
  * WhatsApp CALLING channel configuration (+254798009935) — Phase 1.1.
  *
- * THIS FILE CONTAINS NO SECRETS AND IS SAFE TO COMMIT.
+ * As shipped this file contains NO SECRETS. It stays safe to commit only while the
+ * four WA_CALL_* secret constants are left undefined here — see the note below.
  *
  * The calling channel is a DIFFERENT WhatsApp number from the messaging channel
  * (+254796128454). Its API key is separate and must never be confused with
@@ -11,18 +12,38 @@
  * line we never intend to call them from. There is deliberately NO fallback.
  *
  * Secrets are resolved, in order:
- *   1. environment variables  (preferred — nothing on disk at all)
+ *   0. constants — defined here or in wa_config.php (simplest; see the warning)
+ *   1. environment variables  (nothing on disk at all)
  *   2. a file named by the WA_CALL_SECRETS_FILE environment variable
  *   3. the first readable path in $candidates below — all OUTSIDE the document root
  *
- * Nothing here reaches the web root, so there is no .gitignore entry to forget and
- * no file the web server could ever serve. See includes/wa_call_secrets.sample.php
- * for the shape of the external file.
+ * Options 1-3 keep the values out of the repository entirely. See
+ * includes/wa_call_secrets.sample.php for the shape of the external file.
  *
  * If nothing resolves, WA_CALL_CONFIGURED is false and every entry point fails
  * CLOSED — the button reports that calling is not configured and no API call is
  * attempted. A missing key must disable calling, never degrade to the wrong one.
  */
+
+// ---- Where to put the secrets ---------------------------------------------
+//
+// Define these four constants and everything below picks them up. Put them either
+// at the top of THIS file, or in includes/wa_config.php next to the messaging
+// settings — that file loads first on every entry point, so both work:
+//
+//     define('WA_CALL_DIALOG_KEY',    '...');   // 360dialog key for the 798 channel
+//     define('WA_CALL_WEBHOOK_TOKEN', '...');   // shared secret for X-Vantage-Call-Token
+//     define('WA_CALL_TEMPLATE_NAME', 'course_call_permission_v1');
+//     define('WA_CALL_TEMPLATE_LANG', 'en');
+//
+// WARNING: both of those files are tracked in Git, so a key placed in either is
+// committed and pushed. Add includes/wa_call_config.php to .gitignore first if you
+// use this route — its history is secret-free today, so untracking it now costs
+// nothing and no rotation is needed later.
+//
+// Environment variables and an out-of-webroot file still work and take no
+// precedence over each other beyond the order below; nothing has to change if you
+// later move the values out of the repository.
 
 // ---- Non-secret identifiers (safe in Git) ---------------------------------
 
@@ -54,7 +75,20 @@ function wa_call_secrets() {
 
     $out = ['key' => '', 'webhook_token' => '', 'template' => '', 'lang' => ''];
 
-    // 1. Environment first — the only option that puts nothing on disk.
+    // 0. Constants, defined in this file or in wa_config.php. Checked first because
+    //    it is the option a server admin will reach for, and it needs no new file.
+    foreach (['key'           => 'WA_CALL_DIALOG_KEY',
+              'webhook_token' => 'WA_CALL_WEBHOOK_TOKEN',
+              'template'      => 'WA_CALL_TEMPLATE_NAME',
+              'lang'          => 'WA_CALL_TEMPLATE_LANG'] as $k => $const) {
+        if (defined($const)) {
+            $v = trim((string)constant($const));
+            // A placeholder left in a sample must not read as configured.
+            if ($v !== '' && strpos($v, 'YOUR_') !== 0) { $out[$k] = $v; }
+        }
+    }
+
+    // 1. Environment next — the only option that puts nothing on disk.
     $env = [
         'key'           => getenv('WA_CALL_DIALOG_KEY'),
         'webhook_token' => getenv('WA_CALL_WEBHOOK_TOKEN'),

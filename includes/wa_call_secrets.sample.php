@@ -12,9 +12,20 @@
  * Do NOT place the real file anywhere under public_html — it must never be
  * serveable, and it must never be committed.
  *
- * Alternatively set these as environment variables and skip the file entirely:
- *     WA_CALL_DIALOG_KEY, WA_CALL_WEBHOOK_TOKEN,
- *     WA_CALL_TEMPLATE_NAME, WA_CALL_TEMPLATE_LANG
+ * You do NOT have to use this file. Two other routes work identically:
+ *
+ *   - constants, defined at the top of includes/wa_call_config.php or in
+ *     includes/wa_config.php next to the messaging settings:
+ *         define('WA_CALL_DIALOG_KEY',    '...');
+ *         define('WA_CALL_WEBHOOK_TOKEN', '...');
+ *         define('WA_CALL_TEMPLATE_NAME', 'course_call_permission_v1');
+ *         define('WA_CALL_TEMPLATE_LANG', 'en');
+ *     Simplest, but BOTH of those files are tracked in Git — gitignore
+ *     includes/wa_call_config.php first, or the key is pushed to GitHub.
+ *
+ *   - environment variables, which put nothing on disk at all:
+ *         WA_CALL_DIALOG_KEY, WA_CALL_WEBHOOK_TOKEN,
+ *         WA_CALL_TEMPLATE_NAME, WA_CALL_TEMPLATE_LANG
  *
  * These belong to the CALLING channel (+254798009935) only. The messaging
  * channel's WA_DIALOG_KEY is a different credential and is never a fallback.
