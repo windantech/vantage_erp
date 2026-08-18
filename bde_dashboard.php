@@ -1144,7 +1144,7 @@ if ($bde_is_admin) {
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Execution Report — ${esc(B.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#e8e0d5;padding:30px;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#eeeeec;padding:30px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:820px;margin:0 auto;background:#fffdfa;border-radius:16px;overflow:hidden;box-shadow:0 20px 54px rgba(45,28,12,.17);border:1px solid #eee4d4}
 .rhead{background:linear-gradient(125deg,#4a2c18,#291409);color:#fff;padding:32px 44px;display:flex;justify-content:space-between;align-items:center;gap:20px}
 .rhead h1{font-family:Georgia,"Times New Roman",serif;font-size:31px;font-weight:700;letter-spacing:-.01em;line-height:1.06}
@@ -1152,7 +1152,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .rlogo{flex:none;background:#fff;border-radius:12px;padding:10px 13px;display:flex;align-items:center}
 .rlogo img{height:44px;width:auto;display:block}
 .metastrip{display:flex;flex-wrap:wrap;gap:20px 52px;padding:22px 44px;background:#faf3e8;border-bottom:1px solid #eee4d4}
-.mk{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#a2907b;font-weight:700;margin-bottom:5px}
+.mk{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:700;margin-bottom:5px}
 .metastrip .mv{font-size:15px;font-weight:600;color:#2a2018}
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px 44px 20px}
 .hbig{font-family:Georgia,"Times New Roman",serif;font-size:39px;font-weight:700;color:#2a2018;line-height:1;font-variant-numeric:tabular-nums}
@@ -1160,17 +1160,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 .hpct{font-family:Georgia,"Times New Roman",serif;font-size:35px;font-weight:700;color:#bd8a30;line-height:1;font-variant-numeric:tabular-nums}
 .pbar{height:6px;border-radius:20px;background:#efe6d6;margin:0 44px 28px;overflow:hidden}
 .pbar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#c99a3c,#a86f22)}
-.sec{display:flex;align-items:center;gap:14px;padding:24px 44px 12px}
-.sec .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:#8a6320;white-space:nowrap}
-.sec .ln{flex:1;height:1px;background:#ece1cf}
+.sec{display:flex;align-items:center;gap:12px;padding:28px 44px 13px}
+.sec .dot{flex:none;width:7px;height:7px;background:#bd8a30;border-radius:2px;transform:rotate(45deg)}
+.sec .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:#3d2416;white-space:nowrap}
+.sec .ln{flex:1;height:1px;background:#ebe6dd}
 table.nums{width:100%;border-collapse:collapse}
 table.nums td{padding:11px 44px;border-bottom:1px solid #f3ebdc;font-size:13.5px}
 table.nums tr:last-child td{border-bottom:none}
 table.nums td.k{color:#7a6c5c}
 table.nums td.v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:#2a2018}
-.nblock{padding:13px 44px}
-.nblock+.nblock{border-top:1px solid #f3ebdc}
-.nlabel{font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#8a6320;font-weight:800;margin-bottom:6px}
+.narrwrap{margin:2px 44px 4px;background:#faf6ec;border:1px solid #efe6d3;border-radius:12px}
+.nblock{padding:15px 22px}
+.nblock+.nblock{border-top:1px solid #f0e7d5}
+.nlabel{font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:800;margin-bottom:6px}
 .ntext{font-size:13.5px;color:#2a2018;line-height:1.6;white-space:pre-wrap}
 footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;border-top:1px solid #eee4d4;letter-spacing:.02em}
 @media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
@@ -1178,11 +1180,11 @@ footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;borde
 <div class="wrap">
   <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
   <div class="metastrip"><div><span class="mk">Consultant</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Role</span><span class="mv">${esc(B.title||"BDE")}${B.dept?" · "+esc(B.dept):""}</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
-  <div class="hero"><div><span class="mk">Cleared this month</span><div class="hbig">${kMoney(B.actual)}</div><span class="hsub">of ${kMoney(B.target)} monthly target</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
+  <div class="hero"><div><span class="mk">Revenue so far</span><div class="hbig">${kMoney(B.actual)}</div><span class="hsub">of ${kMoney(B.target)} monthly target</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
   <div class="pbar"><i style="width:${attW}%"></i></div>
-  <div class="sec"><span class="lbl">Today's numbers</span><span class="ln"></span></div><table class="nums">${numRows}</table>
-  <div class="sec"><span class="lbl">Narrative</span><span class="ln"></span></div>${narr}
-  <div class="sec"><span class="lbl">Dashboard position</span><span class="ln"></span></div><table class="nums">${dash}</table>
+  <div class="sec"><span class="dot"></span><span class="lbl">Today's numbers</span><span class="ln"></span></div><table class="nums">${numRows}</table>
+  <div class="sec"><span class="dot"></span><span class="lbl">Narrative</span><span class="ln"></span></div><div class="narrwrap">${narr}</div>
+  <div class="sec"><span class="dot"></span><span class="lbl">Dashboard position</span><span class="ln"></span></div><table class="nums">${dash}</table>
   <footer>All figures are subject to CRM evidence and Finance verification. &middot; Generated ${today}.</footer>
 </div></body></html>`;
       }
