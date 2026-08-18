@@ -318,6 +318,19 @@ if ($bde_is_admin) {
             $bde_people[] = ['id' => $pid, 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']];
         }
     }
+    // Always include anyone who has a target configured (every BDE + BDO), even when their staff email
+    // doesn't match their login — so every set-up person is testable in the picker, not just linked staff.
+    $tq = @mysqli_query($conn, "SELECT DISTINCT ru.id, ru.fullname, COALESCE(d.department_name,'') dept
+        FROM bde_targets t
+        JOIN registered_users ru ON ru.id = t.scope_ref AND ru.status = 1 AND ru.fullname <> ''
+        LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
+        LEFT JOIN departments d ON s.department_id = d.id
+        WHERE t.scope_type = 'user'");
+    while ($tq && ($tr = mysqli_fetch_assoc($tq))) {
+        $pid = (int) $tr['id']; if (isset($seenP[$pid])) { continue; } $seenP[$pid] = true;
+        $bde_people[] = ['id' => $pid, 'name' => (string) $tr['fullname'], 'dept' => (string) $tr['dept']];
+    }
+    usort($bde_people, function ($a, $b) { return [strtolower($a['dept']), strtolower($a['name'])] <=> [strtolower($b['dept']), strtolower($b['name'])]; });
     foreach ($bde_people as $p) { if ($p['id'] === $bde_ru_id) { $bde_current_listed = true; break; } }
 }
 ?>
