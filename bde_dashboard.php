@@ -1039,20 +1039,18 @@ if ($bde_is_admin) {
       function vStrategy(){
         const clamp=x=>Math.max(0,Math.min(1,x||0));
         const att=B.target>0?B.actual/B.target:0, coll=B.collection||0, conv=B.totalLeads>0?(B.paidClients||0)/B.totalLeads:0;
-        const channels=(B.sources||[]).filter(s=>(+s[1]||0)>0).length;
-        // [dimension, weight%, real value from live data, bar fraction]
+        // [dimension, real value from live data, bar fraction]
         const score=[
-          ["Revenue / qualifying volume",35,`${kMoney(B.actual)} of ${kMoney(B.target)}`,clamp(att)],
-          ["Pipeline & conversion",20,`${B.paidClients||0} paid from ${B.totalLeads||0} leads · ${pct(conv)}`,clamp(conv)],
-          ["CRM & collection quality",15,`${pct(coll)} of billed revenue collected`,clamp(coll)],
-          ["Channel coverage",10,`${channels} active lead channel${channels===1?"":"s"}`,clamp(channels/6)]
+          ["Revenue / qualifying volume",`${kMoney(B.actual)} of ${kMoney(B.target)}`,clamp(att)],
+          ["Pipeline & conversion",`${B.paidClients||0} paid from ${B.totalLeads||0} leads · ${pct(conv)}`,clamp(conv)],
+          ["CRM & collection quality",`${pct(coll)} of billed revenue collected`,clamp(coll)]
         ];
         return `
           <div class="card"><div class="chead"><h4>Role mandate</h4><span class="chip jade">Personal execution</span></div><div class="motiv green"><b>${esc(B.mandate)}</b><br>${esc(B.mandateText)}</div></div>
           <div class="card"><div class="chead"><h4>Non-negotiable operating principles</h4></div><div class="principles">${B.principles.map(([a,b])=>`<div class="principle"><b>${esc(a)}</b><p>${esc(b)}</p></div>`).join("")}</div></div>
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Daily operating rhythm</h4></div><div class="timeline">${B.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Performance scorecard</h4><span class="chip jade">Live · your actuals</span></div><div class="scard">${score.map(([n,w,val,frac])=>`<div class="scrow"><div class="st"><label>${esc(n)}</label><b>${pct(frac)}</b></div><div class="sv">${esc(val)}</div><div class="sb"><i style="width:${Math.round(clamp(frac)*100)}%"></i></div></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Performance scorecard</h4><span class="chip jade">Live · your actuals</span></div><div class="scard">${score.map(([n,val,frac])=>`<div class="scrow"><div class="st"><label>${esc(n)}</label><b>${pct(frac)}</b></div><div class="sv">${esc(val)}</div><div class="sb"><i style="width:${Math.round(clamp(frac)*100)}%"></i></div></div>`).join("")}</div></div>
           </section>
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Green response</h4><span class="chip jade">At / above pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Protect quality, collections and client experience; pursue stretch opportunities and share winning practices.</p></div>
