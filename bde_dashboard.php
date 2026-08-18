@@ -1129,9 +1129,13 @@ if ($bde_is_admin) {
         if(v==="report")bindReport();
         if(v==="visits")bindVisits();
       }
+      function downloadReport(){
+        if(!window.__reportBlob)genReport();
+        const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      }
       function bindReport(){
         var g=el("genReport"); if(g) g.addEventListener("click",genReport);
-        var d=el("dlReport"); if(d) d.addEventListener("click",()=>{if(!window.__reportBlob)genReport();const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+        var d=el("dlReport"); if(d) d.addEventListener("click",downloadReport);
       }
       function buildReportHTML(){
         const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
@@ -1192,7 +1196,8 @@ footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;borde
         const html=buildReportHTML();
         window.__reportBlob=new Blob([html],{type:"text/html;charset=utf-8"});
         const pv=el("reportPreview");
-        pv.innerHTML=`<iframe title="Report preview" style="width:100%;height:600px;border:1px solid #dce4eb;border-radius:10px;background:#fff" src="${URL.createObjectURL(window.__reportBlob)}"></iframe>`;
+        pv.innerHTML=`<iframe title="Report preview" style="width:100%;height:600px;border:1px solid #dce4eb;border-radius:10px;background:#fff" src="${URL.createObjectURL(window.__reportBlob)}"></iframe><div class="report-actions" style="margin-top:14px;justify-content:flex-end"><button class="tbtn solid" id="dlReportBottom" type="button"><svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg> Download report</button></div>`;
+        var db=el("dlReportBottom"); if(db) db.addEventListener("click",downloadReport);
       }
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
