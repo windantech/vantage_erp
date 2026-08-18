@@ -1145,28 +1145,28 @@ if ($bde_is_admin) {
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#151d28;background:#eef2f6;padding:26px}
 .wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(16,24,40,.13)}
-.rhead{background:linear-gradient(120deg,#0e9e79,#0a7a5e);color:#fff;padding:30px 36px;display:flex;justify-content:space-between;align-items:center}
+.rhead{background:linear-gradient(120deg,#ec6e2d,#c85a1e);color:#fff;padding:26px 36px;display:flex;justify-content:space-between;align-items:center;gap:20px}
 .rhead h1{font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
 .rhead p{opacity:.92;font-size:12.5px;margin-top:6px;letter-spacing:.03em;text-transform:uppercase}
-.rmark{display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:none}
-.rmark i{width:28px;height:28px;border-radius:7px;display:block}
+.rlogo{flex:none;background:#fff;border-radius:12px;padding:9px 12px;display:flex;align-items:center}
+.rlogo img{height:46px;width:auto;display:block}
 .meta{width:100%;border-collapse:collapse}
 .meta td{padding:12px 36px;border-bottom:1px solid #eef2f7;font-size:14px}
-.meta td.ml{width:150px;color:#0a7a5e;font-weight:700;background:#f4f9f7}
-.sbar{background:#0e9e79;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px}
+.meta td.ml{width:150px;color:#c85a1e;font-weight:700;background:#fdece1}
+.sbar{background:#ec6e2d;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px}
 table.nums{width:100%;border-collapse:collapse}
 table.nums td{padding:9px 36px;border-bottom:1px solid #f1f5f9;font-size:13.5px}
 table.nums tr:nth-child(even) td{background:#fafcfb}
 table.nums td.k{color:#3b4756}
 table.nums td.v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:#151d28}
 .nblock{padding:12px 36px;border-bottom:1px solid #f1f5f9}
-.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#0a7a5e;font-weight:800;margin-bottom:5px}
+.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#c85a1e;font-weight:800;margin-bottom:5px}
 .ntext{font-size:13.5px;color:#151d28;line-height:1.55;white-space:pre-wrap}
 footer{padding:16px 36px;font-size:11.5px;color:#6a7886;background:#f8fafc;border-top:1px solid #eef2f7}
 @media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none}}
 </style></head><body>
 <div class="wrap">
-  <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rmark"><i style="background:#eef3f0"></i><i style="background:#ec6e2d"></i><i style="background:#c98a1c"></i><i style="background:#f6b8a0"></i></div></div>
+  <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
   <table class="meta"><tr><td class="ml">Date</td><td>${today}</td></tr><tr><td class="ml">Consultant</td><td><b>${esc(B.name)}</b></td></tr><tr><td class="ml">Role</td><td>${esc(B.title||"BDE")}${B.dept?" · "+esc(B.dept):""}</td></tr></table>
   <div class="sbar">Today's numbers</div><table class="nums">${numRows}</table>
   <div class="sbar">Narrative</div>${narr}
