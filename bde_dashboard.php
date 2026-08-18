@@ -904,6 +904,12 @@ if ($bde_is_admin) {
           const hasA=t.actual!=null;
           gates.push([lbl, hasA&&t.actual>=t.threshold_value, hasA?fmtV(t.actual,t.unit):"pending"]);
         });
+        // Fee-collection gate — commission needs the money IN (fees due actually collected), not just
+        // hitting the revenue target. This is why a BDE can pass target yet still earn no commission.
+        if(B.collection!=null){
+          const collReq=Math.max(70,...(B.targets||[]).map(t=>+t.threshold_pct||0).filter(x=>x>0),70);
+          gates.push([`Fee collection ≥ ${collReq}% of fees due`, B.collection>=collReq/100, pct(B.collection,0)]);
+        }
         const met=gates.filter(g=>g[1]).length;
         const checklist=gates.length?`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===gates.length?"jade":"gold"}">${met} / ${gates.length} met</span></div><div class="list">${gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${n}</b><small>${ok?"Qualifying line reached":"Below the qualifying line"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin:8px 12px 2px">Gates come from your targets; the payable amount is confirmed by Finance.</div></div>`
           :`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No qualifying thresholds set on your targets yet — add a threshold % under BDE Targets.</p></div>`;
