@@ -894,17 +894,19 @@ if ($bde_is_admin) {
               <td class="num">${r.rate?r.rate+"%":"—"}</td>
               <td class="num"><b>${money(r.amount)}</b></td>
               <td>${r.eligible?`<span class="chip jade">${esc(r.status||"eligible")}</span>`:`<span class="chip coral">not eligible</span>`}</td></tr>`).join("")}</tbody></table></div></div>`
-          :`<div class="card"><p style="color:var(--muted);margin:6px 2px;font-size:13px">No commission has been calculated for this BDE yet. The engine writes to <code>commission_records</code> per period (run and approved by Finance) — until it runs, there's nothing to show. Eligibility depends on hitting both the client-count and fee-collection thresholds.</p></div>`;
-        // Eligibility checklist — real gates from each commission record (client-count + fee-collection).
+          :`<div class="card"><p style="color:var(--muted);margin:6px 2px;font-size:13px">No commission finalised yet for this period — your standing against target is in the eligibility checklist below. Payable amounts are confirmed by Finance once collections clear.</p></div>`;
+        // Eligibility checklist — derived from THIS BDE's targets (the qualifying line) vs their actuals.
+        const fmtV=(v,unit)=>unit==="count"?nf.format(Math.round(v||0)):kMoney(v||0);
         const gates=[];
-        recs.forEach(r=>{
-          const nm=r.source||r.type||"Source";
-          if(r.minreq>0) gates.push([`${nm}: ${nf.format(r.minreq)} qualifying clients`, r.mcm?true:(r.qualifying>=r.minreq), `${nf.format(r.qualifying)}`]);
-          if(r.fct>0) gates.push([`${nm}: ${(+r.fct)}% fee collection`, r.fcm?true:(r.collpct>=r.fct), `${pct((r.collpct||0)/100,0)}`]);
+        (B.targets||[]).forEach(t=>{
+          if(t.threshold_pct==null||t.threshold_value==null) return;
+          const lbl=`${t.product?esc(t.product)+" · ":""}${esc(t.metric_label)}: reach ${fmtV(t.threshold_value,t.unit)} (${(+t.threshold_pct)}%)`;
+          const hasA=t.actual!=null;
+          gates.push([lbl, hasA&&t.actual>=t.threshold_value, hasA?fmtV(t.actual,t.unit):"pending"]);
         });
         const met=gates.filter(g=>g[1]).length;
-        const checklist=gates.length?`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===gates.length?"jade":"gold"}">${met} / ${gates.length} met</span></div><div class="list">${gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>`
-          :`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:6px 2px">The client-count and fee-collection gates appear here once the engine has a record for this BDE.</p></div>`;
+        const checklist=gates.length?`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===gates.length?"jade":"gold"}">${met} / ${gates.length} met</span></div><div class="list">${gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${n}</b><small>${ok?"Qualifying line reached":"Below the qualifying line"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin:8px 12px 2px">Gates come from your targets; the payable amount is confirmed by Finance.</div></div>`
+          :`<div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No qualifying thresholds set on your targets yet — add a threshold % under BDE Targets.</p></div>`;
         // Audit trail — commission policy (how it's computed & verified).
         const audit=[["Revenue source","Finance-cleared payments","Invoices, promises and uncleared amounts are excluded"],["Eligibility","Client-count + fee-collection gates","Both thresholds in your KPI sheet must be met"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Verification","Recorded in commission_records","Calculated per period, approved by Finance before payout"],["Reversals","Refunds and credit notes","Recalculate and preserve the audit history"]];
         const auditCard=`<div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>`;
