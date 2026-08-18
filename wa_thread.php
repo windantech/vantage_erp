@@ -4,6 +4,7 @@ require_once 'header.php';                     // auth.php -> $conn, $role, $sta
 require "function.php";
 require_once 'includes/wa_config.php';
 require_once 'includes/wa_functions.php';
+require_once 'includes/wa_voice.php';          // after wa_functions.php — uses wa_import_normalize_phone()
 wa_use_nairobi_time($conn);
 
 if (!in_array(WA_ROLE, $role)) {
@@ -126,13 +127,62 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                             </div>
                         <?php endif; ?>
                     </div>
-                    <form method="post" action="includes/wa_process.php" class="m-0 d-flex align-items-center gap-2">
-                        <input type="hidden" name="action" value="handler">
-                        <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
-                        <span class="text-muted small me-1">Handled by:</span>
-                        <button name="handler" value="ai"    class="btn btn-sm <?php echo $conv['handler']==='ai'?'btn-primary':'btn-outline-primary'; ?>">AI</button>
-                        <button name="handler" value="human" class="btn btn-sm <?php echo $conv['handler']==='human'?'btn-success':'btn-outline-success'; ?>">Human</button>
-                    </form>
+                    <div class="d-flex align-items-center gap-3">
+                        <?php
+                        // Call the customer through the PBX from the rep's softphone.
+                        // Deliberately NOT gated on the 24-hour messaging window: once
+                        // that window shuts a phone call is the only way left to reach
+                        // them without a template, so this is exactly when it matters.
+                        // Role is already enforced above (WA_ROLE at the top of this file),
+                        // so no extra check here — one gate, not two that can drift apart.
+                        $callUri  = wa_voice_sip_uri($conv['wa_id']);
+                        $callNum  = wa_voice_display_number($conv['wa_id']);
+                        $callName = trim((string)$conv['profile_name']) !== ''
+                                    ? trim((string)$conv['profile_name'])
+                                    : ($callNum !== '' ? $callNum : (string)$conv['wa_id']);
+                        // The prompt sits in a JS string inside an HTML attribute — two
+                        // nested contexts. wa_e() alone is not enough: it turns an
+                        // apostrophe into &#039;, which the browser decodes back to '
+                        // BEFORE the JS parser runs, so a real WhatsApp name like
+                        // "Mukuha's Groceries" would end the string early and break the
+                        // button. json_encode with JSON_HEX_APOS emits ', which
+                        // survives the HTML decode as data; wa_e() then makes it safe as
+                        // an attribute value.
+                        $callConfirmJs = json_encode(
+                            'Call ' . $callName . ' at ' . $callNum
+                            . ' using the Vantage Africa WhatsApp calling line?',
+                            JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE
+                        );
+                        if ($callConfirmJs === false) { $callConfirmJs = '"Call this client using the Vantage Africa WhatsApp calling line?"'; }
+                        ?>
+                        <div class="text-end">
+                            <?php if ($callUri !== ''): ?>
+                                <a href="<?php echo wa_e($callUri); ?>"
+                                   class="btn btn-sm btn-outline-success"
+                                   title="Dial <?php echo wa_e($callNum); ?> through the Vantage calling line"
+                                   onclick="return confirm(<?php echo wa_e($callConfirmJs); ?>);">
+                                    <i class="bi bi-telephone-outbound me-1"></i>Call using Linphone
+                                </a>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled
+                                        title="This contact does not have a valid callable phone number.">
+                                    <i class="bi bi-telephone-x me-1"></i>Call using Linphone
+                                </button>
+                            <?php endif; ?>
+                            <div class="text-muted" style="font-size:.7rem;">
+                                <?php echo $callUri !== ''
+                                    ? 'Requires Linphone to be installed and registered on this device.'
+                                    : 'This contact does not have a valid callable phone number.'; ?>
+                            </div>
+                        </div>
+                        <form method="post" action="includes/wa_process.php" class="m-0 d-flex align-items-center gap-2">
+                            <input type="hidden" name="action" value="handler">
+                            <input type="hidden" name="id" value="<?php echo (int)$conv_id; ?>">
+                            <span class="text-muted small me-1">Handled by:</span>
+                            <button name="handler" value="ai"    class="btn btn-sm <?php echo $conv['handler']==='ai'?'btn-primary':'btn-outline-primary'; ?>">AI</button>
+                            <button name="handler" value="human" class="btn btn-sm <?php echo $conv['handler']==='human'?'btn-success':'btn-outline-success'; ?>">Human</button>
+                        </form>
+                    </div>
                 </div>
 
                 <div class="px-3 py-2 border-bottom bg-light d-flex flex-wrap gap-2 align-items-center">
