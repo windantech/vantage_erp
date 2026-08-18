@@ -669,3 +669,101 @@ if (!function_exists('bde_targets_progress')) {
         return $out;
     }
 }
+
+if (!function_exists('bdo_rollup')) {
+    /**
+     * Department roll-up for a BDO/HOD dashboard. Takes the BDO's registered_users.id, reads their
+     * seeded department-total target (metric dept_revenue / dept_participants), resolves the department's
+     * BDEs from bde_targets (by product family), and aggregates each BDE's REAL attributed numbers
+     * (via bde_fetch_metrics — so the event comma-list fix + all attribution logic is reused).
+     *
+     * Returns: name, title, dept, metric ('revenue'|'participants'), unit, target, threshold (value),
+     *          actual, clients, pipeline (KES), collection (0..1), team[] (per BDE, revenue departments).
+     */
+    function bdo_rollup($conn, $bdoId, $from, $to)
+    {
+        $bdoId = (int) $bdoId;
+        $out = ['name' => '', 'title' => 'BDO', 'dept' => '', 'metric' => 'revenue', 'unit' => 'KES',
+            'target' => 0.0, 'threshold' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0,
+            'collection' => 0.0, 'team' => [], 'members' => 0];
+        if ($bdoId <= 0) { return $out; }
+        $rate = function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0;
+
+        // identity
+        $iq = @mysqli_query($conn, "SELECT ru.fullname, s.job_title FROM registered_users ru
+            LEFT JOIN staff s ON (ru.email COLLATE utf8mb4_general_ci = s.email COLLATE utf8mb4_general_ci OR ru.staff_id = s.id)
+            WHERE ru.id = $bdoId LIMIT 1");
+        if ($iq && ($ir = mysqli_fetch_assoc($iq))) { $out['name'] = (string) $ir['fullname']; $out['title'] = (string) ($ir['job_title'] ?: 'BDO'); }
+
+        // department-total target
+        $tq = @mysqli_query($conn, "SELECT product, metric, unit, target_value, threshold_pct FROM bde_targets
+            WHERE scope_type='user' AND scope_ref='$bdoId' AND metric IN ('dept_revenue','dept_participants') ORDER BY id LIMIT 1");
+        if ($tq && ($tr = mysqli_fetch_assoc($tq))) {
+            $out['dept'] = (string) $tr['product'];
+            $out['metric'] = $tr['metric'] === 'dept_participants' ? 'participants' : 'revenue';
+            $out['unit'] = (string) $tr['unit'];
+            $out['target'] = (float) $tr['target_value'];
+            $out['threshold'] = $tr['threshold_pct'] !== null ? (float) $tr['target_value'] * (float) $tr['threshold_pct'] / 100.0 : 0.0;
+        }
+
+        // resolve the department's BDEs by product family in bde_targets (user-scoped, excluding the BDO)
+        $dl = strtolower($out['dept']);
+        $filter = '';
+        if (strpos($dl, 'corporate') !== false) { $filter = "product='Corporate'"; }
+        elseif (strpos($dl, 'international') !== false) { $filter = "product='International'"; }
+        elseif (strpos($dl, 'virtual') !== false) { $filter = "metric_label='Course revenue'"; }
+        elseif (strpos($dl, 'digital') !== false) { $filter = "(product LIKE 'Eval%' OR product LIKE '%Appraisal%')"; }
+
+        $bdeIds = [];
+        if ($filter !== '') {
+            $q = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets
+                WHERE scope_type='user' AND $filter AND metric NOT IN ('dept_revenue','dept_participants') AND scope_ref <> '$bdoId'");
+            while ($q && ($r = mysqli_fetch_assoc($q))) { $bdeIds[] = (int) $r['scope_ref']; }
+        }
+
+        // each BDE's own revenue target (for the team table's vs-target column)
+        $memTarget = [];
+        if (!empty($bdeIds)) {
+            $in = implode(',', array_map('intval', $bdeIds));
+            $mtq = @mysqli_query($conn, "SELECT scope_ref, SUM(target_value) t FROM bde_targets
+                WHERE scope_type='user' AND metric='revenue' AND scope_ref IN ($in) GROUP BY scope_ref");
+            while ($mtq && ($mr = mysqli_fetch_assoc($mtq))) { $memTarget[(int) $mr['scope_ref']] = (float) $mr['t']; }
+        }
+
+        // aggregate each BDE's REAL numbers, deduped by name (duplicate logins share a person)
+        $byName = [];
+        foreach ($bdeIds as $bid) {
+            $m = bde_fetch_metrics($conn, $bid, $from, $to);
+            $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
+            if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
+            if (!isset($byName[$key])) { $byName[$key] = ['name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0]; }
+            $byName[$key]['target']  += $memTarget[$bid] ?? 0.0;
+            $byName[$key]['actual']  += (float) $m['revenue_kes'];
+            $byName[$key]['clients'] += (int) $m['paid_clients'];
+            $byName[$key]['pipeline'] += max(0.0, ((float) $m['expected_usd'] - (float) $m['revenue_usd'])) * $rate;
+            $byName[$key]['collN'] += (float) $m['revenue_usd'];
+            $byName[$key]['collD'] += (float) $m['expected_usd'];
+        }
+
+        $deptRevenue = 0.0; $deptClients = 0; $deptPipe = 0.0; $collN = 0.0; $collD = 0.0; $team = [];
+        foreach ($byName as $t) {
+            $coll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0.0;
+            $team[] = ['name' => $t['name'], 'title' => $t['title'], 'target' => $t['target'], 'actual' => $t['actual'], 'clients' => $t['clients'], 'pipeline' => $t['pipeline'], 'collection' => $coll, 'notes' => ''];
+            $deptRevenue += $t['actual']; $deptClients += $t['clients']; $deptPipe += $t['pipeline']; $collN += $t['collN']; $collD += $t['collD'];
+        }
+
+        // the BDO's own attributed numbers count toward the department too
+        $bm = bde_fetch_metrics($conn, $bdoId, $from, $to);
+        $deptRevenue += (float) $bm['revenue_kes']; $deptClients += (int) $bm['paid_clients'];
+        $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
+        $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
+
+        usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
+        $out['team'] = $team; $out['members'] = count($team);
+        $out['actual'] = $out['metric'] === 'participants' ? (float) $deptClients : $deptRevenue;
+        $out['clients'] = $deptClients;
+        $out['pipeline'] = $deptPipe;
+        $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
+        return $out;
+    }
+}

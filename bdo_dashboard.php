@@ -9,6 +9,36 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+require_once 'includes/bde_metrics.php';
+if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
+
+// Which BDO are we viewing? Default = logged-in user; admins preview any BDO via ?as=<id>.
+$bdo_id = (int) ($_SESSION['login_id'] ?? 0);
+$bdo_is_admin = isset($role) && is_array($role) && in_array(777, $role);
+if (isset($_GET['as']) && $bdo_is_admin) { $bdo_id = (int) $_GET['as']; }
+
+// Analytics period (default = current calendar month).
+$bdo_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : date('Y-m-01');
+$bdo_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))   ? $_GET['to']   : date('Y-m-d');
+
+// Real department roll-up + department leadership mandate.
+$bdo = function_exists('bdo_rollup') ? bdo_rollup($conn, $bdo_id, $bdo_from, $bdo_to) : null;
+$bdo_mandate = ($bdo && $bdo['dept'] !== '') ? bde_mandate($bdo['dept']) : bde_mandate('');
+$bdo_initials = '';
+if ($bdo && $bdo['name'] !== '') { foreach (preg_split('/\s+/', trim($bdo['name'])) as $w) { if ($w !== '') { $bdo_initials .= strtoupper($w[0]); } } }
+$bdo_initials = $bdo_initials !== '' ? substr($bdo_initials, 0, 2) : 'BD';
+
+// Admin "View as" roster = everyone carrying a department-total target (the BDOs/HODs).
+$bdo_people = [];
+if ($bdo_is_admin) {
+    $pq = @mysqli_query($conn, "SELECT DISTINCT t.scope_ref id, ru.fullname, t.product dept
+        FROM bde_targets t JOIN registered_users ru ON ru.id = t.scope_ref
+        WHERE t.scope_type='user' AND t.metric IN ('dept_revenue','dept_participants') AND ru.status=1 AND ru.fullname<>''
+        ORDER BY t.product, ru.fullname");
+    while ($pq && ($pr = mysqli_fetch_assoc($pq))) { $bdo_people[] = ['id' => (int) $pr['id'], 'name' => (string) $pr['fullname'], 'dept' => (string) $pr['dept']]; }
+}
+$bdo_current_listed = false;
+foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = true; break; } }
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -30,7 +60,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       background:var(--ground);color:var(--ink);font-size:14px;
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       line-height:1.45;-webkit-font-smoothing:antialiased;
-      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;
+      max-width:1280px;margin:0 auto;padding:80px 24px 44px;border-radius:0;min-height:100vh;box-sizing:border-box;
     }
     .bde-app.theme-dark{
       --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
@@ -173,9 +203,23 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>Performance Command Centre</h1><p>Strategy → daily execution → verified revenue → commission → growth</p></div></div>
         <div class="controls">
+          <?php if ($bdo_is_admin && !empty($bdo_people)): ?>
+          <div class="control"><label>View as (admin)</label>
+            <select id="viewAs">
+              <?php if (!$bdo_current_listed && $bdo_id > 0): ?>
+                <option value="<?php echo $bdo_id; ?>" selected>Currently viewing: <?php echo htmlspecialchars($bdo && $bdo['name'] !== '' ? $bdo['name'] : ('#' . $bdo_id)); ?></option>
+              <?php endif; ?>
+              <?php $curD = ''; foreach ($bdo_people as $p): if ($p['dept'] !== $curD): if ($curD !== '') echo '</optgroup>'; $curD = $p['dept']; ?>
+                <optgroup label="<?php echo htmlspecialchars($curD !== '' ? $curD : 'Department'); ?>">
+              <?php endif; ?>
+                <option value="<?php echo $p['id']; ?>"<?php echo $p['id'] === $bdo_id ? ' selected' : ''; ?>><?php echo htmlspecialchars($p['name']); ?> (#<?php echo $p['id']; ?>)</option>
+              <?php endforeach; if ($curD !== '') echo '</optgroup>'; ?>
+            </select>
+          </div>
+          <?php endif; ?>
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
-          <div class="profile-chip"><span class="a">FI</span><div><b>Francisca Ing'aa</b><span>BDO · Virtual Department</span></div></div>
+          <div class="profile-chip"><span class="a"><?php echo htmlspecialchars($bdo_initials); ?></span><div><b><?php echo htmlspecialchars($bdo && $bdo['name'] !== '' ? $bdo['name'] : 'BDO'); ?></b><span><?php echo htmlspecialchars($bdo ? (($bdo['title'] !== '' ? $bdo['title'] : 'BDO') . ($bdo['dept'] !== '' ? ' · ' . $bdo['dept'] : '')) : 'BDO'); ?></span></div></div>
         </div>
       </header>
       <nav class="tabs" aria-label="Dashboard sections">
@@ -186,7 +230,7 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
       <main id="workspace"></main>
-      <div class="bde-foot">Interactive prototype · illustrative figures. In production every number is a live query — cleared revenue from Finance-verified payments, attribution via <code>assigned_to</code>, commission from the versioned rule master.</div>
+      <div class="bde-foot"><b>Command Centre</b> is live — department target from <code>bde_targets</code>, cleared revenue &amp; team rolled up from each BDE's real attributed payments (<code>assigned_to</code>). Execution drivers, the pipeline funnel and lead sources are still illustrative and will be wired next.</div>
     </div>
 
     <script>
@@ -230,8 +274,30 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           {name:"Joy Kendi",title:"Sales — Data Analysis",target:2104875,actual:700000,pipeline:2000000,collection:.79,notes:"Immediate call and campaign-quality intervention."}
         ]
       };
-      const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command"};
+<?php if ($bdo): ?>
+      /* ---- real department roll-up override (live from the CRM) ---- */
+      Object.assign(B, {
+        name: <?php echo json_encode($bdo['name'] !== '' ? $bdo['name'] : 'BDO', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDO"'; ?>,
+        initials: <?php echo json_encode($bdo_initials, JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BD"'; ?>,
+        title: <?php echo json_encode(($bdo['title'] !== '' ? $bdo['title'] : 'BDO') . ($bdo['dept'] !== '' ? ' — ' . $bdo['dept'] : ''), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDO"'; ?>,
+        dept: <?php echo json_encode($bdo['dept'] !== '' ? $bdo['dept'] : 'Department', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"Department"'; ?>,
+        metric: <?php echo json_encode($bdo['metric'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '"revenue"'; ?>,
+        target: <?php echo (float) $bdo['target']; ?>,
+        actual: <?php echo (float) $bdo['actual']; ?>,
+        collection: <?php echo (float) $bdo['collection']; ?>,
+        pipeline: <?php echo (float) $bdo['pipeline']; ?>,
+        clients: <?php echo (int) $bdo['clients']; ?>,
+        members: <?php echo (int) $bdo['members']; ?>,
+        real: true,
+        mandate: <?php echo json_encode($bdo_mandate['mission'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        mandateText: <?php echo json_encode($bdo_mandate['detail'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>,
+        focus: <?php echo json_encode($bdo_mandate['focus'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>
+      });
+      B.team = <?php echo json_encode($bdo['team'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
+<?php endif; ?>
+      const periods=[{label:<?php echo json_encode(date('F Y', strtotime($bdo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($bdo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>}];
+      const state={p:0,view:"command"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -485,6 +551,8 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
       el("periodSelect").addEventListener("change",e=>{state.p=+e.target.value;render();});
+      // Admin "View as" → reload previewing that BDO (?as=<id>), keeping the date range.
+      (function(){var va=el("viewAs");if(!va)return;va.addEventListener("change",function(){var u=new URL(window.location.href);u.searchParams.set("as",this.value);window.location.href=u.toString();});})();
       root.querySelectorAll(".tab[data-v]").forEach(a=>a.addEventListener("click",()=>{root.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));a.classList.add("active");state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
 
