@@ -113,7 +113,7 @@ if (!function_exists('bde_daily_revenue')) {
             while ($q && ($r = mysqli_fetch_assoc($q))) { $out[(string) $r['d']] = ($out[(string) $r['d']] ?? 0) + (float) $r['amt'] * $rate; }
         }
         $evIds = [];
-        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
         while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
         if (!empty($evIds)) {
             $ein = implode(',', $evIds);
@@ -218,7 +218,7 @@ if (!function_exists('bde_fetch_metrics')) {
 
         // --- EVENTS (international + corporate): Event.assigned_to → ticket_congress (status=2) ---
         $events = [];
-        $evq = @mysqli_query($conn, "SELECT event_id, COALESCE(early_amount,0) AS early FROM Event WHERE assigned_to = $ruId");
+        $evq = @mysqli_query($conn, "SELECT event_id, COALESCE(early_amount,0) AS early FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
         while ($evq && ($evr = mysqli_fetch_assoc($evq))) { $events[(int) $evr['event_id']] = (float) $evr['early']; }
         if (!empty($events)) {
             $ein = implode(',', array_map('intval', array_keys($events)));
@@ -336,7 +336,7 @@ if (!function_exists('bde_active_since')) {
         if ($r && ($row = mysqli_fetch_assoc($r)) && !empty($row['d'])) { $dates[] = (string) $row['d']; }
         // first ticket sale on an event assigned to them
         $evIds = [];
-        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
         while ($evq && ($evr = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $evr['event_id']; }
         if (!empty($evIds)) {
             $ein = implode(',', $evIds);
@@ -470,11 +470,19 @@ if (!function_exists('bde_team_metrics')) {
             WHERE i.assigned_to IN ($ids) AND r.datee BETWEEN '$s' AND '$e 23:59:59' GROUP BY i.assigned_to");
         while ($vq && ($vr = mysqli_fetch_assoc($vq))) { $id = (int) $vr['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $vr['rev']; $members[$id]['clients'] += (int) $vr['clients']; } }
 
-        $eq = @mysqli_query($conn, "SELECT e.assigned_to ru_id, SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END) rev,
+        // Event.assigned_to is a comma-list varchar (e.g. '94,100,121'), so IN()/= won't match a co-led
+        // training. Restrict to events involving any member, group per event, then credit each co-assignee.
+        $finds = implode(' OR ', array_map(function ($mid) { return "FIND_IN_SET('" . (int) $mid . "', REPLACE(e.assigned_to,' ','')) > 0"; }, array_keys($members)));
+        $eq = @mysqli_query($conn, "SELECT e.assigned_to alist, SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END) rev,
             SUM(CASE WHEN tc.status=2 AND tc.amount>0 THEN 1 ELSE 0 END) clients
             FROM Event e JOIN ticket_congress tc ON tc.event_id = e.event_id
-            WHERE e.assigned_to IN ($ids) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.assigned_to");
-        while ($eq && ($er = mysqli_fetch_assoc($eq))) { $id = (int) $er['ru_id']; if (isset($members[$id])) { $members[$id]['rev'] += (float) $er['rev']; $members[$id]['clients'] += (int) $er['clients']; } }
+            WHERE ($finds) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.event_id, e.assigned_to");
+        while ($eq && ($er = mysqli_fetch_assoc($eq))) {
+            foreach (explode(',', str_replace(' ', '', (string) $er['alist'])) as $aid) {
+                $aid = (int) $aid;
+                if ($aid > 0 && isset($members[$aid])) { $members[$aid]['rev'] += (float) $er['rev']; $members[$aid]['clients'] += (int) $er['clients']; }
+            }
+        }
 
         // Each member's own monthly revenue target (for the "vs target" column).
         $mtarget = [];
@@ -602,7 +610,7 @@ if (!function_exists('bde_targets_progress')) {
         }
         // events (international/corporate) → add to total collected
         $evIds = [];
-        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE assigned_to = $ruId");
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
         while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
         if (!empty($evIds)) {
             $ein = implode(',', $evIds);
