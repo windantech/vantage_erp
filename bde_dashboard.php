@@ -1138,39 +1138,51 @@ if ($bde_is_admin) {
         const att=B.target>0?B.actual/B.target:0;
         const numRows=[...root.querySelectorAll("#reportForm input")].map(x=>`<tr><td class="k">${esc(x.dataset.label)}</td><td class="v">${esc(x.value.trim()||"—")}</td></tr>`).join("");
         const narr=[...root.querySelectorAll("#reportForm textarea")].map(x=>`<div class="nblock"><div class="nlabel">${esc(x.dataset.label)}</div><div class="ntext">${esc(x.value.trim()||"—")}</div></div>`).join("");
-        const dash=[["Cleared vs target",`${kMoney(B.actual)} / ${kMoney(B.target)} (${pct(att)})`],["Outstanding pipeline",kMoney(B.pipelineKes||0)],["Collection",pct(B.collection,0)],["Commission (eligible)",kMoney(B.commissionKes||0)]]
+        const dash=[["Outstanding pipeline",kMoney(B.pipelineKes||0)],["Collection rate",pct(B.collection,0)],["Commission (eligible)",kMoney(B.commissionKes||0)]]
           .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
+        const attW=Math.min(100,Math.max(0,Math.round(att*100)));
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Execution Report — ${esc(B.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#151d28;background:#eef2f6;padding:26px}
-.wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(16,24,40,.13)}
-.rhead{background:linear-gradient(120deg,#3d2416,#25130a);color:#fff;padding:26px 36px;display:flex;justify-content:space-between;align-items:center;gap:20px}
-.rhead h1{font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
-.rhead p{opacity:.82;font-size:12.5px;margin-top:6px;letter-spacing:.03em;text-transform:uppercase}
-.rlogo{flex:none;background:#fff;border-radius:12px;padding:9px 12px;display:flex;align-items:center}
-.rlogo img{height:46px;width:auto;display:block}
-.meta{width:100%;border-collapse:collapse}
-.meta td{padding:12px 36px;border-bottom:1px solid #eef2f7;font-size:14px}
-.meta td.ml{width:150px;color:#94641f;font-weight:700;background:#fbf1e0}
-.sbar{background:#dd9a2e;color:#fff;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:9px 36px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#e8e0d5;padding:30px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;background:#fffdfa;border-radius:16px;overflow:hidden;box-shadow:0 20px 54px rgba(45,28,12,.17);border:1px solid #eee4d4}
+.rhead{background:linear-gradient(125deg,#4a2c18,#291409);color:#fff;padding:32px 44px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+.rhead h1{font-family:Georgia,"Times New Roman",serif;font-size:31px;font-weight:700;letter-spacing:-.01em;line-height:1.06}
+.rhead p{opacity:.68;font-size:11px;margin-top:9px;letter-spacing:.16em;text-transform:uppercase}
+.rlogo{flex:none;background:#fff;border-radius:12px;padding:10px 13px;display:flex;align-items:center}
+.rlogo img{height:44px;width:auto;display:block}
+.metastrip{display:flex;flex-wrap:wrap;gap:20px 52px;padding:22px 44px;background:#faf3e8;border-bottom:1px solid #eee4d4}
+.mk{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#a2907b;font-weight:700;margin-bottom:5px}
+.metastrip .mv{font-size:15px;font-weight:600;color:#2a2018}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px 44px 20px}
+.hbig{font-family:Georgia,"Times New Roman",serif;font-size:39px;font-weight:700;color:#2a2018;line-height:1;font-variant-numeric:tabular-nums}
+.hsub{display:block;font-size:12.5px;color:#7a6c5c;margin-top:9px}
+.hpct{font-family:Georgia,"Times New Roman",serif;font-size:35px;font-weight:700;color:#bd8a30;line-height:1;font-variant-numeric:tabular-nums}
+.pbar{height:6px;border-radius:20px;background:#efe6d6;margin:0 44px 28px;overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#c99a3c,#a86f22)}
+.sec{display:flex;align-items:center;gap:14px;padding:24px 44px 12px}
+.sec .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:#8a6320;white-space:nowrap}
+.sec .ln{flex:1;height:1px;background:#ece1cf}
 table.nums{width:100%;border-collapse:collapse}
-table.nums td{padding:9px 36px;border-bottom:1px solid #f1f5f9;font-size:13.5px}
-table.nums tr:nth-child(even) td{background:#fafcfb}
-table.nums td.k{color:#3b4756}
-table.nums td.v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:#151d28}
-.nblock{padding:12px 36px;border-bottom:1px solid #f1f5f9}
-.nlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#94641f;font-weight:800;margin-bottom:5px}
-.ntext{font-size:13.5px;color:#151d28;line-height:1.55;white-space:pre-wrap}
-footer{padding:16px 36px;font-size:11.5px;color:#6a7886;background:#f8fafc;border-top:1px solid #eef2f7}
-@media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none}}
+table.nums td{padding:11px 44px;border-bottom:1px solid #f3ebdc;font-size:13.5px}
+table.nums tr:last-child td{border-bottom:none}
+table.nums td.k{color:#7a6c5c}
+table.nums td.v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:#2a2018}
+.nblock{padding:13px 44px}
+.nblock+.nblock{border-top:1px solid #f3ebdc}
+.nlabel{font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#8a6320;font-weight:800;margin-bottom:6px}
+.ntext{font-size:13.5px;color:#2a2018;line-height:1.6;white-space:pre-wrap}
+footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;border-top:1px solid #eee4d4;letter-spacing:.02em}
+@media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
 </style></head><body>
 <div class="wrap">
   <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
-  <table class="meta"><tr><td class="ml">Date</td><td>${today}</td></tr><tr><td class="ml">Consultant</td><td><b>${esc(B.name)}</b></td></tr><tr><td class="ml">Role</td><td>${esc(B.title||"BDE")}${B.dept?" · "+esc(B.dept):""}</td></tr></table>
-  <div class="sbar">Today's numbers</div><table class="nums">${numRows}</table>
-  <div class="sbar">Narrative</div>${narr}
-  <div class="sbar">Dashboard position</div><table class="nums">${dash}</table>
+  <div class="metastrip"><div><span class="mk">Consultant</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Role</span><span class="mv">${esc(B.title||"BDE")}${B.dept?" · "+esc(B.dept):""}</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
+  <div class="hero"><div><span class="mk">Cleared this month</span><div class="hbig">${kMoney(B.actual)}</div><span class="hsub">of ${kMoney(B.target)} monthly target</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
+  <div class="pbar"><i style="width:${attW}%"></i></div>
+  <div class="sec"><span class="lbl">Today's numbers</span><span class="ln"></span></div><table class="nums">${numRows}</table>
+  <div class="sec"><span class="lbl">Narrative</span><span class="ln"></span></div>${narr}
+  <div class="sec"><span class="lbl">Dashboard position</span><span class="ln"></span></div><table class="nums">${dash}</table>
   <footer>All figures are subject to CRM evidence and Finance verification. &middot; Generated ${today}.</footer>
 </div></body></html>`;
       }
