@@ -347,7 +347,7 @@ if ($bde_is_admin) {
       background:var(--ground);color:var(--ink);font-size:14px;
       font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       line-height:1.45;-webkit-font-smoothing:antialiased;
-      max-width:1280px;margin:0 auto;padding:80px 24px 44px;border-radius:0;min-height:100vh;box-sizing:border-box;
+      max-width:none;margin:0;padding:80px 24px 44px;border-radius:0;min-height:100vh;box-sizing:border-box;
     }
     .bde-app.theme-dark{
       --ground:#0c1219; --surface:#161f2a; --surface2:#1d2833; --surface3:#212e3a; --ink:#eef3f7; --ink2:#c2cdd8; --muted:#8b9aa9; --faint:#63727f; --line:#28343f;
