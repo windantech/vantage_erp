@@ -334,7 +334,7 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
           ["Department target",kMoney(B.target),"Approved SBU target","flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
           ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
-          ["Qualified pipeline",kMoney(B.pipeline),(B.pipeline/B.target).toFixed(1)+"× coverage","up","var(--slate)"],
+          ["Remaining to target",kMoney(Math.max(0,B.target-B.actual)),"target − collected","flat","var(--slate)"],
           ["Team at 80%+",team80+" / "+B.team.length,"Balanced performance","flat","var(--gold)"],
           ["Leadership incentive",kMoney(c.current),c.current>0?"Currently visible":"Not yet unlocked","flat","var(--amber)"]
         ];

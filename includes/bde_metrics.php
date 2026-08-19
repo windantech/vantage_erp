@@ -809,6 +809,18 @@ if (!function_exists('bdo_rollup')) {
         $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
         $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
 
+        // The BDO sells too — show their own contribution as a team row (their course/revenue target,
+        // e.g. Edwin's MEAL Nairobi). Their department-total target stays the headline, not this row.
+        $bdoTarget = 0.0;
+        $btq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets
+            WHERE scope_type='user' AND scope_ref='$bdoId' AND metric IN ('revenue','course_revenue')");
+        if ($btq && ($btr = mysqli_fetch_assoc($btq))) { $bdoTarget = (float) $btr['t']; }
+        if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
+            $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
+            $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
+            $team[] = ['name' => ($out['name'] ?: 'BDO'), 'title' => (($out['title'] !== '' ? $out['title'] : 'BDO') . ' · sells too'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+        }
+
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
         $out['team'] = $team; $out['members'] = count($team);
         $out['actual'] = $out['metric'] === 'participants' ? (float) $deptClients : $deptRevenue;
