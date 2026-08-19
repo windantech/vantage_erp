@@ -1110,7 +1110,8 @@ if ($bde_is_admin) {
               <td><span class="stage-chip">${esc(x.product)}</span></td>
               <td>${outChip(x.outcome)}</td>
               <td class="num">${x.value?kMoney(x.value):"&#8212;"}</td></tr>`).join("");
-        const prodOpts=VISIT_PRODUCTS.map(p=>`<option>${esc(p)}</option>`).join("");
+        const dflt=(()=>{const d=(B.dept||"").toLowerCase();return d.includes("corporate")?"Corporate training":d.includes("international")?"International event":d.includes("digital")?"Eval360":d.includes("academ")?"Academic program":"Virtual course";})();
+        const prodOpts=VISIT_PRODUCTS.map(p=>`<option${p===dflt?" selected":""}>${esc(p)}</option>`).join("");
         const outOpts=VISIT_OUTCOMES.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
         return `
           <div class="section-tag"><h3>Field visit tracker</h3><span>Log every client you visit in the field — visits roll up to your department (BDO) and the BDM</span><div class="rule"></div></div>

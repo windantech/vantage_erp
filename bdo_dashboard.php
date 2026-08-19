@@ -268,6 +268,9 @@ if ($bdo) {
     .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
     .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
     .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)} .bde-app .field input:hover,.bde-app .field textarea:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))} .bde-app .field input[type=number]{font-variant-numeric:tabular-nums;font-weight:650}
+    .bde-app .field select{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 34px 10px 12px;font-size:13px;width:100%;font-weight:650;color:var(--ink);appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 16px) 18px,calc(100% - 11px) 18px;background-size:5px 5px;background-repeat:no-repeat;cursor:pointer}
+    .bde-app .field select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+    .bde-app .field select:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
     .bde-app .form-sub{display:flex;align-items:center;gap:10px;margin:2px 2px 11px;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:800} .bde-app .form-sub i{color:var(--brand);font-style:normal;font-weight:800;letter-spacing:.03em} .bde-app .form-sub::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
     .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
     .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
@@ -418,6 +421,7 @@ if ($bdo) {
       const mfmt=v=>isCount?nf.format(Math.round(v||0))+" clients":kMoney(v);
       const VISIT_PRODUCTS=["Virtual course","Corporate training","International event","Academic program","Eval360","360 Appraisal","Data Analysis","M&E System","Other"];
       const VISIT_OUTCOMES=[["visited","Visited","slate"],["interested","Interested","amber"],["registered","Registered","jade"]];
+      const dfltProduct=()=>{const d=(B.dept||"").toLowerCase();return d.includes("corporate")?"Corporate training":d.includes("international")?"International event":d.includes("digital")?"Eval360":d.includes("academ")?"Academic program":"Virtual course";};
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
@@ -618,7 +622,7 @@ if ($bdo) {
               <div class="field"><label>Organization</label><input name="organization" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
               <div class="field"><label>Contact phone</label><input name="contact_phone" type="text" placeholder="07…"></div>
               <div class="field"><label>Location / area</label><input name="location" type="text" placeholder="e.g. Nairobi CBD"></div>
-              <div class="field"><label>Product of interest</label><select name="product">${VISIT_PRODUCTS.map(p=>`<option>${esc(p)}</option>`).join("")}</select></div>
+              <div class="field"><label>Product of interest</label><select name="product">${VISIT_PRODUCTS.map(p=>`<option${p===dfltProduct()?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
               <div class="field"><label>Outcome</label><select name="outcome">${VISIT_OUTCOMES.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select></div>
               <div class="field"><label>Potential value (KES)</label><input name="value" type="number" min="0" placeholder="0"></div>
               <div class="field"><label>Visit date</label><input name="visit_date" type="date" value="<?php echo date('Y-m-d'); ?>"></div>
@@ -648,8 +652,6 @@ if ($bdo) {
             <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).filter(x=>x.flag).length?"amber":"jade"}">${(B.deptQuality||[]).filter(x=>x.flag).length?((B.deptQuality.filter(x=>x.flag).length)+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>{const dot=x.flag?"amber":x.active?"green":"blue";const txt=x.active?`${Math.round(x.conv*100)}% conversion (${nf.format(x.clients)}/${nf.format(x.leads)} leads)${x.coll>0?` · collection ${Math.round(x.coll*100)}%`:""}`:"no activity yet";return `<div class="arow"><span class="pd ${dot}"></span><div><b>${esc(x.name)}</b><p>${esc(txt)}</p></div></div>`;}).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No department members resolved.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
           </section>
-          <div class="section-tag"><h3>Field visits &amp; opportunities</h3><span>Logged visits across ${esc(B.dept||"the department")} — log your own under the Field Visits tab</span><div class="rule"></div></div>
-          ${bdoVisitsTable()}
           ${bdoOwnPipeline()}`;
       }
       function bdoOwnPipeline(){
