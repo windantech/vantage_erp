@@ -647,7 +647,7 @@ switch ($action) {
             wa_redirect('../wa_thread.php?id=' . $conv_id);
         }
 
-        $send = wa_call_send_permission_template($e164);
+        $send = wa_call_request_permission($conn, $cid, $e164);
         if (!empty($send['ok'])) {
             wa_call_confirm_request($conn, $cid, $staff_id, $send['message_id'], WA_CALL_PHONE_ID);
             wa_flash('success', 'Call-permission request sent. The customer will see it on WhatsApp.');

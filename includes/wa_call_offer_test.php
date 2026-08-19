@@ -201,8 +201,11 @@ check('passes actor NULL to the Phase 1.1 lease', true,
     strpos($src, 'wa_call_claim_request($conn, $contactId, null,') !== false);
 check('reuses the Phase 1.1 lease, not its own', true,
     strpos($src, 'wa_call_claim_request') !== false && strpos($src, 'INSERT INTO wa_call_permissions') === false);
-check('reuses the Phase 1.1 sender', true,
-    strpos($src, 'wa_call_send_permission_template') !== false);
+// Now via the chooser, which picks the free in-window route when the customer has
+// written to the calling line and the approved template otherwise. Both leave 798.
+check('reuses the Phase 1.1 sending layer', true,
+    strpos($src, 'wa_call_request_permission($conn, $contactId, $e164)') !== false);
+check('does not build its own request', 0, preg_match('/wa_call_http_post|curl_/', $src));
 check('releases the lease on API failure', true, strpos($src, 'wa_call_fail_request') !== false);
 check('the notice is sent only after success', true,
     strpos($src, 'wa_call_confirm_request') < strpos($src, 'WA_CALL_OFFER_NOTICE)'));

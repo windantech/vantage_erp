@@ -131,6 +131,73 @@ check('both require the library', true,
 check('a permission reply never reaches the AI', true,
     strpos($call, "=== 'call_permission_reply') { continue; }") !== false);
 
+echo "\n-- BULLETPROOF: a permission request can only leave from the calling line --\n";
+
+require_once __DIR__ . '/wa_call_api.php';
+$api = file_get_contents(__DIR__ . '/wa_call_api.php');
+$apiCode = preg_replace('!//[^\n]*!', '', preg_replace('!/\*.*?\*/!s', '', $api));
+
+// It must never borrow the shared sender, which resolves the customer's channel
+// and would happily send from the messaging line.
+check('never uses wa_send_text',        0, preg_match('/wa_send_text\s*\(/', $apiCode));
+check('never uses wa_dialog_dispatch',  0, preg_match('/wa_dialog_dispatch\s*\(/', $apiCode));
+check('never uses wa_reply_channel',    0, preg_match('/wa_reply_channel\s*\(/', $apiCode));
+check('never names the messaging URL',  0, preg_match('/WA_DIALOG_URL/', $apiCode));
+// WA_DIALOG_KEY appears only inside the guard that REFUSES when the two match.
+$guard = substr($apiCode, strpos($apiCode, 'function wa_call_channel_block_reason'));
+$guard = substr($guard, 0, strpos($guard, "\n}\n"));
+$outsideGuard = str_replace($guard, '', $apiCode);
+check('messaging key appears ONLY in the refusal guard', 0,
+    preg_match('/WA_DIALOG_KEY/', $outsideGuard));
+check('and the guard does compare against it', true,
+    strpos($guard, 'hash_equals((string)WA_DIALOG_KEY, $key)') !== false);
+check('sends only to the calling URL', true, strpos($apiCode, 'WA_CALL_API_URL') !== false);
+
+// The guard itself.
+check('refuses when the two keys are identical', true,
+    strpos($api, 'calling key is identical to the messaging key') !== false);
+check('refuses a placeholder key', true,
+    strpos($api, 'calling key is still a placeholder') !== false);
+check('refuses without a phone-number id', true,
+    strpos($api, 'calling phone-number id not configured') !== false);
+check('refuses a non-https endpoint', true,
+    strpos($api, 'calling API url is not https') !== false);
+check('the send is gated on that check', true,
+    strpos($api, '$blocked = wa_call_channel_block_reason();') !== false);
+
+// In THIS environment the calling key is unset, so it must refuse outright.
+$blocked = wa_call_channel_block_reason();
+check('unconfigured here -> blocked', true, $blocked !== '');
+$attempt = wa_call_send_permission_template('254745811248');
+check('and no request is attempted', false, $attempt['ok']);
+check('no HTTP call was made',        0,     $attempt['status']);
+
+echo "\n-- free inside an open 798 window, template otherwise --\n";
+check('a chooser exists', true, function_exists('wa_call_request_permission'));
+check('it checks the CALLING window', true,
+    strpos($api, "wa_channel_within_window(\$conn, (int)\$contactId, 'calling'") !== false);
+check('the direct route is tried only when open', true,
+    strpos($api, 'if ($windowOpen) {') !== false);
+check('an ambiguous direct result falls back to the template', true,
+    strpos($api, 'falling back to the template') !== false);
+check('the free route is labelled', true, strpos($api, "\$direct['route'] = 'direct_free';") !== false);
+check('the fallback route is labelled', true,
+    strpos($api, "\$windowOpen ? 'template_after_direct' : 'template'") !== false);
+check('the route is logged for verification', true,
+    strpos(file_get_contents(__DIR__ . '/wa_call_offer.php'), 'permission requested via ') !== false);
+check('the direct route is also hard-gated', true,
+    (bool)preg_match('/function wa_call_permission_direct.*?wa_call_channel_block_reason/s', $apiCode));
+
+// Both callers go through the chooser, so neither can bypass the window logic.
+$offer = file_get_contents(__DIR__ . '/wa_call_offer.php');
+$proc  = file_get_contents(__DIR__ . '/wa_process.php');
+check('automated path uses the chooser', true,
+    strpos($offer, 'wa_call_request_permission($conn, $contactId, $e164)') !== false);
+check('manual button uses the chooser', true,
+    strpos($proc, 'wa_call_request_permission($conn, $cid, $e164)') !== false);
+check('neither calls the template sender directly', 0,
+    preg_match('/wa_call_send_permission_template/', $offer . $proc));
+
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }
 exit($failures === 0 ? 0 : 1);

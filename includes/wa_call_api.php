@@ -100,10 +100,44 @@ function wa_call_template_payload($toE164, $name, $lang, $components = null) {
     return $payload;
 }
 
-/** Headers for a calling-channel request, or [] when the key is missing. */
+/**
+ * Why the calling channel cannot be used right now, or '' when it can.
+ *
+ * A permission request MUST leave from +254798009935. If it went from the
+ * messaging line the customer would be asked for permission to be called by a
+ * number we will never call from, they would grant it against the wrong number,
+ * and every subsequent call would still be refused — while one of only two
+ * requests allowed in seven days had been spent. So this refuses rather than
+ * sends whenever it cannot prove which line it is on.
+ */
+function wa_call_channel_block_reason() {
+    $s   = wa_call_secrets();
+    $key = trim((string)$s['key']);
+
+    if ($key === '')                       { return 'calling key not configured'; }
+    if (strpos($key, 'YOUR_') === 0)       { return 'calling key is still a placeholder'; }
+
+    // The two channels must be genuinely different credentials. If they are equal,
+    // the "calling" key is really the messaging one and the request would go out
+    // from the wrong number — silently, and looking entirely successful.
+    if (defined('WA_DIALOG_KEY') && trim((string)WA_DIALOG_KEY) !== ''
+        && hash_equals((string)WA_DIALOG_KEY, $key)) {
+        return 'calling key is identical to the messaging key';
+    }
+
+    if (!defined('WA_CALL_PHONE_ID') || trim((string)WA_CALL_PHONE_ID) === '') {
+        return 'calling phone-number id not configured';
+    }
+    if (!defined('WA_CALL_API_URL') || stripos((string)WA_CALL_API_URL, 'https://') !== 0) {
+        return 'calling API url is not https';
+    }
+    return '';
+}
+
+/** Headers for a calling-channel request, or [] when it cannot be used. */
 function wa_call_api_headers() {
+    if (wa_call_channel_block_reason() !== '') { return []; }
     $s = wa_call_secrets();
-    if ($s['key'] === '') { return []; }
     return ['Content-Type: application/json', 'D360-API-KEY: ' . $s['key']];
 }
 
@@ -124,6 +158,13 @@ function wa_call_send_permission_template($toE164, $components = null) {
     $reason = wa_call_unavailable_reason();
     if ($reason !== '') {
         return ['ok' => false, 'message_id' => '', 'error' => $reason, 'status' => 0];
+    }
+    // Hard gate: never send unless we can prove this is the calling line.
+    $blocked = wa_call_channel_block_reason();
+    if ($blocked !== '') {
+        error_log('[wa-call] refused to send a permission request: ' . $blocked);
+        return ['ok' => false, 'message_id' => '',
+                'error' => 'Calling line unavailable: ' . $blocked, 'status' => 0];
     }
     $headers = wa_call_api_headers();
     if (!$headers) {
@@ -148,6 +189,86 @@ function wa_call_send_permission_template($toE164, $components = null) {
                  ?? ('HTTP ' . $status));
     // Scrub before the message can reach a flash, a log line or last_error: some
     // 360dialog failures quote the request, headers included.
+    return ['ok' => false, 'message_id' => '',
+            'error' => mb_substr(wa_call_scrub($err), 0, 255), 'status' => $status];
+}
+
+/**
+ * Ask for call permission, choosing the cheapest route that will actually work.
+ *
+ * Now that the calling line receives messages, a customer who has written to it
+ * inside the last 24 hours has an OPEN customer-service window there — and a
+ * request sent inside that window is a session message, which costs nothing. The
+ * approved template costs money on every send and exists for the case that window
+ * is shut, which is still most customers, because they enquire on the messaging
+ * line.
+ *
+ * Both routes leave from +254798009935 and both go through the hard gate above.
+ *
+ * The direct route is attempted only when the window is open, and ONLY its own
+ * explicit success is trusted: anything ambiguous falls through to the template
+ * rather than reporting a request that may never have been sent. A customer left
+ * waiting for a prompt that never arrives is worse than the cost of a template.
+ *
+ * @return array {ok, message_id, error, status, route}
+ */
+function wa_call_request_permission($conn, $contactId, $toE164) {
+    $windowOpen = false;
+    if (function_exists('wa_channel_within_window')) {
+        $windowOpen = wa_channel_within_window($conn, (int)$contactId, 'calling', null);
+    }
+
+    if ($windowOpen) {
+        $direct = wa_call_permission_direct($toE164);
+        if (!empty($direct['ok'])) {
+            $direct['route'] = 'direct_free';
+            return $direct;
+        }
+        // Not an error worth surfacing — the template is the expected fallback.
+        error_log('[wa-call] direct request unavailable (' . (string)$direct['error']
+                . '), falling back to the template');
+    }
+
+    $tpl = wa_call_send_permission_template($toE164);
+    $tpl['route'] = $windowOpen ? 'template_after_direct' : 'template';
+    return $tpl;
+}
+
+/**
+ * The in-window request. Requires an open customer-service window on the calling
+ * line; 360dialog rejects it otherwise, which is exactly the signal we fall back on.
+ *
+ * Treated as successful ONLY on a 2xx that does not report an error. The endpoint's
+ * exact semantics have not been confirmed against a live channel — it may create a
+ * request or merely report existing state — so the caller must never assume a
+ * prompt reached the customer on anything less than an explicit success.
+ */
+function wa_call_permission_direct($toE164) {
+    $to = preg_replace('/\D+/', '', (string)$toE164);
+    if ($to === '') {
+        return ['ok' => false, 'message_id' => '', 'error' => 'No valid destination number.', 'status' => 0];
+    }
+    $blocked = wa_call_channel_block_reason();
+    if ($blocked !== '') {
+        return ['ok' => false, 'message_id' => '', 'error' => $blocked, 'status' => 0];
+    }
+    if (!function_exists('wa_http_get')) {
+        return ['ok' => false, 'message_id' => '', 'error' => 'HTTP helper unavailable.', 'status' => 0];
+    }
+
+    $s   = wa_call_secrets();
+    $url = rtrim(WA_CALL_API_URL, '/') . '/calling/permissions/' . rawurlencode($to);
+    $res = wa_http_get($url, (int)WA_CALL_TIMEOUT, ['D360-API-KEY: ' . $s['key']]);
+
+    $status = (int)($res['status'] ?? 0);
+    $body   = is_array($res['body'] ?? null) ? $res['body'] : [];
+    $ok     = ($status >= 200 && $status < 300) && empty($body['error']);
+
+    if ($ok) {
+        return ['ok' => true, 'message_id' => (string)($body['messages'][0]['id'] ?? ''),
+                'error' => '', 'status' => $status];
+    }
+    $err = (string)($body['error']['message'] ?? $body['raw'] ?? ('HTTP ' . $status));
     return ['ok' => false, 'message_id' => '',
             'error' => mb_substr(wa_call_scrub($err), 0, 255), 'status' => $status];
 }

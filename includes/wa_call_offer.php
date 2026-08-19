@@ -210,7 +210,9 @@ function wa_call_offer_maybe_request($conn, $conv, $inboundText, $aiFlag) {
         return $out;
     }
 
-    $send = wa_call_send_permission_template($e164);
+    // Free inside an open 798 window, the approved template otherwise. Both leave
+    // from the calling line.
+    $send = wa_call_request_permission($conn, $contactId, $e164);
     if (empty($send['ok'])) {
         // Release the lease and record why, without consuming a throttle slot.
         wa_call_fail_request($conn, $contactId, null, $claim['previous'], $send['error'],
@@ -226,6 +228,8 @@ function wa_call_offer_maybe_request($conn, $conv, $inboundText, $aiFlag) {
     // 'requested' row exists. A second event to correct attribution would double the
     // throttle count, which reads its window from these rows.
     wa_call_confirm_request($conn, $contactId, null, $send['message_id'], WA_CALL_PHONE_ID, 'api');
+    error_log('[wa-call-offer] permission requested via ' . (string)($send['route'] ?? '?')
+            . ' for contact ' . $contactId);
 
     // --- Only now do we tell them, through the 796 conversation ------------
     $notice = wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE);

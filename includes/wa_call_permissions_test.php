@@ -423,8 +423,16 @@ check('headers empty when unconfigured', [], wa_call_api_headers());
 // WA_DIALOG_KEY would make a substring check vacuously pass, so prove instead that
 // the calling code never names the messaging credential at all.
 $apiSrc = file_get_contents(__DIR__ . '/wa_call_api.php');
-check('wa_call_api.php never reads WA_DIALOG_KEY', 0,
-    preg_match('/\\bWA_DIALOG_KEY\\b(?![^\n]*never)/', preg_replace('!/\\*.*?\\*/!s', '', $apiSrc)));
+// Stronger than "never reads it": WA_DIALOG_KEY now appears in wa_call_api.php
+// ONLY inside the guard that REFUSES to send when the two keys are identical.
+// It must never reach a request.
+$apiCode = preg_replace('!//[^\n]*!', '', preg_replace('!/\\*.*?\\*/!s', '', $apiSrc));
+$guard   = substr($apiCode, strpos($apiCode, 'function wa_call_channel_block_reason'));
+$guard   = substr($guard, 0, strpos($guard, "\n}\n"));
+check('WA_DIALOG_KEY appears only in the refusal guard', 0,
+    preg_match('/WA_DIALOG_KEY/', str_replace($guard, '', $apiCode)));
+check('the guard refuses when the keys match', true,
+    strpos($guard, 'calling key is identical to the messaging key') !== false);
 $cfgSrc = file_get_contents(__DIR__ . '/wa_call_config.php');
 check('wa_call_config.php never reads WA_DIALOG_KEY', 0,
     preg_match('/\\bWA_DIALOG_KEY\\b/', preg_replace('!/\\*.*?\\*/!s', '', $cfgSrc)));
@@ -584,7 +592,7 @@ check('CSRF checked before authorisation', true,
 check('authorisation checked before the claim', true,
     strpos($case, 'wa_can_touch') < strpos($case, 'wa_call_claim_request'));
 check('claim happens before the API call', true,
-    strpos($case, 'wa_call_claim_request') < strpos($case, 'wa_call_send_permission_template'));
+    strpos($case, 'wa_call_claim_request') < strpos($case, 'wa_call_request_permission'));
 check('no transaction is opened in the case itself', 0,
     preg_match('/mysqli_begin_transaction/', $case));
 
