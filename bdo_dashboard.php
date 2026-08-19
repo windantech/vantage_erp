@@ -416,6 +416,8 @@ if ($bdo) {
       // Metric-aware: International is participant/client-based (count), everyone else is KES.
       const isCount=(B.metric==="participants");
       const mfmt=v=>isCount?nf.format(Math.round(v||0))+" clients":kMoney(v);
+      const VISIT_PRODUCTS=["Virtual course","Corporate training","International event","Academic program","Eval360","360 Appraisal","Data Analysis","M&E System","Other"];
+      const VISIT_OUTCOMES=[["visited","Visited","slate"],["interested","Interested","amber"],["registered","Registered","jade"]];
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
@@ -428,15 +430,15 @@ if ($bdo) {
         const s=B;const att=s.target?s.actual/s.target:0;
         const team80=s.team.filter(x=>x.actual/x.target>=.8).length;
         const balanced=team80>=Math.ceil(s.team.length*.67);
-        const current=(att>=1?60000:att>=.8?30000:0);
-        const atTarget=60000;
+        const current=(att>=.9?30000:att>=.8?15000:0);
+        const atTarget=30000;
         const gates=[
           ["Department reaches 80%+",att>=.8,pct(att,0)],
           ["Balanced BDE performance (2/3 at 80%+)",balanced,team80+" of "+s.team.length],
           ["Collections verified (90%+)",s.collection>=.9,pct(s.collection,0)]
         ];
-        const unlock=current?"Leadership band currently visible":"Reach 80% department attainment with balanced BDEs and 90% collection.";
-        const rule="Departmental leadership incentive: KES 30,000 at 80–99% attainment and KES 60,000 at 100%+, released only when BDE performance is balanced and collections are verified. A 30% hold-back may apply until course and department gates are satisfied.";
+        const unlock=current?"Leadership bonus band currently visible":"Reach 80% department attainment with balanced BDEs and 90% collection.";
+        const rule="Departmental leadership bonus: KES 15,000 at 80–89.99% attainment and KES 30,000 at 90%+, released only when department targets are met, BDE performance is balanced and collections are verified. Confirmed and disbursed by Finance.";
         return {current,atTarget,gates,unlock,rule};
       }
 
@@ -609,22 +611,23 @@ if ($bdo) {
       }
       function bdoOutChip(o){return o==="registered"?'<span class="chip jade">Registered</span>':o==="interested"?'<span class="chip amber">Interested</span>':o==="no_show"?'<span class="chip coral">No-show</span>':'<span class="chip slate">Visited</span>';}
       function bdoVisitForm(){
-        return `<form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>#visits" class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">${esc(B.bdoName||"You")}</span></div>
+        return `<form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>#visits" class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">Quick entry</span></div>
             <input type="hidden" name="action" value="log_visit">
             <div class="form-grid">
-              <div class="field"><label>Client / contact person</label><input name="client" required placeholder="e.g. Grace Wanjiru"></div>
-              <div class="field"><label>Organization</label><input name="organization" placeholder="e.g. Nairobi Women's SACCO"></div>
-              <div class="field"><label>Contact phone</label><input name="contact_phone" placeholder="07…"></div>
-              <div class="field"><label>Location / area</label><input name="location" placeholder="e.g. Nairobi CBD"></div>
-              <div class="field"><label>Product of interest</label><input name="product" placeholder="e.g. MEAL / CPA"></div>
-              <div class="field"><label>Outcome</label><select name="outcome"><option value="visited">Visited</option><option value="interested">Interested</option><option value="registered">Registered</option><option value="no_show">No-show</option></select></div>
+              <div class="field"><label>Client / contact person</label><input name="client" type="text" required placeholder="e.g. Grace Wanjiru"></div>
+              <div class="field"><label>Organization</label><input name="organization" type="text" placeholder="e.g. Nairobi Women's SACCO"></div>
+              <div class="field"><label>Contact phone</label><input name="contact_phone" type="text" placeholder="07…"></div>
+              <div class="field"><label>Location / area</label><input name="location" type="text" placeholder="e.g. Nairobi CBD"></div>
+              <div class="field"><label>Product of interest</label><select name="product">${VISIT_PRODUCTS.map(p=>`<option>${esc(p)}</option>`).join("")}</select></div>
+              <div class="field"><label>Outcome</label><select name="outcome">${VISIT_OUTCOMES.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select></div>
               <div class="field"><label>Potential value (KES)</label><input name="value" type="number" min="0" placeholder="0"></div>
               <div class="field"><label>Visit date</label><input name="visit_date" type="date" value="<?php echo date('Y-m-d'); ?>"></div>
               <div class="field"><label>Follow-up date</label><input name="followup_date" type="date"></div>
-              <div class="field span2"><label>Cross-SBU opportunity <span style="text-transform:none;color:var(--muted)">(optional — visible to every department, for awareness)</span></label><input name="opportunity_note" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
+              <div class="field span2"><label>Cross-SBU opportunity <span style="text-transform:none;color:var(--muted)">(optional — visible to everyone, any department, for awareness)</span></label><input name="opportunity_note" type="text" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
               <div class="field span2"><label>Notes</label><textarea name="notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
             </div>
             <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button><button class="tbtn" type="reset">Clear</button></div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:8px"><b>Tip:</b> log visits the same day while details are fresh. Flag a <b>cross-SBU opportunity</b> for another department and it appears on their dashboard.</div>
           </form>`;
       }
       function bdoVisitsTable(){
@@ -672,7 +675,7 @@ if ($bdo) {
 
       function vCommission(){
         const c=commission();const att=B.actual/B.target;const shown=clamp(att,0,1.2)/1.2;const met=c.gates.filter(g=>g[1]).length;
-        const audit=[["Rule version","COMM-2026-09-v1","Effective-dated and locked after month close"],["Revenue source","Finance-cleared payments","Invoices and promises excluded"],["Ownership","CRM acquisition owner","Joint splits require prior written approval"],["Hold-back","Balance / support gate","Displayed separately from payable amount"],["Reversals","Refunds and credit notes","Recalculate and preserve audit history"]];
+        const audit=[["Basis","Department attainment + balanced BDEs + collections","Earned on the department result, not individual sales"],["Revenue source","Finance-cleared payments only","Invoices, promises and uncleared amounts excluded"],["Release","After month close","Subject to a hold-back until every gate is satisfied"],["Confirmation","Finance / payroll","The payable amount is confirmed and disbursed by Finance"]];
         return `
           <section class="hero">
             <div class="card">
@@ -691,8 +694,19 @@ if ($bdo) {
             <div class="card"><div class="chead"><h4>Eligibility checklist</h4><span class="chip ${met===c.gates.length?"jade":"gold"}">${met} / ${c.gates.length} met</span></div><div class="list">${c.gates.map(([n,ok,v])=>`<div class="check ${ok?"ok":"no"}"><span class="sym">${ok?"✓":"✕"}</span><div><b>${esc(n)}</b><small>${ok?"Condition satisfied":"Not yet satisfied"}</small></div><span class="cv">${esc(v)}</span></div>`).join("")}</div></div>
             <div class="card"><div class="chead"><h4>Commission audit trail</h4><span class="chip slate">Traceable</span></div>${audit.map(r=>`<div class="audit"><span class="k"></span><div><b>${esc(r[0])}: ${esc(r[1])}</b><p>${esc(r[2])}</p></div></div>`).join("")}</div>
           </section>
-          <div class="card"><div class="chead"><h4>Three-month consistency journey</h4><span class="chip slate">Month 2 of 3</span></div>
-            <div class="steps3"><div class="stepbox"><span>Month 1</span><b>Target achieved</b><div class="st" style="color:var(--jade)">✓ Verified</div></div><div class="stepbox"><span>Month 2</span><b>${att>=1?"On track":"Recovery required"}</b><div class="st" style="color:${att>=1?"var(--jade)":"var(--amber)"}">${pct(att)} current attainment</div></div><div class="stepbox"><span>Month 3</span><b>Future period</b><div class="st" style="color:var(--slate)">Consistency reward pending</div></div></div>
+          <div class="card"><div class="chead"><h4>Three-month consistency</h4><span class="chip slate">Reward needs 3 in a row</span></div>
+            <div style="font-size:12.5px;color:var(--muted);line-height:1.65">This month the department is at <b style="color:var(--ink)">${pct(att,0)}</b> of target. Hit 100% for three consecutive months (from Aug 2026) to unlock the consistency reward — the month-by-month history populates as periods close.</div>
+          </div>
+          ${bdoPersonalCommission()}`;
+      }
+      function bdoPersonalCommission(){
+        const pt=(+B.ownTarget)||0;if(pt<=0) return "";
+        const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;const shown=clamp(att,0,1.2)/1.2;
+        return `<div class="section-tag"><h3>Your personal commission</h3><span>On the courses you personally sell — separate from the department leadership bonus</span><div class="rule"></div></div>
+          <div class="card"><div class="chead"><h4>Your commission</h4><span class="chip ${att>=.8?"jade":"gold"}">${att>=.8?"On track":"Not yet unlocked"}</span></div>
+            <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
+            <div class="mini3"><div class="cm"><span>Your cleared</span><b class="num">${kMoney(pa)}</b></div><div class="cm"><span>Your target</span><b class="num">${kMoney(pt)}</b></div><div class="cm"><span>Attainment</span><b class="num">${pct(att,0)}</b></div></div>
+            <div class="nextstep"><b>Next step:</b> ${att>=1?"At or above your target — protect collections to keep your commission.":att>=.8?"Above 80% — clear outstanding fees to confirm eligibility.":"Reach 80% of your "+kMoney(pt)+" target, then clear fees to unlock."} Payable amounts are confirmed by Finance from cleared collections.</div>
           </div>`;
       }
 
