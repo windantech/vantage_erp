@@ -780,14 +780,16 @@ if (!function_exists('bdo_rollup')) {
         }
 
         // aggregate each BDE's REAL numbers, deduped by name (duplicate logins share a person)
-        $byName = []; $deptLeadsTotal = 0; $srcAgg = [];
+        $byName = [];
         foreach ($bdeIds as $bid) {
             $m = bde_fetch_metrics($conn, $bid, $from, $to);
-            $deptLeadsTotal += (int) ($m['total_leads'] ?? 0);
-            foreach (($m['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
             if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
-            if (!isset($byName[$key])) { $byName[$key] = ['name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0]; }
+            if (!isset($byName[$key])) { $byName[$key] = ['id' => $bid, 'name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0, 'leads' => 0, 'srcRow' => []]; }
+            // leads/sources: a duplicate login is the SAME person — take their richest login ONCE, never
+            // sum, or Josiah #69+#98 would double the department's lead count.
+            $ml = (int) ($m['total_leads'] ?? 0);
+            if ($ml > (int) $byName[$key]['leads']) { $byName[$key]['leads'] = $ml; $byName[$key]['srcRow'] = ($m['sources'] ?? []); }
             // target is seeded identically on each duplicate login of the same person — take it ONCE
             // (max), never summed, or a duplicate login doubles the target (e.g. Josiah #69+#98 → 4M).
             $byName[$key]['target']  = max($byName[$key]['target'], $memTarget[$bid] ?? 0.0);
@@ -798,11 +800,13 @@ if (!function_exists('bdo_rollup')) {
             $byName[$key]['collD'] += (float) $m['expected_usd'];
         }
 
-        $deptRevenue = 0.0; $deptClients = 0; $deptPipe = 0.0; $collN = 0.0; $collD = 0.0; $team = [];
+        $deptRevenue = 0.0; $deptClients = 0; $deptPipe = 0.0; $collN = 0.0; $collD = 0.0; $team = []; $deptLeadsTotal = 0; $srcAgg = [];
         foreach ($byName as $t) {
             $coll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0.0;
-            $team[] = ['name' => $t['name'], 'title' => $t['title'], 'target' => $t['target'], 'actual' => $t['actual'], 'clients' => $t['clients'], 'pipeline' => $t['pipeline'], 'collection' => $coll, 'notes' => ''];
+            $team[] = ['id' => ($t['id'] ?? 0), 'name' => $t['name'], 'title' => $t['title'], 'target' => $t['target'], 'actual' => $t['actual'], 'clients' => $t['clients'], 'pipeline' => $t['pipeline'], 'collection' => $coll, 'notes' => ''];
             $deptRevenue += $t['actual']; $deptClients += $t['clients']; $deptPipe += $t['pipeline']; $collN += $t['collN']; $collD += $t['collD'];
+            $deptLeadsTotal += (int) ($t['leads'] ?? 0);
+            foreach (($t['srcRow'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
         }
 
         // the BDO's own attributed numbers count toward the department too
@@ -822,7 +826,7 @@ if (!function_exists('bdo_rollup')) {
         if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
-            $team[] = ['name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
         }
 
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });

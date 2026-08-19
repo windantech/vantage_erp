@@ -8,6 +8,7 @@
 // `.bde-app` container so it neither leaks into nor is overridden by the admin
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
+ob_start(); // buffer so we can Post/Redirect/Get after saving a BDO note
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
 require_once 'includes/bde_metrics.php';
 if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
@@ -16,6 +17,27 @@ if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
 $bdo_id = (int) ($_SESSION['login_id'] ?? 0);
 $bdo_is_admin = isset($role) && is_array($role) && in_array(777, $role);
 if (isset($_GET['as']) && $bdo_is_admin) { $bdo_id = (int) $_GET['as']; }
+
+// --- BDO notes: per-BDE messages (target + commission) the BDO writes, shown on the BDE dashboard ---
+@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS bde_notes (
+    bde_user_id INT PRIMARY KEY,
+    target_note VARCHAR(600) NOT NULL DEFAULT '',
+    commission_note VARCHAR(600) NOT NULL DEFAULT '',
+    author_id INT DEFAULT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_note' && $bdo_is_admin) {
+    $bid = (int) ($_POST['bde_user_id'] ?? 0);
+    if ($bid > 0) {
+        $tn = mysqli_real_escape_string($conn, mb_substr(trim((string) ($_POST['target_note'] ?? '')), 0, 600));
+        $cn = mysqli_real_escape_string($conn, mb_substr(trim((string) ($_POST['commission_note'] ?? '')), 0, 600));
+        $auth = (int) ($_SESSION['login_id'] ?? 0);
+        @mysqli_query($conn, "INSERT INTO bde_notes (bde_user_id, target_note, commission_note, author_id)
+            VALUES ($bid, '$tn', '$cn', $auth)
+            ON DUPLICATE KEY UPDATE target_note='$tn', commission_note='$cn', author_id=$auth");
+    }
+    header('Location: bdo_dashboard.php?as=' . (int) $bdo_id); exit;
+}
 
 // Analytics period (default = current calendar month).
 $bdo_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : date('Y-m-01');
@@ -39,6 +61,17 @@ if ($bdo_is_admin) {
 }
 $bdo_current_listed = false;
 foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = true; break; } }
+
+// Existing BDO notes for this team (to prefill the modal).
+$bdo_notes = [];
+if ($bdo && !empty($bdo['team'])) {
+    $ids = array_filter(array_map(function ($t) { return (int) ($t['id'] ?? 0); }, $bdo['team']));
+    if (!empty($ids)) {
+        $in = implode(',', array_map('intval', $ids));
+        $nq = @mysqli_query($conn, "SELECT bde_user_id, target_note, commission_note FROM bde_notes WHERE bde_user_id IN ($in)");
+        while ($nq && ($nr = mysqli_fetch_assoc($nq))) { $bdo_notes[(int) $nr['bde_user_id']] = ['t' => (string) $nr['target_note'], 'c' => (string) $nr['commission_note']]; }
+    }
+}
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -299,6 +332,8 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
       B.totalLeads = <?php echo (int) ($bdo['totalLeads'] ?? 0); ?>;
       B.paidClients = <?php echo (int) ($bdo['clients'] ?? 0); ?>;
       B.courses = <?php echo json_encode($bdo['courses'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.notes = <?php echo json_encode((object) $bdo_notes, JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}'; ?>;
+      B.canNote = <?php echo $bdo_is_admin ? 'true' : 'false'; ?>;
       B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
 <?php endif; ?>
       const periods=[{label:<?php echo json_encode(date('F Y', strtotime($bdo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($bdo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>}];
@@ -429,13 +464,12 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
         if(!B.team||!B.team.length){
           return `<div class="card"><div class="chead"><h4>Team members</h4><span class="chip slate">${esc(B.dept||"Department")}</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No BDEs resolved for this department. Choose a BDO from <b>View&nbsp;as</b> above (e.g. <b>Edwin Otieno</b> for Corporate) — the team rolls up from that department's BDEs. If you <em>are</em> on a BDO and it's still empty, that department's BDEs aren't yet linked to it in <code>bde_targets</code>.</p></div>`;
         }
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span>${B.canNote&&t.id?`<div style="margin-top:6px"><button type="button" class="notebtn tbtn" data-bde="${t.id}" data-name="${esc(t.name)}" style="padding:4px 9px;font-size:11px">✎ Note${(B.notes&&B.notes[t.id]&&((((B.notes[t.id].t||"").trim())||((B.notes[t.id].c||"").trim())))?" ●":"")}</button></div>`:""}</td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       function bdoCoursesCard(){
         if(!B.courses||!B.courses.length) return "";
-        const dAcc=["var(--brand)","var(--jade)","#3a7bd5","var(--gold)"];
-        return `<div class="card"><div class="chead"><h4>Your own course targets</h4><span class="chip slate">You sell too</span></div><div class="drivers">${B.courses.map((c,i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="live">Target</span></div><div class="n num">${kMoney(c.target)}</div><b>${esc(c.name)}</b><small>${c.threshold>0?"80% qualifying "+kMoney(c.threshold):"course revenue"}</small></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Your own course targets</h4><span class="chip slate">${B.courses.length} course${B.courses.length>1?"s":""}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">${B.courses.map(c=>`<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface2)"><div style="font-size:13px;font-weight:800;color:var(--ink);margin-bottom:10px">${esc(c.name)}</div><div style="display:flex;gap:10px"><div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px">100% target</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.target)}</b></div>${c.threshold>0?`<div style="flex:1;background:var(--surface);border:1px solid var(--gold-line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);margin-bottom:3px">80% qualifying</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.threshold)}</b></div>`:""}</div></div>`).join("")}</div></div>`;
       }
       /* ---------- views ---------- */
       function vCommand(){
@@ -560,10 +594,30 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
           </section>`;
       }
 
+      function openNoteModal(bid,name){
+        var n=(B.notes&&B.notes[bid])||{t:"",c:""};
+        var ov=document.createElement("div");
+        ov.style.cssText="position:fixed;inset:0;background:rgba(16,24,40,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px";
+        var ta="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--surface2);color:var(--ink);resize:vertical";
+        var lb="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:6px";
+        ov.innerHTML='<form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>" style="background:var(--surface);color:var(--ink);border-radius:16px;max-width:520px;width:100%;box-shadow:0 24px 60px rgba(16,24,40,.35);overflow:hidden">'
+          +'<input type="hidden" name="action" value="save_note"><input type="hidden" name="bde_user_id" value="'+bid+'">'
+          +'<div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><b style="font-size:15px">Message to '+esc(name)+'</b><span class="nclose" style="cursor:pointer;font-size:18px;color:var(--muted)">✕</span></div>'
+          +'<div style="padding:18px 22px;display:grid;gap:14px">'
+          +'<div><label style="'+lb+'">Message on their target</label><textarea name="target_note" rows="3" maxlength="600" style="'+ta+'" placeholder="e.g. Strong start — push the two hot accounts to close this week.">'+esc(n.t)+'</textarea></div>'
+          +'<div><label style="'+lb+'">Message on their commission</label><textarea name="commission_note" rows="3" maxlength="600" style="'+ta+'" placeholder="e.g. You are 30 paid staff from the 80% threshold — clear those fees to unlock.">'+esc(n.c)+'</textarea></div>'
+          +'</div>'
+          +'<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="tbtn nclose">Cancel</button><button type="submit" class="tbtn solid">Save message</button></div>'
+          +'</form>';
+        ov.addEventListener("click",function(e){ if(e.target===ov||e.target.classList.contains("nclose")) ov.remove(); });
+        document.addEventListener("keydown",function esc2(e){ if(e.key==="Escape"){ ov.remove(); document.removeEventListener("keydown",esc2); } });
+        document.body.appendChild(ov);
+      }
       function render(){
         const v=state.view;
         el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
+        root.querySelectorAll(".notebtn").forEach(b=>b.addEventListener("click",()=>openNoteModal(b.dataset.bde,b.dataset.name)));
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);

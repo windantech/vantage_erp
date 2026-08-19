@@ -710,6 +710,21 @@ if ($bde_is_admin) {
       B.crossSbu = <?php echo json_encode($bde_cross_sbu, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.commRecords = <?php echo json_encode($bde_comm_records, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.threeMonth = <?php echo json_encode($bde_three_month, JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+<?php
+      // A note the BDO wrote for this BDE (resolve duplicate logins by shared email).
+      $bde_bdo_target_note = ''; $bde_bdo_commission_note = '';
+      $nchk = @mysqli_query($conn, "SHOW TABLES LIKE 'bde_notes'");
+      if ($nchk && mysqli_num_rows($nchk) > 0 && $bde_ru_id > 0) {
+          $nq = @mysqli_query($conn, "SELECT n.target_note, n.commission_note FROM bde_notes n
+              JOIN registered_users me ON me.id = " . (int) $bde_ru_id . "
+              JOIN registered_users sib ON sib.id = n.bde_user_id
+              WHERE sib.id = me.id OR (me.email <> '' AND sib.email COLLATE utf8mb4_general_ci = me.email COLLATE utf8mb4_general_ci)
+              ORDER BY (sib.id = me.id) DESC LIMIT 1");
+          if ($nq && ($nr = mysqli_fetch_assoc($nq))) { $bde_bdo_target_note = (string) $nr['target_note']; $bde_bdo_commission_note = (string) $nr['commission_note']; }
+      }
+?>
+      B.bdoTargetNote = <?php echo json_encode($bde_bdo_target_note, JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>;
+      B.bdoCommissionNote = <?php echo json_encode($bde_bdo_commission_note, JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>;
 <?php endif; ?>
       const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
       const _views=["command","targets","pipeline","visits","commission","report","strategy"];
@@ -796,6 +811,7 @@ if ($bde_is_admin) {
           <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div><div class="exp" style="left:${clamp((p.elapsed/p.working)*100,0,100)}%"></div></div>
           <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b><small style="display:block;font-size:9.5px;color:var(--muted);font-weight:600">to end of ${esc(period().label||"month")}</small></div></div>
           <div class="motiv ${ps.status}">${motiv}</div>
+          ${B.bdoTargetNote?`<div style="margin-top:12px;border-left:3px solid var(--brand);background:var(--brand-soft);border-radius:8px;padding:10px 13px"><span style="display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-deep);margin-bottom:4px">✎ From your BDO</span><p style="margin:0;font-size:12.5px;color:var(--ink);line-height:1.5;white-space:pre-wrap">${esc(B.bdoTargetNote)}</p></div>`:""}
         </div>`;
       }
 
@@ -991,7 +1007,8 @@ if ($bde_is_admin) {
             const ok=m.att>=1;const c=ok?"var(--jade)":m.att>=0.7?"var(--amber)":"var(--coral)";
             return `<div class="stepbox"><span>${esc(m.label)}</span><b>${ok?"Target met":m.att>=0.7?"Close":"Below"}</b><div class="st" style="color:${c}">${pct(m.att,0)} · ${kMoney(m.rev)}</div></div>`;}).join("")}</div>
           <div style="font-size:11.5px;color:var(--muted);margin-top:10px">Hit 100% for three consecutive months (from Aug 2026) to unlock the consistency reward (Kshs 50,000 + 20% salary review).</div></div>`:"";
-        return summary
+        const bdoNote=B.bdoCommissionNote?`<div class="card" style="border-left:3px solid var(--brand)"><div class="chead"><h4>✎ From your BDO</h4></div><p style="margin:0;font-size:13px;color:var(--ink);line-height:1.55;white-space:pre-wrap">${esc(B.bdoCommissionNote)}</p></div>`:"";
+        return summary + bdoNote
           + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table
           + `<section class="grid-2">${checklist}${auditCard}</section>`
           + journey;
