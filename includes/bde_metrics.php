@@ -463,6 +463,12 @@ if (!function_exists('bde_team_metrics')) {
                 }
             }
         }
+        // Exclude HOD/BDO accounts (anyone with a department-total target) from the BDE team — they
+        // belong on bdo_dashboard.php. Covers the Digital roster path too (e.g. Alein Kagunza #132).
+        $bdoIds = [];
+        $bq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND metric IN ('dept_revenue','dept_participants')");
+        while ($bq && ($br = mysqli_fetch_assoc($bq))) { $bdoIds[(int) $br['scope_ref']] = true; }
+        foreach (array_keys($members) as $mid) { if (isset($bdoIds[$mid]) && $mid !== $ruId) { unset($members[$mid]); } }
         if (empty($members)) { return $team; }
         $ids = implode(',', array_map('intval', array_keys($members)));
 
