@@ -727,13 +727,13 @@ if ($bdo) {
           ["Meetings / demos / sessions today","number","",false],
           ["Proposals / commitments moved","number","",false],
           ["Collection commitments due","number","",false],
-          ["BDE performance & coaching actions","textarea",B.team.map(x=>`${x.name}: `).join("\n"),false],
-          ["Course / product recovery action","textarea","",false],
-          ["Marketing, CRM, AI & product issues","textarea","",false],
-          ["Executive support & tomorrow's priorities","textarea","",false]
+          ["BDE performance & coaching actions","textarea",B.team.map(x=>`${x.name}: `).join("\n"),false,"One coaching action per BDE — what to protect or fix, and the next step."],
+          ["Course / product recovery action","textarea","",false,"State target, actual, the exact gap, owner, deadline and evidence required."],
+          ["Marketing, CRM, AI & product issues","textarea","",false,"Lead-flow variance, data quality or automation failure — and the corrective action."],
+          ["Executive support & tomorrow's priorities","textarea","",false,"Top opportunities, decisions you need, and tomorrow's departmental result."]
         ];
         const fieldHTML=f=>f[1]==="textarea"
-          ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="…">${esc(f[2])}</textarea></div>`
+          ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="${esc(f[4]||"")}">${esc(f[2])}</textarea></div>`
           :`<div class="field"><label>${esc(f[0])}${f[3]?auP:''}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
