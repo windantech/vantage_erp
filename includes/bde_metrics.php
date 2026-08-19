@@ -412,11 +412,13 @@ if (!function_exists('bde_team_metrics')) {
             // "International" people, all "Corporate" people, or all Virtual course owners. Built from
             // the seeded user-scoped targets, so it needs NO department data.
             $cohortProducts = []; $cohortCourse = false;
-            $mq0 = @mysqli_query($conn, "SELECT DISTINCT product, metric_label FROM bde_targets WHERE scope_type='user' AND scope_ref='$ruId'");
+            $mq0 = @mysqli_query($conn, "SELECT DISTINCT product, metric, metric_label FROM bde_targets WHERE scope_type='user' AND scope_ref='$ruId'");
             while ($mq0 && ($m0 = mysqli_fetch_assoc($mq0))) {
                 $p = (string) $m0['product'];
                 if (in_array($p, ['International', 'Corporate'], true)) { $cohortProducts[$p] = true; }
-                if ((string) $m0['metric_label'] === 'Course revenue') { $cohortCourse = true; }
+                // ONLY Virtual courses (metric='revenue') define the course cohort — Corporate courses
+                // use metric='course_revenue' and must NOT pull Virtual owners into a Corporate team.
+                if ((string) $m0['metric'] === 'revenue' && (string) $m0['metric_label'] === 'Course revenue') { $cohortCourse = true; }
             }
             $cohortIds = [];
             if (!empty($cohortProducts)) {
@@ -425,7 +427,7 @@ if (!function_exists('bde_team_metrics')) {
                 while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $cohortIds[(int) $cr['scope_ref']] = true; }
             }
             if ($cohortCourse) {
-                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND metric_label='Course revenue'");
+                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND metric='revenue' AND metric_label='Course revenue'");
                 while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $cohortIds[(int) $cr['scope_ref']] = true; }
             }
 
