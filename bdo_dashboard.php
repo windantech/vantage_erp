@@ -317,6 +317,7 @@ if ($bdo) {
       <nav class="tabs" aria-label="Dashboard sections">
         <button class="tab active" data-v="command"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Command Centre</button>
         <button class="tab" data-v="pipeline"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>Pipeline &amp; Conversion</button>
+        <button class="tab" data-v="visits"><svg viewBox="0 0 24 24"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Field Visits</button>
         <button class="tab" data-v="commission"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="6"/><path d="M8.5 13.5l-1.5 7 5-3 5 3-1.5-7"/></svg>Commission</button>
         <button class="tab" data-v="report"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>Daily Report</button>
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
@@ -633,12 +634,15 @@ if ($bdo) {
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Live</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No leads attributed to this department yet.</p>'}</div>
           </section>
           <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div>${a.id?`<a class="abtn hot" href="bde_dashboard.php?as=${a.id}" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">Open →</a>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).filter(x=>x.flag).length?"amber":"jade"}">${(B.deptQuality||[]).filter(x=>x.flag).length?((B.deptQuality.filter(x=>x.flag).length)+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>{const dot=x.flag?"amber":x.active?"green":"blue";const txt=x.active?`${Math.round(x.conv*100)}% conversion (${nf.format(x.clients)}/${nf.format(x.leads)} leads)${x.coll>0?` · collection ${Math.round(x.coll*100)}%`:""}`:"no activity yet";return `<div class="arow"><span class="pd ${dot}"></span><div><b>${esc(x.name)}</b><p>${esc(txt)}</p></div></div>`;}).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No department members resolved.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
           </section>
-          ${bdoVisitForm()}
+          <div class="section-tag"><h3>Field visits &amp; opportunities</h3><span>Logged visits across ${esc(B.dept||"the department")} — log your own under the Field Visits tab</span><div class="rule"></div></div>
           ${bdoVisitsTable()}`;
+      }
+      function vVisits(){
+        return `${bdoVisitForm()}${bdoVisitsTable()}`;
       }
 
       function vCommission(){
@@ -755,7 +759,7 @@ if ($bdo) {
       }
       function render(){
         const v=state.view;
-        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
+        el("workspace").innerHTML=v==="command"?vCommand():v==="pipeline"?vPipeline():v==="visits"?vVisits():v==="commission"?vCommission():v==="report"?vReport():vStrategy();
         if(v==="report")bindReport();
         root.querySelectorAll(".notebtn").forEach(b=>b.addEventListener("click",()=>openNoteModal(b.dataset.bde,b.dataset.name)));
       }
