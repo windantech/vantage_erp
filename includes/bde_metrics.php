@@ -827,11 +827,14 @@ if (!function_exists('bdo_rollup')) {
             foreach (($t['srcRow'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
             // per-member action alerts + conversion signals (real, for the BDO's oversight)
             $un = (int) ($t['unread'] ?? 0);
-            if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'text' => $un . ' escalated chat' . ($un > 1 ? 's' : '') . ' to reply']; }
+            if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'id' => (int) ($t['id'] ?? 0), 'text' => $un . ' escalated chat' . ($un > 1 ? 's' : '') . ' to reply']; }
+            // one merged conversion/collection line per person (not a separate row for each)
+            $issues = [];
             $ld = (int) ($t['leads'] ?? 0); $conv = $ld > 0 ? $t['clients'] / $ld : 0;
-            if ($ld > 5 && $conv < 0.4) { $out['deptQuality'][] = $t['name'] . ' — low conversion (' . round($conv * 100) . '% of ' . $ld . ' leads)'; }
+            if ($ld > 5 && $conv < 0.4) { $issues[] = 'low conversion (' . round($conv * 100) . '% of ' . $ld . ' leads)'; }
             $mcoll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0;
-            if ($mcoll > 0 && $mcoll < 0.7) { $out['deptQuality'][] = $t['name'] . ' — collection at ' . round($mcoll * 100) . '%'; }
+            if ($mcoll > 0 && $mcoll < 0.7) { $issues[] = 'collection at ' . round($mcoll * 100) . '%'; }
+            if (!empty($issues)) { $out['deptQuality'][] = ['name' => $t['name'], 'text' => implode(' · ', $issues)]; }
         }
 
         // the BDO's own attributed numbers count toward the department too
@@ -882,7 +885,7 @@ if (!function_exists('bdo_rollup')) {
         $out['ownClients'] = (int) $bm['paid_clients'];
         $out['ownLeads'] = (int) ($bm['total_leads'] ?? 0);
         // the BDO's own escalated chats count as an action alert too
-        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
+        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
         // Cross-SBU awareness = every opportunity flagged on a field visit (any department).
         $xq = @mysqli_query($conn, "SELECT opportunity_note FROM bde_visits WHERE TRIM(opportunity_note) <> '' ORDER BY id DESC LIMIT 12");
         while ($xq && ($xr = mysqli_fetch_assoc($xq))) { $out['crossSbu'][] = trim((string) $xr['opportunity_note']); }

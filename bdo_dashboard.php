@@ -39,6 +39,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     header('Location: bdo_dashboard.php?as=' . (int) $bdo_id); exit;
 }
 
+// --- Field visits: self-migrating table + log handler (a selling BDO logs their own visits) ---
+@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS bde_visits (
+    id INT AUTO_INCREMENT PRIMARY KEY, bde_user_id INT NOT NULL, visit_date DATE NOT NULL,
+    client VARCHAR(160) NOT NULL DEFAULT '', organization VARCHAR(200) NOT NULL DEFAULT '',
+    location VARCHAR(160) NOT NULL DEFAULT '', product VARCHAR(120) NOT NULL DEFAULT '',
+    outcome ENUM('visited','interested','registered','no_show') NOT NULL DEFAULT 'visited',
+    value DECIMAL(15,2) NOT NULL DEFAULT 0, contact_phone VARCHAR(50) NOT NULL DEFAULT '',
+    followup_date DATE DEFAULT NULL, opportunity_for_dept VARCHAR(120) NOT NULL DEFAULT '',
+    opportunity_note VARCHAR(255) NOT NULL DEFAULT '', notes VARCHAR(600) NOT NULL DEFAULT '',
+    created_by INT DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, KEY idx_bde (bde_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'log_visit' && $bdo_id > 0) {
+    $client = trim((string) ($_POST['client'] ?? ''));
+    if ($client !== '') {
+        $vd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['visit_date'] ?? '')) ? $_POST['visit_date'] : date('Y-m-d');
+        $fd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['followup_date'] ?? '')) ? $_POST['followup_date'] : null;
+        $oc = in_array(($_POST['outcome'] ?? 'visited'), ['visited', 'interested', 'registered', 'no_show'], true) ? $_POST['outcome'] : 'visited';
+        $E = function ($k) use ($conn) { return mysqli_real_escape_string($conn, trim((string) ($_POST[$k] ?? ''))); };
+        $val = (float) ($_POST['value'] ?? 0);
+        $fdSql = $fd ? "'" . mysqli_real_escape_string($conn, $fd) . "'" : 'NULL';
+        @mysqli_query($conn, "INSERT INTO bde_visits (bde_user_id, visit_date, client, organization, location, product, outcome, value, contact_phone, followup_date, opportunity_note, notes, created_by)
+            VALUES ($bdo_id, '" . mysqli_real_escape_string($conn, $vd) . "', '" . $E('client') . "', '" . $E('organization') . "', '" . $E('location') . "', '" . $E('product') . "', '$oc', $val, '" . $E('contact_phone') . "', $fdSql, '" . $E('opportunity_note') . "', '" . $E('notes') . "', " . (int) ($_SESSION['login_id'] ?? 0) . ")");
+    }
+    header('Location: bdo_dashboard.php?as=' . (int) $bdo_id . '#pipeline'); exit;
+}
+
 // Analytics period (default = current calendar month).
 $bdo_from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : date('Y-m-01');
 $bdo_to   = (isset($_GET['to'])   && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))   ? $_GET['to']   : date('Y-m-d');
@@ -70,6 +97,26 @@ if ($bdo && !empty($bdo['team'])) {
         $in = implode(',', array_map('intval', $ids));
         $nq = @mysqli_query($conn, "SELECT bde_user_id, target_note, commission_note FROM bde_notes WHERE bde_user_id IN ($in)");
         while ($nq && ($nr = mysqli_fetch_assoc($nq))) { $bdo_notes[(int) $nr['bde_user_id']] = ['t' => (string) $nr['target_note'], 'c' => (string) $nr['commission_note']]; }
+    }
+}
+
+// The whole department's logged field visits (every BDE + the BDO), for the Pipeline tab.
+$bdo_dept_visits = [];
+if ($bdo) {
+    $vids = array_filter(array_map(function ($t) { return (int) ($t['id'] ?? 0); }, $bdo['team'] ?? []));
+    $vids[] = $bdo_id;
+    $vids = array_values(array_unique(array_filter($vids)));
+    if (!empty($vids)) {
+        $in = implode(',', array_map('intval', $vids));
+        $vq = @mysqli_query($conn, "SELECT v.visit_date, v.client, v.organization, v.location, v.product, v.outcome, v.value, v.notes, v.followup_date, v.opportunity_note, COALESCE(ru.fullname,'') bde
+            FROM bde_visits v LEFT JOIN registered_users ru ON ru.id = v.bde_user_id
+            WHERE v.bde_user_id IN ($in) ORDER BY v.visit_date DESC, v.id DESC LIMIT 100");
+        while ($vq && ($vr = mysqli_fetch_assoc($vq))) {
+            $bdo_dept_visits[] = ['date' => (string) $vr['visit_date'], 'bde' => (string) $vr['bde'], 'client' => (string) $vr['client'],
+                'org' => (string) $vr['organization'], 'location' => (string) $vr['location'], 'product' => (string) $vr['product'],
+                'outcome' => (string) $vr['outcome'], 'value' => (float) $vr['value'], 'notes' => (string) $vr['notes'],
+                'followup' => (string) ($vr['followup_date'] ?? ''), 'opportunity' => (string) ($vr['opportunity_note'] ?? '')];
+        }
     }
 }
 ?>
@@ -351,6 +398,8 @@ if ($bdo && !empty($bdo['team'])) {
       B.deptAlerts = <?php echo json_encode($bdo['deptAlerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.deptQuality = <?php echo json_encode($bdo['deptQuality'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.crossSbu = <?php echo json_encode($bdo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.deptVisits = <?php echo json_encode($bdo_dept_visits ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.bdoName = <?php echo json_encode($bdo && $bdo['name'] !== '' ? $bdo['name'] : 'BDO', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDO"'; ?>;
       B.notes = <?php echo json_encode((object) $bdo_notes, JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}'; ?>;
       B.canNote = <?php echo $bdo_is_admin ? 'true' : 'false'; ?>;
       B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
@@ -547,6 +596,31 @@ if ($bdo && !empty($bdo['team'])) {
           ${bdoPersonalSection()}`;
       }
 
+      function bdoVisitForm(){
+        return `<div class="section-tag"><h3>Field visits &amp; opportunities</h3><span>Log a visit you're making — and see the whole department's visits below</span><div class="rule"></div></div>
+          <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">${esc(B.bdoName||"You")}</span></div>
+            <form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>#pipeline">
+              <input type="hidden" name="action" value="log_visit">
+              <div class="form-grid">
+                <div class="field"><label>Visit date</label><input type="date" name="visit_date" value="<?php echo date('Y-m-d'); ?>"></div>
+                <div class="field span2"><label>Client / contact</label><input name="client" required placeholder="Name"></div>
+                <div class="field"><label>Location</label><input name="location" placeholder="Town / area"></div>
+                <div class="field span2"><label>Organization</label><input name="organization" placeholder="Company / institution"></div>
+                <div class="field"><label>Product</label><input name="product" placeholder="e.g. MEAL / CPA"></div>
+                <div class="field"><label>Outcome</label><select name="outcome"><option value="visited">Visited</option><option value="interested">Interested</option><option value="registered">Registered</option><option value="no_show">No-show</option></select></div>
+                <div class="field"><label>Value (KES)</label><input name="value" type="number" inputmode="numeric" placeholder="0"></div>
+                <div class="field"><label>Follow-up date</label><input type="date" name="followup_date"></div>
+                <div class="field span4"><label>Opportunity <span style="text-transform:none;color:var(--muted)">(visible to every department for awareness)</span></label><input name="opportunity_note" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
+                <div class="field span4"><label>Notes</label><textarea name="notes" rows="2" placeholder="What happened, next step…"></textarea></div>
+              </div>
+              <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button></div>
+            </form>
+          </div>`;
+      }
+      function bdoVisitsTable(){
+        if(!B.deptVisits||!B.deptVisits.length) return `<div class="card"><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No field visits logged in the department yet. Log one above, and your BDEs' visits will appear here too.</p></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>BDE</th><th>Client / org</th><th>Outcome</th><th>Value</th><th>Opportunity / next step</th><th>Follow-up</th></tr></thead><tbody>${B.deptVisits.map(v=>`<tr><td>${esc(v.date)}</td><td>${esc(v.bde||"—")}</td><td><b>${esc(v.client)}</b>${v.org?`<div style="font-size:10.5px;color:var(--muted)">${esc(v.org)}</div>`:""}</td><td><span class="stage-chip">${esc(v.outcome)}</span></td><td class="num">${v.value>0?kMoney(v.value):"—"}</td><td>${esc(v.opportunity||v.notes||"—")}</td><td>${esc(v.followup||"—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+      }
       function vPipeline(){
         const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
         return `
@@ -556,10 +630,12 @@ if ($bdo && !empty($bdo['team'])) {
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Live</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No leads attributed to this department yet.</p>'}</div>
           </section>
           <section class="grid-3">
-            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).length?"amber":"jade"}">${(B.deptQuality||[]).length?(B.deptQuality.length+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion and collection across the department look healthy (or too little activity to flag).</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div>${a.id?`<a class="abtn hot" href="bde_dashboard.php?as=${a.id}" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">Open →</a>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).length?"amber":"jade"}">${(B.deptQuality||[]).length?(B.deptQuality.length+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion and collection across the department look healthy (or too little activity to flag).</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
-          </section>`;
+          </section>
+          ${bdoVisitForm()}
+          ${bdoVisitsTable()}`;
       }
 
       function vCommission(){
