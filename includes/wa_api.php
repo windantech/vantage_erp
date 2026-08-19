@@ -368,6 +368,7 @@ if ($action === 'inbox') {
                     SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
                       AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
                  THEN 1 ELSE 0 END) AS reengaged_responded,
+               cv.last_channel,
                " . wa_ready_to_call_sql('cv') . " AS is_ready_call,
                " . wa_ready_to_call_left_sql('cv') . " AS call_win_left,
                " . wa_ready_to_call_granted_sql('cv') . " AS call_granted_at,
@@ -420,6 +421,9 @@ if ($action === 'inbox') {
                                 && (int)$r['win_left'] <= WA_CLOSING_SECS) ? 1 : 0,
                 // Phase 1.2 Ready to Call — derived from Phase 1.1 permission state,
                 // so a grant obtained through the manual button qualifies too.
+                // Which of our numbers this chat is on. Empty/messaging is the norm,
+                // so the inbox only badges the exception.
+                'channel'       => (string)($r['last_channel'] ?? ''),
                 'ready_call'    => (int)$r['is_ready_call'],
                 'call_left'     => $r['call_win_left'] === null ? null : (int)$r['call_win_left'],
                 'call_granted'  => $r['call_granted_at'] !== null

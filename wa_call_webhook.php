@@ -38,12 +38,47 @@ require_once __DIR__ . '/includes/wa_voice.php';         // wa_voice_e164() — 
 require_once __DIR__ . '/includes/wa_call_config.php';
 require_once __DIR__ . '/includes/wa_call_permissions.php';
 require_once __DIR__ . '/includes/wa_call_webhook_lib.php';   // pure parsing/classification
+require_once __DIR__ . '/includes/wa_inbound.php';             // shared inbound pipeline
 
 // =====================================================================
 // Request handling
 // =====================================================================
 
 wa_use_nairobi_time($wa_conn);
+
+/**
+ * Pass ordinary inbound messages to the messaging webhook's own storage and
+ * processing, tagged with the channel they arrived on.
+ *
+ * Uses includes/wa_inbound.php — the same pipeline the messaging webhook runs.
+ * Requiring wa_webhook.php instead would execute ITS request handler: read the
+ * body, check the token, process the payload a second time and exit.
+ *
+ * @return int how many messages were handled
+ */
+function wa_call_webhook_messages($conn, $payload) {
+    if (!is_array($payload)) { return 0; }
+    $handled = 0;
+    foreach ($payload['entry'] ?? [] as $entry) {
+        foreach ($entry['changes'] ?? [] as $change) {
+            $value = is_array($change['value'] ?? null) ? $change['value'] : [];
+            if (empty($value['messages'])) { continue; }
+            $channel = wa_channel_from_metadata($value['metadata'] ?? []);
+            $names = [];
+            foreach ($value['contacts'] ?? [] as $c) {
+                if (isset($c['wa_id'])) { $names[$c['wa_id']] = $c['profile']['name'] ?? null; }
+            }
+            foreach ($value['messages'] as $message) {
+                // A permission reply is not a conversation message; it has already
+                // been dealt with above and must not reach the AI.
+                if (($message['interactive']['type'] ?? '') === 'call_permission_reply') { continue; }
+                wa_webhook_store($conn, $message, $names, $channel);
+                $handled++;
+            }
+        }
+    }
+    return $handled;
+}
 
 /** Emit a JSON response and stop. */
 function wa_call_reply($code, $body) {
@@ -129,8 +164,16 @@ if ($WA_CALL_DEBUG) {
 }
 
 if ($verdict['action'] !== 'apply') {
-    // Authenticated but irrelevant (or malformed): acknowledge so 360dialog stops
-    // retrying, and leave a trace so a misconfiguration is visible.
+    // Not a permission decision. It may still be an ordinary customer message: the
+    // calling line answers messages too, and a customer who writes to it must be
+    // replied to FROM it. Hand those to exactly the same processing the messaging
+    // webhook uses — routing, knowledge base, AI, enrolment and opt-out are shared;
+    // only the number we answer on differs.
+    $handled = wa_call_webhook_messages($wa_conn, $payload);
+    if ($handled > 0) {
+        error_log('[wa-call-webhook] ' . $handled . ' message(s) handled on the calling line');
+        wa_call_reply(200, ['status' => 'messages', 'handled' => $handled]);
+    }
     error_log('[wa-call-webhook] ignored: ' . $verdict['reason']);
     wa_call_reply(200, ['status' => 'ignored']);
 }

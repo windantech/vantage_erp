@@ -31,6 +31,7 @@ $sql = "
                 SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
                   AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
              THEN 1 ELSE 0 END) AS reengaged_responded,
+           cv.last_channel,
            " . wa_ready_to_call_sql('cv') . " AS is_ready_call,
            " . wa_ready_to_call_left_sql('cv') . " AS call_win_left,
            " . wa_ready_to_call_granted_sql('cv') . " AS call_granted_at,
@@ -183,6 +184,11 @@ if ($result) {
                                             <?php endif; ?>
                                             <?php if ($u): ?>
                                                 <span class="badge bg-danger rounded-pill ms-1"><?php echo $u; ?></span>
+                                            <?php endif; ?>
+                                            <?php if (!empty($row['last_channel']) && $row['last_channel'] !== WA_CHANNEL_DEFAULT): ?>
+                                                <span class="badge bg-dark ms-1" title="This customer wrote to the calling line — replies go back on that number">
+                                                    <i class="bi bi-telephone"></i> <?php echo wa_e(wa_channel($row['last_channel'])['phone']); ?>
+                                                </span>
                                             <?php endif; ?>
                                             <?php if ((int)$row['is_ready_call'] === 1): ?>
                                                 <span class="badge bg-success ms-1"
@@ -457,6 +463,7 @@ if ($result) {
                 + (c.escalated ? ' <span class="badge bg-warning text-dark ms-1">escalated</span>' : '')
                 + (c.unread ? ' <span class="badge bg-danger rounded-pill ms-1">' + c.unread + '</span>' : '')
                 + (c.closing ? ' <span class="wa-cd badge bg-warning text-dark ms-1" data-left="' + c.win_left + '" title="Time left to reply without a template"></span>' : '')
+                + (c.channel && c.channel !== 'messaging' ? ' <span class="badge bg-dark ms-1" title="Wrote to the calling line — replies go back on that number"><i class="bi bi-telephone"></i></span>' : '')
                 + (c.ready_call ? ' <span class="badge bg-success ms-1" title="Permission granted ' + esc(c.call_granted) + ' — open the chat to call"><i class="bi bi-telephone-outbound"></i> <span class="wa-cd" data-left="' + c.call_left + '"></span></span>' : '');
             html += '<tr style="' + rowStyle + '" class="' + (c.unread ? 'table-active' : '') + '"'
                  + ' data-reengaged="' + (c.reengaged ? '1' : '0') + '"'

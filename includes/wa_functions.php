@@ -346,6 +346,7 @@ function wa_insights_top_courses($conn, $limit = 8) {
 
 /** Insert inbound message; de-dups on wa_message_id. Returns true if newly inserted. */
 function wa_save_inbound($conn, $contactId, $m) {
+    if (function_exists('wa_channel_schema_ensure')) { wa_channel_schema_ensure($conn); }
     $contactId = (int)$contactId;
     $wamid = wa_sql($conn, $m['wa_message_id'] ?? null);
     $type  = wa_sql($conn, $m['type'] ?? 'text');
@@ -353,18 +354,20 @@ function wa_save_inbound($conn, $contactId, $m) {
     $mid   = wa_sql($conn, $m['media_id'] ?? null);
     $mime  = wa_sql($conn, $m['media_mime'] ?? null);
     $adid  = wa_sql($conn, $m['referral_ad_id'] ?? null);
+    $chan  = wa_sql($conn, $m['channel'] ?? null);
     $ts    = wa_sql($conn, $m['wa_timestamp'] ?? null);
     $raw   = wa_sql($conn, isset($m['raw_payload']) ? json_encode($m['raw_payload'], JSON_UNESCAPED_UNICODE) : null);
     mysqli_query($conn,
         "INSERT IGNORE INTO wa_messages
             (wa_message_id, contact_id, direction, type, body, media_id, media_mime,
-             referral_ad_id, wa_timestamp, raw_payload)
-         VALUES ($wamid, $contactId, 'inbound', $type, $body, $mid, $mime, $adid, $ts, $raw)");
+             referral_ad_id, wa_timestamp, raw_payload, channel)
+         VALUES ($wamid, $contactId, 'inbound', $type, $body, $mid, $mime, $adid, $ts, $raw, $chan)");
     return mysqli_affected_rows($conn) > 0;
 }
 
 function wa_save_outbound($conn, $contactId, $m) {
     wa_message_flags_ensure($conn);
+    if (function_exists('wa_channel_schema_ensure')) { wa_channel_schema_ensure($conn); }
     $contactId = (int)$contactId;
     $wamid  = wa_sql($conn, $m['wa_message_id'] ?? null);
     $type   = wa_sql($conn, $m['type'] ?? 'text');
@@ -372,6 +375,7 @@ function wa_save_outbound($conn, $contactId, $m) {
     $mid    = wa_sql($conn, $m['media_id'] ?? null);
     $mime   = wa_sql($conn, $m['media_mime'] ?? null);
     $status = wa_sql($conn, $m['status'] ?? 'sent');
+    $chan   = wa_sql($conn, $m['channel'] ?? null);
     $raw    = wa_sql($conn, isset($m['raw_payload']) ? json_encode($m['raw_payload'], JSON_UNESCAPED_UNICODE) : null);
     // A human agent's reply sets $GLOBALS['WA_SENT_BY_STAFF'] just before sending; every
     // other send (AI answer, follow-up, payment confirm, broadcast) leaves it unset = AI.
@@ -388,8 +392,8 @@ function wa_save_outbound($conn, $contactId, $m) {
     // (wa_timestamp >= last_inbound_at) can never see the reply — so it re-sends the same
     // answer every minute. NOW() is server time, always >= the inbound timestamp.
     mysqli_query($conn,
-        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff, wa_timestamp, broadcast_id)
-         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy, NOW(), $bcast)");
+        "INSERT INTO wa_messages (wa_message_id, contact_id, direction, type, body, media_id, media_mime, status, raw_payload, sent_by_staff, wa_timestamp, broadcast_id, channel)
+         VALUES ($wamid, $contactId, 'outbound', $type, $body, $mid, $mime, $status, $raw, $sentBy, NOW(), $bcast, $chan)");
     return (int)mysqli_insert_id($conn);
 }
 
@@ -2731,7 +2735,7 @@ function wa_window_left_sql($c = 'c') {
 }
 
 /** Send a free-form text reply (enforces the 24h window unless $force). Records outbound. */
-function wa_send_text($conn, $waId, $body, $force = false) {
+function wa_send_text($conn, $waId, $body, $force = false, $channel = null) {
     // Sandbox capture mode: the test console sets $GLOBALS['WA_CAPTURE'] to an
     // array; outbound text is recorded there instead of sent over 360dialog.
     if (isset($GLOBALS['WA_CAPTURE']) && is_array($GLOBALS['WA_CAPTURE'])) {
@@ -2740,14 +2744,19 @@ function wa_send_text($conn, $waId, $body, $force = false) {
     }
     $contact = wa_find_contact_by_waid($conn, $waId);
     $contactId = $contact['id'] ?? wa_upsert_contact($conn, $waId);
-    if (!$force && !wa_within_window($contact['last_inbound_at'] ?? null)) {
+    // The window belongs to the BUSINESS NUMBER, so check the one we are about to
+    // send from. Using the contact-wide timestamp would let a message to one line
+    // authorise a free-form reply on the other, which WhatsApp then rejects.
+    $sendChannel = ($channel !== null) ? $channel : wa_reply_channel($conn, (int)$contactId);
+    if (!$force && !wa_channel_within_window($conn, (int)$contactId, $sendChannel,
+                                             $contact['last_inbound_at'] ?? null)) {
         return ['ok' => false, 'error' => 'outside_24h_window'];
     }
     $payload = [
         'messaging_product' => 'whatsapp', 'recipient_type' => 'individual',
         'to' => $waId, 'type' => 'text', 'text' => ['preview_url' => false, 'body' => $body],
     ];
-    return wa_dialog_dispatch($conn, (int)$contactId, 'text', $body, $payload);
+    return wa_dialog_dispatch($conn, (int)$contactId, 'text', $body, $payload, $sendChannel);
 }
 
 /** Render a template's actual text by filling its {{1}},{{2}}… from the body-parameter
@@ -2855,10 +2864,30 @@ function wa_send_media($conn, $waId, $filePath, $mime, $filename, $caption = '')
     return ['ok' => false, 'error' => $data['error']['message'] ?? ('HTTP ' . $resp['status'])];
 }
 
-function wa_dialog_dispatch($conn, $contactId, $type, $body, $payload) {
+/**
+ * The one place an outbound message is actually sent.
+ *
+ * $channel names the business number to send from. Left null it resolves to
+ * whichever number this customer last wrote to, so a reply always comes back on
+ * the line they used — and every existing caller gets that for free, without
+ * passing anything. A contact with no channel history resolves to the messaging
+ * line, which is exactly what happened before channels existed.
+ *
+ * Broadcasts do NOT come through here; they keep their own path and their own
+ * number, so nobody starts receiving marketing from the calling line.
+ */
+function wa_dialog_dispatch($conn, $contactId, $type, $body, $payload, $channel = null) {
+    if ($channel === null && function_exists('wa_reply_channel')) {
+        $channel = wa_reply_channel($conn, (int)$contactId);
+    }
+    $ch = function_exists('wa_channel') ? wa_channel($channel) : null;
+    // Fail closed to the messaging line rather than sending with no key at all.
+    $url = ($ch && trim((string)$ch['url']) !== '') ? $ch['url'] : WA_DIALOG_URL;
+    $key = ($ch && trim((string)$ch['key']) !== '') ? $ch['key'] : WA_DIALOG_KEY;
+
     $resp = wa_http_post(
-        rtrim(WA_DIALOG_URL, '/') . '/messages',
-        ['Content-Type: application/json', 'D360-API-KEY: ' . WA_DIALOG_KEY],
+        rtrim($url, '/') . '/messages',
+        ['Content-Type: application/json', 'D360-API-KEY: ' . $key],
         $payload
     );
     $data = $resp['body'];
@@ -2867,6 +2896,7 @@ function wa_dialog_dispatch($conn, $contactId, $type, $body, $payload) {
     wa_save_outbound($conn, $contactId, [
         'wa_message_id' => $wamid, 'type' => $type, 'body' => $body,
         'status' => $ok ? 'sent' : 'failed',
+        'channel' => $ch ? $ch['name'] : null,
         'raw_payload' => ['request' => $payload, 'response' => $data, 'http' => $resp['status']],
     ]);
     if ($ok) { return ['ok' => true, 'wa_message_id' => $wamid]; }
@@ -5700,6 +5730,9 @@ function wa_http_post($url, $headers, $payload, $timeout = 25) {
 
 // Guided WhatsApp enrollment (capture-in-chat -> enroll directly).
 require_once __DIR__ . '/wa_enroll.php';
+
+// Business-number channels (which line we send from, and its 24h window).
+require_once __DIR__ . '/wa_channels.php';
 
 // Phase 1.2 call handoff. Loaded last: it depends on wa_voice.php and the Phase 1.1
 // helpers, and is required here so BOTH reply paths have it without either caller
