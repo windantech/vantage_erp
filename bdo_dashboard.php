@@ -473,12 +473,12 @@ if ($bdo && !empty($bdo['team'])) {
       }
 
       function bdoTargetsCard(){
-        const box=(cap,val,gold)=>`<div style="flex:1;min-width:130px;background:var(--surface);border:1px solid ${gold?"var(--gold-line)":"var(--line)"};border-radius:10px;padding:9px 12px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${gold?"var(--gold)":"var(--muted)"};margin-bottom:3px">${cap}</span><b style="font-size:16px;font-weight:800;color:var(--ink)">${kMoney(val)}</b></div>`;
-        const floor=(+B.ownTarget)||0;
-        let body="";
-        if(floor>0){ body+=`<div><div style="font-size:13px;font-weight:800;color:var(--ink)">Corporate</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 8px">Monthly revenue · your floor</div><div style="display:flex;gap:10px">${box("100% target",floor,false)}</div></div>`; }
-        (B.courses||[]).forEach((c,i)=>{ body+=`<div style="${(floor>0||i>0)?"border-top:1px solid var(--line);padding-top:13px;margin-top:13px":""}"><div style="font-size:13px;font-weight:800;color:var(--ink)">${esc(c.name)}</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 8px">Course revenue</div><div style="display:flex;gap:10px;flex-wrap:wrap">${box("100% target",c.target,false)}${c.threshold>0?box("80% qualifying",c.threshold,true):""}</div></div>`; });
-        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
+        const box=(cap,val,gold)=>`<div style="flex:1;min-width:140px;background:var(--surface2);border:1px solid ${gold?"var(--gold-line)":"var(--line)"};border-radius:11px;padding:11px 14px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${gold?"var(--gold)":"var(--muted)"};margin-bottom:4px">${cap}</span><b style="font-size:16.5px;font-weight:800;color:var(--ink)">${kMoney(val)}</b></div>`;
+        const grp=(title,sub,boxes)=>`<div><div style="font-size:13px;font-weight:800;color:var(--ink)">${esc(title)}</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:3px 0 10px">${esc(sub)}</div><div style="display:flex;gap:12px;flex-wrap:wrap">${boxes}</div></div>`;
+        const floor=(+B.ownTarget)||0;const parts=[];
+        if(floor>0) parts.push(grp("Corporate","Monthly revenue · your floor",box("100% target",floor,false)));
+        (B.courses||[]).forEach(c=>parts.push(grp(c.name,"Course revenue",box("100% target",c.target,false)+(c.threshold>0?box("80% qualifying",c.threshold,true):""))));
+        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div><div style="display:grid;gap:18px">${parts.join("")}</div></div>`;
       }
       function personalDrivers(){
         const pt=(+B.ownTarget)||0;const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;
@@ -631,6 +631,7 @@ if ($bdo && !empty($bdo['team'])) {
 
       function openNoteModal(bid,name){
         var n=(B.notes&&B.notes[bid])||{t:"",c:""};
+        var hasNote=((n.t||"").trim()||(n.c||"").trim());
         var ov=document.createElement("div");
         ov.style.cssText="position:fixed;inset:0;background:rgba(16,24,40,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px";
         var ta="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--surface2);color:var(--ink);resize:vertical";
@@ -643,9 +644,14 @@ if ($bdo && !empty($bdo['team'])) {
           +'<div><label style="'+lb+'">Message on their target</label><textarea name="target_note" rows="3" maxlength="600" class="nmta" style="'+ta+'" placeholder="e.g. Strong start — push the two hot accounts to close this week.">'+esc(n.t)+'</textarea></div>'
           +'<div><label style="'+lb+'">Message on their commission</label><textarea name="commission_note" rows="3" maxlength="600" class="nmta" style="'+ta+'" placeholder="e.g. You are 30 paid staff from the 80% threshold — clear those fees to unlock.">'+esc(n.c)+'</textarea></div>'
           +'</div>'
-          +'<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="tbtn nclose">Cancel</button><button type="submit" class="tbtn solid">Save message</button></div>'
+          +'<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px">'
+          +(hasNote?'<button type="button" class="tbtn ndel" style="color:var(--coral);border-color:var(--coral)">🗑 Delete note</button>':'<span></span>')
+          +'<div style="display:flex;gap:10px"><button type="button" class="tbtn nclose">Cancel</button><button type="submit" class="tbtn solid">Save message</button></div></div>'
           +'</form>';
-        ov.addEventListener("click",function(e){ if(e.target===ov||e.target.classList.contains("nclose")) ov.remove(); });
+        ov.addEventListener("click",function(e){
+          if(e.target===ov||e.target.classList.contains("nclose")){ ov.remove(); return; }
+          if(e.target.classList.contains("ndel")){ var f=ov.querySelector("form"); f.target_note.value=""; f.commission_note.value=""; f.submit(); }
+        });
         document.addEventListener("keydown",function esc2(e){ if(e.key==="Escape"){ ov.remove(); document.removeEventListener("keydown",esc2); } });
         root.appendChild(ov); // inside .bde-app so the CSS vars (--surface, --ink…) resolve and it's opaque + themed
       }

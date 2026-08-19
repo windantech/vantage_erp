@@ -830,7 +830,7 @@ if (!function_exists('bdo_rollup')) {
         if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
-            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
         }
 
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
