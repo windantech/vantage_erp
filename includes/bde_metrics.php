@@ -500,6 +500,25 @@ if (!function_exists('bde_team_metrics')) {
             AND active=1 AND (period_year IS NULL OR (period_year=$yy AND period_month=$mm)) GROUP BY scope_ref");
         while ($tq && ($tr = mysqli_fetch_assoc($tq))) { $mtarget[(int) $tr['scope_ref']] = (float) $tr['t']; }
 
+        // Digital BDE targets live as DEPARTMENT-scoped rows (Eval360 / 360 Appraisal), not user-scoped,
+        // so the query above misses them. Assign each Digital member their product's revenue target
+        // (Austin→Eval360, Ruth→360 Appraisal) — same split the individual dashboard uses.
+        if ($isDigital) {
+            $evalT = 0.0; $apprT = 0.0;
+            $dtq = @mysqli_query($conn, "SELECT product, SUM(target_value) t FROM bde_targets
+                WHERE scope_type='department' AND metric='revenue' AND (product LIKE 'Eval%' OR product LIKE '%Appraisal%') GROUP BY product");
+            while ($dtq && ($dtr = mysqli_fetch_assoc($dtq))) {
+                $p = strtolower((string) $dtr['product']);
+                if (strpos($p, 'eval') !== false) { $evalT += (float) $dtr['t']; }
+                elseif (strpos($p, 'appraisal') !== false) { $apprT += (float) $dtr['t']; }
+            }
+            foreach ($members as $mid => $info) {
+                $nm = strtolower((string) $info['name']);
+                if (strpos($nm, 'austin') !== false) { $mtarget[$mid] = $evalT; }
+                elseif (strpos($nm, 'ruth') !== false) { $mtarget[$mid] = $apprT; }
+            }
+        }
+
         // Merge duplicate logins that share a name (e.g. two "Josiah Mwangi") into one row so the
         // team lists each person once, combining their figures.
         $byName = [];
