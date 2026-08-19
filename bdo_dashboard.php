@@ -464,12 +464,28 @@ if ($bdo && !empty($bdo['team'])) {
         if(!B.team||!B.team.length){
           return `<div class="card"><div class="chead"><h4>Team members</h4><span class="chip slate">${esc(B.dept||"Department")}</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No BDEs resolved for this department. Choose a BDO from <b>View&nbsp;as</b> above (e.g. <b>Edwin Otieno</b> for Corporate) — the team rolls up from that department's BDEs. If you <em>are</em> on a BDO and it's still empty, that department's BDEs aren't yet linked to it in <code>bde_targets</code>.</p></div>`;
         }
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span>${B.canNote&&t.id?`<div style="margin-top:6px"><button type="button" class="notebtn tbtn" data-bde="${t.id}" data-name="${esc(t.name)}" style="padding:4px 9px;font-size:11px">✎ Note${(B.notes&&B.notes[t.id]&&((((B.notes[t.id].t||"").trim())||((B.notes[t.id].c||"").trim())))?" ●":"")}</button></div>`:""}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th>${B.canNote?'<th style="width:96px">Note</th>':""}</tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span></td>${B.canNote?`<td>${t.id?`<button type="button" class="notebtn tbtn" data-bde="${t.id}" data-name="${esc(t.name)}" style="padding:5px 11px;font-size:11.5px;white-space:nowrap">✎ ${(B.notes&&B.notes[t.id]&&((((B.notes[t.id].t||"").trim())||((B.notes[t.id].c||"").trim())))?"Edit":"Add note")}</button>`:""}</td>`:""}</tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       function bdoCoursesCard(){
         if(!B.courses||!B.courses.length) return "";
         return `<div class="card"><div class="chead"><h4>Your own course targets</h4><span class="chip slate">${B.courses.length} course${B.courses.length>1?"s":""}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">${B.courses.map(c=>`<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface2)"><div style="font-size:13px;font-weight:800;color:var(--ink);margin-bottom:10px">${esc(c.name)}</div><div style="display:flex;gap:10px"><div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px">100% target</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.target)}</b></div>${c.threshold>0?`<div style="flex:1;background:var(--surface);border:1px solid var(--gold-line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);margin-bottom:3px">80% qualifying</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.threshold)}</b></div>`:""}</div></div>`).join("")}</div></div>`;
+      }
+      function bdoPersonalSection(){
+        if(!B.courses||!B.courses.length) return "";
+        const me=(B.team||[]).find(t=>t.me)||{target:0,actual:0,clients:0};
+        const pt=(+me.target)||B.courses.reduce((s,c)=>s+(+c.target||0),0);
+        const pa=(+me.actual)||0;const att=pt?pa/pt:0;
+        const st=att>=1?"jade":att>=.8?"amber":"coral";
+        return `<div class="section-tag"><h3>Your personal performance</h3><span>You sell too — your own course target, tracked alongside the department's</span><div class="rule"></div></div>
+          <section class="hero">
+            ${bdoCoursesCard()}
+            <div class="card prog"><div class="chead"><h4>Progress to your target</h4><span class="chip ${st} num">${pct(att)}</span></div>
+              <div class="pl">Your cleared · <b class="num">${kMoney(pa)} / ${kMoney(pt)}</b></div>
+              <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div></div>
+              <div class="mini3"><div class="cm"><span>Cleared</span><b class="num">${kMoney(pa)}</b></div><div class="cm"><span>Remaining</span><b class="num">${kMoney(Math.max(0,pt-pa))}</b></div><div class="cm"><span>Paid clients</span><b class="num">${nf.format(me.clients||0)}</b></div></div>
+            </div>
+          </section>`;
       }
       /* ---------- views ---------- */
       function vCommand(){
@@ -479,7 +495,7 @@ if ($bdo && !empty($bdo['team'])) {
             <div class="card"><div class="chead"><h4>Department portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
-          ${bdoCoursesCard()}
+          ${bdoPersonalSection()}
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
@@ -611,7 +627,7 @@ if ($bdo && !empty($bdo['team'])) {
           +'</form>';
         ov.addEventListener("click",function(e){ if(e.target===ov||e.target.classList.contains("nclose")) ov.remove(); });
         document.addEventListener("keydown",function esc2(e){ if(e.key==="Escape"){ ov.remove(); document.removeEventListener("keydown",esc2); } });
-        document.body.appendChild(ov);
+        root.appendChild(ov); // inside .bde-app so the CSS vars (--surface, --ink…) resolve and it's opaque + themed
       }
       function render(){
         const v=state.view;
