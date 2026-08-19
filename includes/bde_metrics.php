@@ -421,7 +421,7 @@ if (!function_exists('bde_team_metrics')) {
             $cohortIds = [];
             if (!empty($cohortProducts)) {
                 $pin = implode(',', array_map(function ($p) use ($conn) { return "'" . mysqli_real_escape_string($conn, $p) . "'"; }, array_keys($cohortProducts)));
-                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND product IN ($pin)");
+                $cq = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets WHERE scope_type='user' AND product IN ($pin) AND metric NOT IN ('dept_revenue','dept_participants')");
                 while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $cohortIds[(int) $cr['scope_ref']] = true; }
             }
             if ($cohortCourse) {
@@ -502,7 +502,9 @@ if (!function_exists('bde_team_metrics')) {
                 $byName[$key] = ['name' => $info['name'], 'title' => $info['title'] !== '' ? $info['title'] : 'BDE', 'actual' => 0.0, 'target' => 0.0, 'clients' => 0, 'me' => false];
             }
             $byName[$key]['actual'] += $info['rev'] * $rate;
-            $byName[$key]['target'] += (float) ($mtarget[$mid] ?? 0);
+            // target is the same seed on each duplicate login — take it ONCE (max), never summed
+            // (else Josiah #69+#98 shows 4M instead of his 2M).
+            $byName[$key]['target'] = max($byName[$key]['target'], (float) ($mtarget[$mid] ?? 0));
             $byName[$key]['clients'] += $info['clients'];
             if ($mid === $ruId) { $byName[$key]['me'] = true; }
         }
