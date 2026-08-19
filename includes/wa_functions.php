@@ -4756,8 +4756,23 @@ function wa_ai_system_prompt($refName, $kb, $intl = '', $regLink = '', $eventSco
               . "\n"
             : "")
 
+        . "WHEN THE CUSTOMER IS READY TO JOIN:\n"
+        . "- Set \"request_call_permission\" to true when THEIR LATEST MESSAGE plainly says they want to "
+        . "join, register, enrol, apply, sign up, or that they are interested and want to know how to "
+        . "start — for a programme we have already identified. In English or Swahili (\"nataka "
+        . "kujiunga\", \"ningependa kujiunga\").\n"
+        . "- Answer their actual question FIRST and normally. The flag runs a separate step; it never "
+        . "replaces your reply and you must not mention it, promise a call, or ask whether they want "
+        . "one. Do NOT say a request has been sent — a separate message handles that only if it "
+        . "actually succeeds.\n"
+        . "- Set it to FALSE for: a greeting, a bare price or date question, small talk, an answer to "
+        . "something you asked, a complaint, an opt-out, anything mid-registration or mid-payment, and "
+        . "anything you are not sure about. False is always the safe answer — a colleague can still "
+        . "arrange a call by hand.\n\n"
+
         . "Respond with ONLY JSON: {\"reply\": \"<the WhatsApp message to send>\", \"escalate\": <true|false>, "
-        . "\"handoff\": \"<staff-only note when escalating, else empty>\"}.";
+        . "\"handoff\": \"<staff-only note when escalating, else empty>\", "
+        . "\"request_call_permission\": <true|false>}.";
 }
 
 /**
@@ -5139,6 +5154,9 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     $reply    = trim((string)($data['reply'] ?? ''));
     $escalate = !empty($data['escalate']);
     $handoff  = trim((string)($data['handoff'] ?? ''));   // staff-only note, when escalating
+    // Phase 1.2: the model's request for a call-permission handoff. Absent means
+    // false, so an older prompt or a raw-text fallback simply never triggers it.
+    $wantsCall = !empty($data['request_call_permission']);
     // Safety net: if the reply defers to a human but the flag wasn't set, escalate anyway.
     if (!$escalate && $reply !== '' && preg_match(
         '/\b(connect you|reach out|our team|admissions team|someone will|have someone|get back to you|a representative|our staff|will contact you)\b/i',
@@ -5201,7 +5219,29 @@ function wa_ai_answer($conn, $conv, $inboundText) {
         wa_ai_post_note($conn, (int)$conv['contact_id'],
             'Auto-reply could not be delivered (' . ($send['error'] ?? 'send failed') . '). Please follow up with this customer.');
     }
-    return ['ok' => !empty($send['ok']), 'escalated' => $escalate, 'reply' => $reply, 'send' => $send];
+    // Phase 1.2 — ask WhatsApp for permission to call, when the customer has plainly
+    // said they want to join. Placed HERE, after a successful send, because this is
+    // the single point both reply paths pass through: the webhook's immediate answer
+    // and wa_run_due_replies()'s batched one both arrive via wa_maybe_ai_answer().
+    // Putting it in the webhook would silently skip every batched conversation.
+    //
+    // The model's flag is only half the decision — wa_call_offer_maybe_request()
+    // re-checks the customer's own words, the topic, the number and the whole of the
+    // Phase 1.1 eligibility before anything is sent.
+    $callOffer = ['sent' => false, 'skip' => 'not_attempted'];
+    if (!empty($send['ok']) && $wantsCall && function_exists('wa_call_offer_maybe_request')) {
+        try {
+            $callOffer = wa_call_offer_maybe_request($conn, $conv, $inboundText, true);
+        } catch (Throwable $e) {
+            // Never let this break a working conversation.
+            error_log('[wa-call-offer] ' . $e->getMessage());
+            $callOffer = ['sent' => false, 'skip' => 'exception'];
+        }
+        error_log('[wa-call-offer] ' . json_encode($callOffer));
+    }
+
+    return ['ok' => !empty($send['ok']), 'escalated' => $escalate, 'reply' => $reply,
+            'send' => $send, 'call_offer' => $callOffer];
 }
 
 // A human is treated as "actively on the chat" for this many seconds after they
@@ -5655,3 +5695,9 @@ function wa_http_post($url, $headers, $payload, $timeout = 25) {
 
 // Guided WhatsApp enrollment (capture-in-chat -> enroll directly).
 require_once __DIR__ . '/wa_enroll.php';
+
+// Phase 1.2 call handoff. Loaded last: it depends on wa_voice.php and the Phase 1.1
+// helpers, and is required here so BOTH reply paths have it without either caller
+// needing to know it exists.
+require_once __DIR__ . '/wa_voice.php';
+require_once __DIR__ . '/wa_call_offer.php';
