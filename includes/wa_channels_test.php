@@ -176,8 +176,13 @@ echo "\n-- free inside an open 798 window, template otherwise --\n";
 check('a chooser exists', true, function_exists('wa_call_request_permission'));
 check('it checks the CALLING window', true,
     strpos($api, "wa_channel_within_window(\$conn, (int)\$contactId, 'calling'") !== false);
-check('the direct route is tried only when open', true,
-    strpos($api, 'if ($windowOpen) {') !== false);
+// Tightened: an open window is no longer sufficient. The direct route is off by
+// default because it answered 200 without sending anything.
+check('the direct route needs an open window AND the flag', true,
+    strpos($api, 'if ($windowOpen && WA_CALL_DIRECT_ENABLED) {') !== false);
+check('the flag defaults to off', true,
+    strpos($api, "define('WA_CALL_DIRECT_ENABLED', false)") !== false);
+check('so every request goes by the template today', false, (bool)WA_CALL_DIRECT_ENABLED);
 check('an ambiguous direct result falls back to the template', true,
     strpos($api, 'falling back to the template') !== false);
 check('the free route is labelled', true, strpos($api, "\$direct['route'] = 'direct_free';") !== false);
