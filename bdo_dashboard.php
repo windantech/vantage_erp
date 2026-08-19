@@ -275,7 +275,7 @@ if ($bdo && !empty($bdo['team'])) {
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
       <main id="workspace"></main>
-      <div class="bde-foot">Live from the CRM — department target from <code>bde_targets</code>; cleared revenue, execution drivers, the funnel, lead sources, the team and the scorecard all roll up from each BDE's real attributed payments (<code>assigned_to</code>). The account-priorities table and the operating-rhythm / principles are guidance templates.</div>
+      <div class="bde-foot"></div>
     </div>
 
     <script>
@@ -505,7 +505,7 @@ if ($bdo && !empty($bdo['team'])) {
         const st=att>=1?"jade":att>=.8?"amber":"coral";
         const p=period();const pf=pa>0?Math.round(pa/Math.max(.01,p.elapsed/p.working)):pa;const shown=clamp(att,0,1.2)/1.2;
         return `<div class="persband">
-          <div class="section-tag"><h3>Your personal performance</h3><span>You sell too — your own target, tracked separately from the department</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Your personal performance</h3><span>Your own target, tracked separately from the department</span><div class="rule"></div></div>
           <section class="hero">
             ${bdoTargetsCard()}
             <div class="card prog"><div class="chead"><h4>Progress to your target</h4><span class="chip ${st} num">${pct(att)}</span></div>
