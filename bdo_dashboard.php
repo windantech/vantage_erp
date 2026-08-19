@@ -723,7 +723,7 @@ if ($bdo) {
           [(isCount?"Paid clients so far":"Cleared revenue so far (KES)"),"number",Math.round(B.actual),true],
           ["BDEs on / above pace","number",teamGreen,true],
           ["Red portfolios (behind pace)","number",teamRed,true],
-          ["Qualified pipeline (KES)","number",Math.round(B.pipeline||0),true],
+          [(isCount?"Remaining to target (clients)":"Remaining to target (KES)"),"number",Math.round(Math.max(0,B.target-B.actual)),true],
           ["Meetings / demos / sessions today","number","",false],
           ["Proposals / commitments moved","number","",false],
           ["Collection commitments due","number","",false],
@@ -831,7 +831,7 @@ if ($bdo) {
         const numRows=[...root.querySelectorAll("#reportForm input")].map(x=>`<tr><td class="k">${esc(x.dataset.label)}</td><td class="v">${esc(x.value.trim()||"—")}</td></tr>`).join("");
         const narr=[...root.querySelectorAll("#reportForm textarea")].map(x=>`<div class="nblock"><div class="nlabel">${esc(x.dataset.label)}</div><div class="ntext">${esc(x.value.trim()||"—")}</div></div>`).join("");
         const team80=(B.team||[]).filter(t=>t.target>0&&t.actual/t.target>=.8).length;
-        const dash=[["Qualified pipeline",kMoney(B.pipeline||0)],["Collection rate",pct(B.collection,0)],["Team at 80%+",team80+" / "+(B.team||[]).length]]
+        const dash=[["Remaining to target",mfmt(Math.max(0,B.target-B.actual))],["Collection rate",pct(B.collection,0)],["Team at 80%+",team80+" / "+(B.team||[]).length]]
           .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Department Command Report — ${esc(B.dept||B.name)}</title>
 <style>
