@@ -771,7 +771,7 @@ if ($bde_is_admin) {
           ["Monthly target",hasRev?kMoney(B.target):"—",hasRev?"All your targets combined":"Count-based target","flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),hasRev?pct(att)+" of target":"collected this period","up","var(--jade)"],
           ["Paid clients",nf.format(B.paidClients||0),"of "+nf.format(B.totalRegs||0)+" leads","flat","var(--slate)"],
-          ["Open pipeline",kMoney(pipe),"expected · not yet collected","flat","var(--slate)"],
+          ["Remaining to target",hasRev?kMoney(Math.max(0,B.target-B.actual)):"—",hasRev?"target − collected":"count-based target","flat","var(--slate)"],
           ["Commission (eligible)",kMoney(B.commissionKes||0),"from the commission engine","flat","var(--gold)"],
           ["Daily pace needed",hasRev?kMoney(dailyNeed):"—",daysLeft+" days left this month","flat","var(--amber)"]
         ];

@@ -614,14 +614,21 @@ if (!function_exists('bde_targets_progress')) {
                 $totalUsd += $amt;
             }
         }
-        // events (international/corporate) → add to total collected
-        $evIds = [];
+        // events (international/corporate) → add to total collected + keep per-event-title cleared
+        // revenue so a Corporate COURSE line can match its CORPORATE# event by title.
+        $evIds = []; $eventRevByTitle = [];
         $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
         while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
         if (!empty($evIds)) {
             $ein = implode(',', $evIds);
-            $tq2 = @mysqli_query($conn, "SELECT SUM(CASE WHEN status=2 THEN amount ELSE 0 END) rev FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59'");
-            if ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) { $totalUsd += (float) $t2['rev']; }
+            $tq2 = @mysqli_query($conn, "SELECT e.event_title, SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END) rev
+                FROM `Event` e JOIN ticket_congress tc ON tc.event_id = e.event_id
+                WHERE e.event_id IN ($ein) AND tc.date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY e.event_id, e.event_title");
+            while ($tq2 && ($t2 = mysqli_fetch_assoc($tq2))) {
+                $totalUsd += (float) $t2['rev'];
+                $tt = strtolower(trim((string) $t2['event_title']));
+                if ($tt !== '') { $eventRevByTitle[$tt] = ($eventRevByTitle[$tt] ?? 0) + (float) $t2['rev']; }
+            }
         }
         $totalKes = $totalUsd * $rate;
 
@@ -654,6 +661,15 @@ if (!function_exists('bde_targets_progress')) {
                     }
                     if ($matchUsd !== null) { $actual = $matchUsd * $rate; }
                 }
+            } else if ($metric === 'course_revenue') {
+                // Corporate course line: DISPLAYED but NOT summed into the monthly target (2M floor stays).
+                // Actual = cleared revenue of the matching CORPORATE# event, matched by title.
+                $pname = strtolower(trim(preg_replace('/\s*\([^)]*\)\s*$/', '', (string) $t['product'])));
+                $matchUsd = null;
+                foreach ($eventRevByTitle as $tt => $rv) {
+                    if ($tt !== '' && $pname !== '' && ($tt === $pname || strpos($tt, $pname) !== false || strpos($pname, $tt) !== false)) { $matchUsd = ($matchUsd ?? 0) + $rv; }
+                }
+                if ($matchUsd !== null) { $actual = $matchUsd * $rate; }
             }
 
             $out['rows'][] = [

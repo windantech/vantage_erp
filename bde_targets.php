@@ -298,10 +298,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $flash = "Seeded $seeded HOD/BDO target(s): " . implode('; ', $done) . '. (Academic HOD not provided yet.)';
         $flash_ok = $seeded > 0;
+    } else if ($action === 'seed_corporate_courses') {
+        // Corporate BDEs own specific courses (like Virtual), shown as lines but NOT summed into the
+        // 2M monthly floor (metric 'course_revenue'). Actual matches the CORPORATE# event by title.
+        @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND metric='course_revenue'");
+        $CORP_COURSES = [
+            'Josiah Mwangi'  => [['AI for Leaders', 1664000], ['MEAL Dadaab', 1980000]],
+            'Regina Mas'     => [['SLDP', 2600000]],
+            'Hannah Wanjiku' => [['ToT', 494000]],
+            'Edwin Otieno'   => [['MEAL Nairobi', 1800000]],
+        ];
+        $resolveAll = function ($name) use ($conn) {
+            $pat = '%' . str_replace(' ', '%', mysqli_real_escape_string($conn, $name)) . '%';
+            $q = @mysqli_query($conn, "SELECT id, fullname FROM registered_users WHERE fullname LIKE '$pat' ORDER BY id");
+            $out = []; while ($q && ($r = mysqli_fetch_assoc($q))) { $out[] = ['id' => (int) $r['id'], 'name' => (string) $r['fullname']]; }
+            return $out;
+        };
+        $seeded = 0; $done = []; $unresolved = [];
+        foreach ($CORP_COURSES as $name => $courses) {
+            $accts = $resolveAll($name);
+            if (empty($accts)) { $unresolved[] = $name; continue; }
+            foreach ($accts as $a) {
+                $slE = mysqli_real_escape_string($conn, $a['name']);
+                foreach ($courses as $c) {
+                    $prE = mysqli_real_escape_string($conn, $c[0]);
+                    $val = (float) $c[1];
+                    $noE = mysqli_real_escape_string($conn, 'Corporate course · 80% qualifying = Kshs ' . number_format(round($val * 0.8)) . ' · actual from the CORPORATE# event (matched by title)');
+                    if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                        VALUES ('user','{$a['id']}','$slE','$prE','course_revenue','Course revenue','KES',$val,80,'$noE',$me)")) { $seeded++; $done[] = $a['name'] . ' #' . $a['id'] . ' → ' . $c[0]; }
+                }
+            }
+        }
+        $flash = "Seeded $seeded Corporate course target(s): " . implode('; ', $done) . '.'
+            . (empty($unresolved) ? '' : ' COULD NOT MATCH: ' . implode(', ', array_unique($unresolved)) . ' — send exact CRM names.');
+        $flash_ok = $seeded > 0;
     }
     // Post/Redirect/Get: on a successful write, redirect so a browser refresh can't resubmit
     // the same target, and the form comes back empty ready for the next entry.
-    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital', 'seed_deptperson', 'seed_bdo'], true) && $flash_ok && $flash !== '') {
+    if (in_array($action, ['save', 'delete', 'seed_virtual', 'seed_digital', 'seed_deptperson', 'seed_bdo', 'seed_corporate_courses'], true) && $flash_ok && $flash !== '') {
         $_SESSION['bt_flash'] = $flash; $_SESSION['bt_flash_ok'] = true;
         header('Location: bde_targets.php'); exit;
     }
@@ -495,6 +529,10 @@ $ev = function ($k, $d = '') use ($edit) { return $edit && isset($edit[$k]) ? $e
             <form method="post" onsubmit="return confirm('Seed HOD/BDO department-total targets? Corporate #118 = 10M, Virtual #125 = 11.5M, Digital #132 = 4.85M (80% qualifying), International #121 = combined from its BDEs. REPLACES existing HOD/BDO targets.')">
               <input type="hidden" name="action" value="seed_bdo">
               <button class="bt-btn ghost mini" type="submit">↧ Seed HOD/BDO (department totals)</button>
+            </form>
+            <form method="post" onsubmit="return confirm('Seed Corporate course targets? Josiah: AI for Leaders 1.664M + MEAL Dadaab 1.98M; Regina: SLDP 2.6M; Hannah: ToT 494K; Edwin: MEAL Nairobi 1.8M. Shown as course lines (not added to the 2M floor). REPLACES existing course-revenue targets.')">
+              <input type="hidden" name="action" value="seed_corporate_courses">
+              <button class="bt-btn ghost mini" type="submit">↧ Seed Corporate course targets</button>
             </form>
           </div>
         </div>
