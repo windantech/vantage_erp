@@ -196,6 +196,8 @@ if ($bdo) {
     .bde-app .pr{color:var(--coral);background:var(--coral-soft);border-color:color-mix(in srgb,var(--coral) 32%,transparent)} .bde-app .pr .dot{background:var(--coral)}
 
     .bde-app .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .bde-app .kpis4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    @media(max-width:900px){.bde-app .kpis4{grid-template-columns:1fr 1fr}}
     .bde-app .kpi{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px;overflow:hidden;transition:transform .15s,box-shadow .15s}
     .bde-app .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
     .bde-app .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--brand);border-radius:var(--radius-sm) var(--radius-sm) 0 0}
@@ -600,30 +602,34 @@ if ($bdo) {
           ${bdoPersonalSection()}`;
       }
 
+      function bdoVisitStats(){
+        const v=B.deptVisits||[];const reg=v.filter(x=>x.outcome==="registered").length;
+        return {visited:v.length,interested:v.filter(x=>x.outcome==="interested").length,registered:reg,conv:v.length?reg/v.length:0};
+      }
+      function bdoOutChip(o){return o==="registered"?'<span class="chip jade">Registered</span>':o==="interested"?'<span class="chip amber">Interested</span>':o==="no_show"?'<span class="chip coral">No-show</span>':'<span class="chip slate">Visited</span>';}
       function bdoVisitForm(){
-        return `<div class="section-tag"><h3>Field visits &amp; opportunities</h3><span>Log a visit you're making — and see the whole department's visits below</span><div class="rule"></div></div>
-          <div class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">${esc(B.bdoName||"You")}</span></div>
-            <form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>#pipeline">
-              <input type="hidden" name="action" value="log_visit">
-              <div class="form-grid">
-                <div class="field"><label>Visit date</label><input type="date" name="visit_date" value="<?php echo date('Y-m-d'); ?>"></div>
-                <div class="field span2"><label>Client / contact</label><input name="client" required placeholder="Name"></div>
-                <div class="field"><label>Location</label><input name="location" placeholder="Town / area"></div>
-                <div class="field span2"><label>Organization</label><input name="organization" placeholder="Company / institution"></div>
-                <div class="field"><label>Product</label><input name="product" placeholder="e.g. MEAL / CPA"></div>
-                <div class="field"><label>Outcome</label><select name="outcome"><option value="visited">Visited</option><option value="interested">Interested</option><option value="registered">Registered</option><option value="no_show">No-show</option></select></div>
-                <div class="field"><label>Value (KES)</label><input name="value" type="number" inputmode="numeric" placeholder="0"></div>
-                <div class="field"><label>Follow-up date</label><input type="date" name="followup_date"></div>
-                <div class="field span4"><label>Opportunity <span style="text-transform:none;color:var(--muted)">(visible to every department for awareness)</span></label><input name="opportunity_note" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
-                <div class="field span4"><label>Notes</label><textarea name="notes" rows="2" placeholder="What happened, next step…"></textarea></div>
-              </div>
-              <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button></div>
-            </form>
-          </div>`;
+        return `<form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>#visits" class="card"><div class="chead"><h4>Log a field visit</h4><span class="chip slate">${esc(B.bdoName||"You")}</span></div>
+            <input type="hidden" name="action" value="log_visit">
+            <div class="form-grid">
+              <div class="field"><label>Client / contact person</label><input name="client" required placeholder="e.g. Grace Wanjiru"></div>
+              <div class="field"><label>Organization</label><input name="organization" placeholder="e.g. Nairobi Women's SACCO"></div>
+              <div class="field"><label>Contact phone</label><input name="contact_phone" placeholder="07…"></div>
+              <div class="field"><label>Location / area</label><input name="location" placeholder="e.g. Nairobi CBD"></div>
+              <div class="field"><label>Product of interest</label><input name="product" placeholder="e.g. MEAL / CPA"></div>
+              <div class="field"><label>Outcome</label><select name="outcome"><option value="visited">Visited</option><option value="interested">Interested</option><option value="registered">Registered</option><option value="no_show">No-show</option></select></div>
+              <div class="field"><label>Potential value (KES)</label><input name="value" type="number" min="0" placeholder="0"></div>
+              <div class="field"><label>Visit date</label><input name="visit_date" type="date" value="<?php echo date('Y-m-d'); ?>"></div>
+              <div class="field"><label>Follow-up date</label><input name="followup_date" type="date"></div>
+              <div class="field span2"><label>Cross-SBU opportunity <span style="text-transform:none;color:var(--muted)">(optional — visible to every department, for awareness)</span></label><input name="opportunity_note" placeholder="e.g. HR here wants staff appraisals for 40 staff"></div>
+              <div class="field span2"><label>Notes</label><textarea name="notes" placeholder="What was discussed, the next step, any blockers…"></textarea></div>
+            </div>
+            <div class="report-actions"><button class="tbtn solid" type="submit">Log visit</button><button class="tbtn" type="reset">Clear</button></div>
+          </form>`;
       }
       function bdoVisitsTable(){
-        if(!B.deptVisits||!B.deptVisits.length) return `<div class="card"><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No field visits logged in the department yet. Log one above, and your BDEs' visits will appear here too.</p></div>`;
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>BDE</th><th>Client / org</th><th>Outcome</th><th>Value</th><th>Opportunity / next step</th><th>Follow-up</th></tr></thead><tbody>${B.deptVisits.map(v=>`<tr><td>${esc(v.date)}</td><td>${esc(v.bde||"—")}</td><td><b>${esc(v.client)}</b>${v.org?`<div style="font-size:10.5px;color:var(--muted)">${esc(v.org)}</div>`:""}</td><td><span class="stage-chip">${esc(v.outcome)}</span></td><td class="num">${v.value>0?kMoney(v.value):"—"}</td><td>${esc(v.opportunity||v.notes||"—")}</td><td>${esc(v.followup||"—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+        if(!B.deptVisits||!B.deptVisits.length) return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>BDE</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:18px">No field visits logged in the department yet — log one on the Field Visits tab.</td></tr></tbody></table></div></div>`;
+        const rows=B.deptVisits.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(v=>`<tr><td class="num">${esc(v.date)}</td><td>${esc(v.bde||"—")}</td><td><b>${esc(v.client)}</b>${v.org?`<span style="display:block;font-size:11px;color:var(--muted)">${esc(v.org)}</span>`:""}</td><td>${esc(v.location||"—")}</td><td><span class="stage-chip">${esc(v.product||"—")}</span></td><td>${bdoOutChip(v.outcome)}</td><td class="num">${v.value>0?kMoney(v.value):"&#8212;"}</td></tr>`).join("");
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Date</th><th>BDE</th><th>Client / organization</th><th>Location</th><th>Product</th><th>Outcome</th><th>Potential value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
       function vPipeline(){
         const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
@@ -642,7 +648,13 @@ if ($bdo) {
           ${bdoVisitsTable()}`;
       }
       function vVisits(){
-        return `${bdoVisitForm()}${bdoVisitsTable()}`;
+        const s=bdoVisitStats();
+        const kpis=[["Visits logged",nf.format(s.visited),"across the department","var(--slate)"],["Interested",nf.format(s.interested),"in active follow-up","var(--amber)"],["Registered",nf.format(s.registered),"confirmed","var(--jade)"],["Conversion rate",pct(s.conv,0),"visited → registered","var(--brand)"]];
+        return `<div class="section-tag"><h3>Field visit tracker</h3><span>Log a visit you're making — every BDE's visits roll up here for the department</span><div class="rule"></div></div>
+          <div class="kpis4">${kpis.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>
+          ${bdoVisitForm()}
+          <div class="section-tag"><h3>Department field visits</h3><span>${nf.format((B.deptVisits||[]).length)} logged across ${esc(B.dept||"the department")}</span><div class="rule"></div></div>
+          ${bdoVisitsTable()}`;
       }
 
       function vCommission(){
