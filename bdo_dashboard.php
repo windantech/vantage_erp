@@ -224,6 +224,17 @@ if ($bdo && !empty($bdo['team'])) {
     .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
 
     .bde-app .persband{background:var(--surface2);border:1px solid var(--line);border-radius:18px;padding:4px 16px 16px;margin:4px 0}
+    .bde-app .tgroup{padding-top:9px} .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:9px}
+    .bde-app .tgroup-h{font-weight:800;font-size:13px;color:var(--ink)} .bde-app .tgroup-sub{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 0}
+    .bde-app .tlevels{display:flex;gap:10px;margin:8px 0 4px;flex-wrap:wrap}
+    .bde-app .tlevel{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 12px}
+    .bde-app .tlevel .tl-cap{display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:3px}
+    .bde-app .tlevel b{font-size:16px;font-weight:800;color:var(--ink);letter-spacing:-.01em;line-height:1.1}
+    .bde-app .tl-full{border-left:3px solid #0f7a43} .bde-app .tl-qual{border-left:3px solid var(--amber)}
+    .bde-app .tl-full b{color:#0f7a43} .bde-app .tl-qual b{color:var(--amber)}
+    .bde-app .pdrivers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    @media(max-width:900px){.bde-app .pdrivers{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.bde-app .pdrivers{grid-template-columns:1fr}}
     .bde-app .bde-foot{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6} .bde-app .bde-foot code{background:var(--surface2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
 
     @media(max-width:1000px){
@@ -473,18 +484,18 @@ if ($bdo && !empty($bdo['team'])) {
       }
 
       function bdoTargetsCard(){
-        const box=(cap,val,gold)=>`<div style="flex:1;min-width:140px;background:var(--surface2);border:1px solid ${gold?"var(--gold-line)":"var(--line)"};border-radius:11px;padding:11px 14px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${gold?"var(--gold)":"var(--muted)"};margin-bottom:4px">${cap}</span><b style="font-size:16.5px;font-weight:800;color:var(--ink)">${kMoney(val)}</b></div>`;
-        const grp=(title,sub,boxes)=>`<div><div style="font-size:13px;font-weight:800;color:var(--ink)">${esc(title)}</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:3px 0 10px">${esc(sub)}</div><div style="display:flex;gap:12px;flex-wrap:wrap">${boxes}</div></div>`;
+        const lvl=(cap,val,qual)=>`<div class="tlevel ${qual?"tl-qual":"tl-full"}"><span class="tl-cap">${cap}</span><b>${kMoney(val)}</b></div>`;
+        const grp=(title,sub,levels)=>`<div class="tgroup"><div class="tgroup-h">${esc(title)}</div><div class="tgroup-sub">${esc(sub)}</div><div class="tlevels">${levels}</div></div>`;
         const floor=(+B.ownTarget)||0;const parts=[];
-        if(floor>0) parts.push(grp("Corporate","Monthly revenue · your floor",box("100% target",floor,false)));
-        (B.courses||[]).forEach(c=>parts.push(grp(c.name,"Course revenue",box("100% target",c.target,false)+(c.threshold>0?box("80% qualifying",c.threshold,true):""))));
-        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div><div style="display:grid;gap:18px">${parts.join("")}</div></div>`;
+        if(floor>0) parts.push(grp("Corporate","Monthly revenue · your floor",lvl("100% target",floor,false)));
+        (B.courses||[]).forEach(c=>parts.push(grp(c.name,"Course revenue",lvl("100% target",c.target,false)+(c.threshold>0?lvl("80% qualifying",c.threshold,true):""))));
+        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${parts.join("")}</div>`;
       }
       function personalDrivers(){
         const pt=(+B.ownTarget)||0;const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;
         const dAcc=["var(--brand)","var(--jade)","#3a7bd5","var(--gold)"];
         const items=[["Cleared revenue",kMoney(pa),pct(att,0)+" of your target"],["Remaining to target",kMoney(Math.max(0,pt-pa)),"target − collected"],["Paid clients",nf.format(B.ownClients||0),"Finance-verified"],["Your leads",nf.format(B.ownLeads||0),"attributed to you"]];
-        return `<div class="card"><div class="chead"><h4>Your execution drivers</h4><span class="chip slate">Personal</span></div><div class="drivers">${items.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="live">You</span></div><div class="n num">${esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Your execution drivers</h4><span class="chip slate">Personal</span></div><div class="pdrivers">${items.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="live">You</span></div><div class="n num">${esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function bdoPersonalSection(){
         const floor=(+B.ownTarget)||0;
