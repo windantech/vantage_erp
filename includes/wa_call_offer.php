@@ -213,10 +213,10 @@ function wa_call_offer_maybe_request($conn, $conv, $inboundText, $aiFlag) {
  * same rollback, and the same rule that the customer is only told once 360dialog
  * has accepted it.
  *
- * @return array {sent:bool, skip:string, error:string}
+ * @return array {sent:bool, skip:string, error:string, notice:string}
  */
 function wa_call_offer_do_request($conn, $contactId, $waId, $e164) {
-    $out = ['sent' => false, 'skip' => '', 'error' => ''];
+    $out = ['sent' => false, 'skip' => '', 'error' => '', 'notice' => ''];
 
     // --- Reuse Phase 1.1 end to end. actor_id NULL marks it automated. -----
     $claim = wa_call_claim_request($conn, $contactId, null, WA_CALL_PHONE_ID);
@@ -258,13 +258,27 @@ function wa_call_offer_do_request($conn, $contactId, $waId, $e164) {
     error_log('[wa-call-offer] permission requested via ' . (string)($send['route'] ?? '?')
             . ' for contact ' . $contactId);
 
-    // --- Only now do we tell them, through the 796 conversation ------------
-    $notice = wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE);
-    if (empty($notice['ok'])) {
-        // The request is genuinely out; the explanation is not. Log it — a customer
-        // receiving an unexplained permission prompt is confusing but recoverable.
-        error_log('[wa-call-offer] notice failed for contact ' . $contactId
-                . ': ' . (string)($notice['error'] ?? 'unknown'));
+    // --- Only now do we tell them, and only if they need telling --------------
+    //
+    // The notice exists to explain a prompt arriving from a number the customer has
+    // not been talking to. Someone who wrote to the calling line IS on that number:
+    // the prompt appears in this very chat, so announcing that we sent it "from our
+    // official calling line, +254 798 009935" tells them something they can see, in
+    // the voice of a different number than the one they used. Skip it.
+    $replyChannel = function_exists('wa_reply_channel')
+                  ? wa_reply_channel($conn, $contactId) : WA_CHANNEL_DEFAULT;
+
+    if ($replyChannel === 'calling') {
+        $out['notice'] = 'skipped_same_line';
+    } else {
+        $notice = wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE);
+        $out['notice'] = !empty($notice['ok']) ? 'sent' : 'failed';
+        if (empty($notice['ok'])) {
+            // The request is genuinely out; the explanation is not. Log it — a customer
+            // receiving an unexplained permission prompt is confusing but recoverable.
+            error_log('[wa-call-offer] notice failed for contact ' . $contactId
+                    . ': ' . (string)($notice['error'] ?? 'unknown'));
+        }
     }
     $out['sent'] = true;
     return $out;

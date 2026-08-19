@@ -361,6 +361,29 @@ check('so the notice cannot be sent without proof', true,
     strpos($offer, "\$out['error'] = 'no message id returned';")
         < strpos($offer, 'wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE)'));
 
+echo "\n-- the notice is only for customers on the OTHER number --\n";
+
+$offer = file_get_contents(__DIR__ . '/wa_call_offer.php');
+// Someone who wrote to the calling line sees the prompt in that same chat, so
+// announcing it "from our official calling line, +254 798 009935" describes a
+// number they are already using.
+check('the reply channel decides', true,
+    strpos($offer, "wa_reply_channel(\$conn, \$contactId)") !== false);
+check('skipped when they are on the calling line', true,
+    strpos($offer, "if (\$replyChannel === 'calling') {") !== false);
+check('and that is reported, not silent', true,
+    strpos($offer, "'skipped_same_line'") !== false);
+check('still sent to everyone else', true,
+    strpos($offer, 'wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE)') !== false);
+// The request itself is unaffected — only the explanation is conditional.
+check('the request still counts as sent', true,
+    strpos($offer, "\$out['sent'] = true;") > strpos($offer, "'skipped_same_line'"));
+check('the notice is sent from exactly one place', 1,
+    preg_match_all('/WA_CALL_OFFER_NOTICE\)/', $offer));
+// It must remain AFTER the confirm, so nothing is announced before it is real.
+check('still only after the request is confirmed', true,
+    strpos($offer, 'wa_call_confirm_request') < strpos($offer, 'wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE)'));
+
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }
 exit($failures === 0 ? 0 : 1);
