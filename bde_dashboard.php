@@ -174,12 +174,13 @@ $bde_metrics = $bde_ru_id > 0 ? bde_fetch_metrics($conn, $bde_ru_id, $bde_from, 
 // Field visits logged by this BDE (real).
 $bde_visits_data = [];
 if ($bde_ru_id > 0) {
-    $vq = @mysqli_query($conn, "SELECT visit_date, client, organization, location, product, outcome, value, notes
+    $vq = @mysqli_query($conn, "SELECT visit_date, client, organization, location, product, outcome, value, notes, followup_date, opportunity_note
         FROM bde_visits WHERE bde_user_id = $bde_ru_id ORDER BY visit_date DESC, id DESC LIMIT 200");
     while ($vq && ($vr = mysqli_fetch_assoc($vq))) {
         $bde_visits_data[] = ['date' => (string) $vr['visit_date'], 'client' => (string) $vr['client'], 'org' => (string) $vr['organization'],
             'location' => (string) $vr['location'], 'product' => (string) $vr['product'], 'outcome' => (string) $vr['outcome'],
-            'value' => (float) $vr['value'], 'notes' => (string) $vr['notes']];
+            'value' => (float) $vr['value'], 'notes' => (string) $vr['notes'],
+            'followup' => (string) ($vr['followup_date'] ?? ''), 'opportunity' => (string) ($vr['opportunity_note'] ?? '')];
     }
 }
 // Cross-SBU opportunities: every opportunity a colleague flagged on a field visit — visible to all
@@ -929,13 +930,16 @@ if ($bde_is_admin) {
         // Cross-SBU — opportunities another department logged (via field visits) for this BDE's SBU.
         const cross=(B.crossSbu||[]);
         const showPriorities=/digital/i.test(B.dept||"");
+        // Real opportunities = the BDE's own logged field visits still open (not registered / no-show).
+        const opps=showPriorities?(B.visits||[]).filter(v=>((v.client||"").trim()!=="")&&v.outcome!=="registered"&&v.outcome!=="no_show").slice(0,10):[];
+        const stageLbl=o=>o==="interested"?"Interested":o==="visited"?"Visited":esc(o||"—");
         return `
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?(B.funnel[i-1][1]>0?Math.round(n/B.funnel[i-1][1]*100)+"%":"—"):"100%"}</span></div>`).join("")}</div></div>
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No lead-source data yet.</p>'}</div>
           </section>
-          ${showPriorities ? `<div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>` : ""}
+          ${showPriorities ? `<div class="section-tag"><h3>Priority opportunity control</h3><span>From your logged field visits — no important opportunity should live only in email, WhatsApp or memory</span><div class="rule"></div></div>
+          ${opps.length ? `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${opps.map(v=>`<tr><td><b>${esc(v.client)}${v.org?` · <span style="font-weight:600;color:var(--muted)">${esc(v.org)}</span>`:""}</b></td><td><span class="stage-chip">${stageLbl(v.outcome)}</span></td><td class="num">${v.value>0?kMoney(v.value):esc(v.product||"—")}</td><td>${esc(v.opportunity||v.notes||"Follow up")}</td><td>${esc(v.followup||"—")}</td></tr>`).join("")}</tbody></table></div></div>` : `<div class="card"><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No open field-visit opportunities yet. Log one under the <b>Field Visits</b> tab and flag its opportunity — it will appear here automatically.</p></div>`}` : ""}
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${stale.length?"coral":"jade"}">${stale.length?stale.length+" flagged":"all clear"}</span></div><div class="list">${stale.length?stale.map(a=>`<div class="arow"><span class="pd ${a.c}"></span><div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div>${a.act?`<span class="abtn hot" data-alert="${a.act}" style="cursor:pointer">Open</span>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now — no unread chats or quiet unpaid leads.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${quality.length?"amber":(hasActivity?"jade":"slate")}">${quality.length?quality.length+" to review":(hasActivity?"healthy":"no activity yet")}</span></div><div class="list">${quality.length?quality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b><p>Derived from your live conversion, collection and response numbers.</p></div></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">${hasActivity?"Conversion, collection and response times all look healthy.":"No leads or cleared revenue yet this period — nothing to assess."}</p>`}</div></div>
