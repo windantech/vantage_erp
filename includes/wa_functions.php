@@ -5677,11 +5677,23 @@ function wa_maybe_ai_answer($conn, $waId, $inboundText) {
     $lr = mysqli_query($conn, "SELECT GET_LOCK('" . $lockName . "', 8) AS g");
     if ($lr) { $gotLock = ((int)(mysqli_fetch_assoc($lr)['g'] ?? 0) === 1); }
     try {
-        // Coalesce a burst: if we've already replied since this contact's LATEST inbound
-        // (an outbound with a higher id exists), the burst is handled — don't send another
-        // (often identical) reply. Id-based so it's immune to timezone skew.
+        // Coalesce a burst: if we've already REPLIED since this contact's LATEST inbound,
+        // the burst is handled — don't send another (often identical) reply. Id-based so
+        // it's immune to timezone skew.
+        //
+        // Broadcasts are excluded, and that exclusion is the whole point. They write an
+        // ordinary outbound row, so a marketing send that happened to land between a
+        // customer's question and our answer counted as "already replied" and the
+        // question was never answered at all. Nothing in the chat showed why: the
+        // customer saw a broadcast arrive and their own message ignored. Contacts on
+        // many broadcast lists were silenced most often — exactly the "difficult"
+        // conversations where it looked like the AI had given up.
+        //
+        // A staff reply still counts. If a colleague has answered, the AI must not talk
+        // over them; that is a reply to this customer, which a broadcast is not.
         $already = (int) wa_scalar($conn, "SELECT COUNT(*) FROM wa_messages o
             WHERE o.contact_id = $cid AND o.direction = 'outbound' AND o.type <> 'note'
+              AND o.broadcast_id IS NULL
               AND o.id > (SELECT COALESCE(MAX(i.id), 0) FROM wa_messages i
                            WHERE i.contact_id = $cid AND i.direction = 'inbound')");
         if ($already > 0) { return ['ok' => true, 'skip' => 'already_answered']; }
