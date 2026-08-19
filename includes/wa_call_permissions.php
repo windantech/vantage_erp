@@ -446,8 +446,16 @@ function wa_call_claim_request($conn, $contactId, $staffId, $phoneId = null) {
     }
 }
 
-/** PHASE B success: record the sent message id and consume a throttle slot. */
-function wa_call_confirm_request($conn, $contactId, $staffId, $messageId, $phoneId = null) {
+/**
+ * PHASE B success: record the sent message id and consume a throttle slot.
+ *
+ * $source attributes the request. It defaults to 'crm' so the manual button keeps
+ * logging exactly as before; the automated handoff passes 'api' with a NULL actor.
+ * Carried as a parameter rather than corrected by a second event afterwards —
+ * one request must produce one 'requested' row, or the throttle count and the
+ * audit trail stop agreeing.
+ */
+function wa_call_confirm_request($conn, $contactId, $staffId, $messageId, $phoneId = null, $source = 'crm') {
     $pid = (string)($phoneId ?? WA_CALL_PHONE_ID);
     $cid = (int)$contactId;
     mysqli_begin_transaction($conn);
@@ -458,7 +466,8 @@ function wa_call_confirm_request($conn, $contactId, $staffId, $messageId, $phone
               WHERE contact_id = ? AND business_phone_id = ?",
             'sis', [$messageId !== '' ? (string)$messageId : null, $cid, $pid]);
         // Only NOW does the attempt count against the customer's limit.
-        wa_call_event_log($conn, $cid, $pid, 'requested', null, 'pending', 'crm', $staffId, 'template');
+        $src = in_array($source, ['crm', 'api', 'webhook'], true) ? $source : 'crm';
+        wa_call_event_log($conn, $cid, $pid, 'requested', null, 'pending', $src, $staffId, 'template');
         mysqli_commit($conn);
         return true;
     } catch (Throwable $e) {
@@ -469,7 +478,7 @@ function wa_call_confirm_request($conn, $contactId, $staffId, $messageId, $phone
 }
 
 /** PHASE B failure: release the lease and record why. No throttle slot consumed. */
-function wa_call_fail_request($conn, $contactId, $staffId, $previous, $error, $phoneId = null) {
+function wa_call_fail_request($conn, $contactId, $staffId, $previous, $error, $phoneId = null, $source = 'crm') {
     $pid  = (string)($phoneId ?? WA_CALL_PHONE_ID);
     $cid  = (int)$contactId;
     $prev = in_array($previous, ['unknown', 'pending', 'granted', 'rejected', 'revoked'], true)
@@ -483,7 +492,8 @@ function wa_call_fail_request($conn, $contactId, $staffId, $previous, $error, $p
                 SET status = ?, requested_at = NULL, request_channel = NULL, last_error = ?
               WHERE contact_id = ? AND business_phone_id = ?",
             'ssis', [$prev, $msg, $cid, $pid]);
-        wa_call_event_log($conn, $cid, $pid, 'error', 'pending', $prev, 'crm', $staffId, $msg);
+        $src = in_array($source, ['crm', 'api', 'webhook'], true) ? $source : 'crm';
+        wa_call_event_log($conn, $cid, $pid, 'error', 'pending', $prev, $src, $staffId, $msg);
         mysqli_commit($conn);
         return true;
     } catch (Throwable $e) {
