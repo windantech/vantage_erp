@@ -409,6 +409,9 @@ if ($bdo) {
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
+      // Metric-aware: International is participant/client-based (count), everyone else is KES.
+      const isCount=(B.metric==="participants");
+      const mfmt=v=>isCount?nf.format(Math.round(v||0))+" clients":kMoney(v);
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
@@ -439,10 +442,10 @@ if ($bdo) {
       function kpiBlock(){
         const att=B.actual/B.target;const c=commission();const team80=B.team.filter(t=>t.actual/t.target>=.8).length;
         const items=[
-          ["Department target",kMoney(B.target),"Approved SBU target","flat","var(--slate)"],
-          ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
-          ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
-          ["Remaining to target",kMoney(Math.max(0,B.target-B.actual)),"target − collected","flat","var(--slate)"],
+          ["Department target",mfmt(B.target),"Approved SBU target","flat","var(--slate)"],
+          [isCount?"Paid clients":"Cleared revenue",mfmt(B.actual),pct(att)+" attainment","up","var(--jade)"],
+          ["Month-end forecast",mfmt(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
+          ["Remaining to target",mfmt(Math.max(0,B.target-B.actual)),"target − reached","flat","var(--slate)"],
           ["Team at 80%+",team80+" / "+B.team.length,"Balanced performance","flat","var(--gold)"],
           ["Leadership incentive",kMoney(c.current),c.current>0?"Currently visible":"Not yet unlocked","flat","var(--amber)"]
         ];
@@ -463,9 +466,9 @@ if ($bdo) {
         const motiv=ps.status==="green"?"<b>Keep going:</b> You're at or above required pace. Protect collections, quality and stretch opportunities.":ps.status==="amber"?"<b>Close the gap:</b> You're near pace. Focus on the opportunities nearest to payment and remove today's biggest blocker.":"<b>Recover now:</b> The current pace will miss target. Start a quantified recovery plan today — not at month end.";
         return `<div class="card prog">
           <div class="chead"><h4>Progress to target</h4><span class="chip ${ps.status==="green"?"jade":ps.status==="amber"?"amber":"coral"} num">${pct(att)}</span></div>
-          <div class="pl">Cleared revenue · <b class="num">${kMoney(B.actual)} / ${kMoney(B.target)}</b></div>
+          <div class="pl">${isCount?"Paid clients":"Cleared revenue"} · <b class="num">${mfmt(B.actual)} / ${mfmt(B.target)}</b></div>
           <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div><div class="exp" style="left:${clamp((p.elapsed/p.working)*100,0,100)}%"></div></div>
-          <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b></div></div>
+          <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${mfmt(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${mfmt(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b></div></div>
           <div class="motiv ${ps.status}">${motiv}</div>
         </div>`;
       }
@@ -480,7 +483,7 @@ if ($bdo) {
         const ty=h-pd-target/max*(h-2*pd);const tx=pd+frac*(w-2*pd);
         return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
-          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
+          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${mfmt(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
           <path class="area" d="${area}"/><path class="line" d="${line}"/>${P.map(q=>`<circle class="dot" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5"/>`).join("")}
           <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
@@ -518,7 +521,7 @@ if ($bdo) {
         const att=B.target?B.actual/B.target:0;
         const team=(B.team||[]);const team80=team.filter(t=>t.target>0&&t.actual/t.target>=.8).length;
         const drivers=[
-          ["Cleared revenue",kMoney(B.actual),pct(att)+" of target"],
+          [isCount?"Paid clients":"Cleared revenue",mfmt(B.actual),pct(att)+" of target"],
           ["Remaining to target",kMoney(Math.max(0,B.target-B.actual)),"target − collected"],
           ["Paid clients",B.paidClients||0,"Finance-verified"],
           ["Leads (department)",B.totalLeads||0,"all channels"],
@@ -587,7 +590,7 @@ if ($bdo) {
             ${progressCard()}
           </section>
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
+            <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${mfmt(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
@@ -631,7 +634,7 @@ if ($bdo) {
           </section>
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div>${a.id?`<a class="abtn hot" href="bde_dashboard.php?as=${a.id}" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">Open →</a>`:""}</div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
-            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).length?"amber":"jade"}">${(B.deptQuality||[]).length?(B.deptQuality.length+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x.name)}</b><p>${esc(x.text)}</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion and collection across the department look healthy (or too little activity to flag).</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).filter(x=>x.flag).length?"amber":"jade"}">${(B.deptQuality||[]).filter(x=>x.flag).length?((B.deptQuality.filter(x=>x.flag).length)+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>{const dot=x.flag?"amber":x.active?"green":"blue";const txt=x.active?`${Math.round(x.conv*100)}% conversion (${nf.format(x.clients)}/${nf.format(x.leads)} leads)${x.coll>0?` · collection ${Math.round(x.coll*100)}%`:""}`:"no activity yet";return `<div class="arow"><span class="pd ${dot}"></span><div><b>${esc(x.name)}</b><p>${esc(txt)}</p></div></div>`;}).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No department members resolved.</p>'}</div></div>
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
           </section>
           ${bdoVisitForm()}
@@ -706,7 +709,7 @@ if ($bdo) {
         const att2=B.target?B.actual/B.target:0;
         const team=(B.team||[]);const team80=team.filter(t=>t.target>0&&t.actual/t.target>=.8).length;
         const score=[
-          ["Departmental revenue vs target",`${kMoney(B.actual)} of ${kMoney(B.target)}`,clamp2(att2)],
+          ["Departmental revenue vs target",`${mfmt(B.actual)} of ${mfmt(B.target)}`,clamp2(att2)],
           ["Balanced team performance",`${team80} of ${team.length} BDEs at 80%+`,clamp2(team.length?team80/team.length:0)],
           ["Collections quality",`${pct(B.collection||0,0)} of billed collected`,clamp2(B.collection||0)]
         ];

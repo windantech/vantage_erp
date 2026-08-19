@@ -828,13 +828,12 @@ if (!function_exists('bdo_rollup')) {
             // per-member action alerts + conversion signals (real, for the BDO's oversight)
             $un = (int) ($t['unread'] ?? 0);
             if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'id' => (int) ($t['id'] ?? 0), 'text' => $un . ' escalated chat' . ($un > 1 ? 's' : '') . ' to reply']; }
-            // one merged conversion/collection line per person (not a separate row for each)
-            $issues = [];
+            // conversion + collection for EVERY member (one merged line each), flagged or not
             $ld = (int) ($t['leads'] ?? 0); $conv = $ld > 0 ? $t['clients'] / $ld : 0;
-            if ($ld > 5 && $conv < 0.4) { $issues[] = 'low conversion (' . round($conv * 100) . '% of ' . $ld . ' leads)'; }
             $mcoll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0;
-            if ($mcoll > 0 && $mcoll < 0.7) { $issues[] = 'collection at ' . round($mcoll * 100) . '%'; }
-            if (!empty($issues)) { $out['deptQuality'][] = ['name' => $t['name'], 'text' => implode(' · ', $issues)]; }
+            $active = ($ld > 0) || ((float) $t['actual'] > 0) || ((int) $t['clients'] > 0);
+            $flag = ($ld > 5 && $conv < 0.4) || ($mcoll > 0 && $mcoll < 0.7);
+            $out['deptQuality'][] = ['name' => $t['name'], 'leads' => $ld, 'clients' => (int) $t['clients'], 'conv' => $conv, 'coll' => $mcoll, 'active' => $active, 'flag' => $flag];
         }
 
         // the BDO's own attributed numbers count toward the department too
