@@ -59,6 +59,24 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // here). Answer without revealing anything.
 if ($method !== 'POST') { wa_call_reply(405, ['error' => 'method_not_allowed']); }
 
+// ---- Optional diagnostics -----------------------------------------------------
+// Define WA_CALL_DEBUG_LOG in wa_call_config.php to capture what a live channel
+// actually sends. The permission payload was implemented from documentation and
+// has never been checked against a real event, so this is how the two get
+// reconciled. It logs BEFORE authentication, so "nothing arrived" is
+// distinguishable from "arrived and was rejected".
+//
+// Turn it off once the shape is confirmed: it writes customer phone numbers into
+// the error log.
+$WA_CALL_DEBUG = defined('WA_CALL_DEBUG_LOG') && WA_CALL_DEBUG_LOG;
+if ($WA_CALL_DEBUG) {
+    // Which credential was PRESENT, never its value.
+    $hasHeader = wa_call_webhook_header(WA_CALL_WEBHOOK_HEADER) !== '' ? 'yes' : 'no';
+    $hasQuery  = isset($_GET['token']) && $_GET['token'] !== ''       ? 'yes' : 'no';
+    error_log('[wa-call-webhook][debug] hit: header=' . $hasHeader . ' query=' . $hasQuery
+            . ' ua=' . substr((string)($_SERVER['HTTP_USER_AGENT'] ?? '-'), 0, 60));
+}
+
 // ---- Authentication: separate secret from the messaging channel ---------------
 // Accepts the X-Vantage-Call-Token header or ?token=, because 360dialog's channel
 // webhook configuration does not always allow a custom header.
@@ -90,6 +108,11 @@ if (strlen($raw) > WA_CALL_MAX_BODY) {
     wa_call_reply(400, ['error' => 'body_too_large']);
 }
 
+if ($WA_CALL_DEBUG) {
+    // Scrubbed, so a token echoed inside the body cannot reach the log.
+    error_log('[wa-call-webhook][debug] body: ' . wa_call_scrub(substr($raw, 0, 2000)));
+}
+
 $payload = json_decode($raw, true);
 if (json_last_error() !== JSON_ERROR_NONE || !is_array($payload)) {
     // Malformed rather than merely uninteresting: 400 so the sender sees it is a
@@ -99,6 +122,11 @@ if (json_last_error() !== JSON_ERROR_NONE || !is_array($payload)) {
 }
 
 $verdict = wa_call_webhook_classify($payload, WA_CALL_WABA_ID);
+
+if ($WA_CALL_DEBUG) {
+    error_log('[wa-call-webhook][debug] verdict: ' . $verdict['action']
+            . ($verdict['reason'] !== '' ? ' (' . $verdict['reason'] . ')' : ''));
+}
 
 if ($verdict['action'] !== 'apply') {
     // Authenticated but irrelevant (or malformed): acknowledge so 360dialog stops
