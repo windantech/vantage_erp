@@ -568,9 +568,9 @@ if (!function_exists('bde_targets_progress')) {
             AND ((scope_type='user' AND scope_ref='$ruId') OR scope_type='department')
             ORDER BY scope_type DESC, id");
         $dnLower = strtolower(trim($deptName2));
-        $targets = [];
+        $userTargets = []; $deptTargets = [];
         while ($tq && ($tr = mysqli_fetch_assoc($tq))) {
-            if ($tr['scope_type'] === 'user') { $targets[] = $tr; continue; } // SQL already scoped to this BDE
+            if ($tr['scope_type'] === 'user') { $userTargets[] = $tr; continue; } // SQL already scoped to this BDE
             // department target: keep if it matches this BDE's department (by id, or name either direction)
             $match = ($deptId > 0 && (int) $tr['scope_ref'] === $deptId);
             if (!$match && $dnLower !== '') {
@@ -583,8 +583,12 @@ if (!function_exists('bde_targets_progress')) {
                 $p = strtolower((string) $tr['product']);
                 if ($p !== '' && strpos($p, $digitalProduct) === false) { continue; }
             }
-            $targets[] = $tr;
+            $deptTargets[] = $tr;
         }
+        // A BDE with their OWN (user) targets uses only those. Department targets are the legacy
+        // fallback for people who have none — adding both double-counts (e.g. Corporate: a BDE's own
+        // 2M + the department's leftover 2M = 4M). Prefer user targets whenever they exist.
+        $targets = !empty($userTargets) ? $userTargets : $deptTargets;
         if (empty($targets)) { return $out; }
 
         // --- actuals: collected revenue (USD) over [from,to], total + per course name ---
