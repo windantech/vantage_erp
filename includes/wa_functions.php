@@ -5657,10 +5657,15 @@ function wa_maybe_ai_answer($conn, $waId, $inboundText) {
     $conv['ref_name'] = ($conv['ref_id'] !== null)
         ? wa_ref_name($conn, $conv['ref_type'], (int)$conv['ref_id']) : null;
 
-    // A guided registration in progress owns the chat — never let a (possibly batched)
-    // AI reply talk over the form.
-    if (function_exists('wa_enroll_active') && wa_enroll_active($conn, (int)$contact['id'])) {
-        return ['ok' => false, 'skip' => 'enroll_active'];
+    // A registration that is actually asking questions owns the chat — never let a
+    // (possibly batched) AI reply talk over the form.
+    //
+    // Deliberately owns_chat, not active: in the 'offered' state the form has only
+    // shared a link and asked whether they would like to register here, and it
+    // DEFERS anything else back to the AI. Checking merely "a session exists" made
+    // both sides defer to each other and the customer was answered by nobody.
+    if (function_exists('wa_enroll_owns_chat') && wa_enroll_owns_chat($conn, (int)$contact['id'])) {
+        return ['ok' => false, 'skip' => 'enroll_owns_chat'];
     }
 
     // The ONLY case we stay silent is an explicit Human takeover — an agent clicked

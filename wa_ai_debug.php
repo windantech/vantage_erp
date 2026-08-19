@@ -101,9 +101,17 @@ if ($conv) {
 
 // ---- 4. Enrolment owns the chat? -----------------------------------------
 echo "\n-- interceptors that consume a message before the AI --\n";
-$enrolActive = function_exists('wa_enroll_active') ? (bool)wa_enroll_active($conn, $cid) : false;
-gate('no guided registration in progress', !$enrolActive,
-     $enrolActive ? 'a registration form owns this chat' : '');
+$sess = function_exists('wa_enroll_active') ? wa_enroll_active($conn, $cid) : null;
+$owns = function_exists('wa_enroll_owns_chat') ? wa_enroll_owns_chat($conn, $cid) : (bool)$sess;
+if ($sess) {
+    info('registration session', 'status=' . $sess['status'] . '  step=' . $sess['step']
+        . '  updated ' . (string)($sess['updated_at'] ?? '?'));
+}
+// 'offered' does NOT own the chat: the form defers anything but "yes, here" back to
+// the AI, so the AI must answer. Only collecting/confirm silence it.
+gate('no registration form OWNS the chat', !$owns,
+     $owns ? ('status "' . $sess['status'] . '" — the form is mid-flight and answers instead')
+           : ($sess ? 'session is "' . $sess['status'] . '", which defers to the AI' : ''));
 
 // ---- 5. The 24-hour window ------------------------------------------------
 echo "\n-- 24-hour window --\n";

@@ -35,11 +35,48 @@ function wa_enroll_fields() {
 }
 
 /** Active (still collecting) enrollment session for a contact, or null. */
+/** A registration left untouched this long is abandoned, not in progress. */
+if (!defined('WA_ENROLL_STALE_HOURS')) { define('WA_ENROLL_STALE_HOURS', 12); }
+
+/**
+ * The open registration session for this contact, or null.
+ *
+ * Sessions untouched for WA_ENROLL_STALE_HOURS are cancelled first. Nothing else
+ * ever closed them: a customer who was offered a form and wandered off left a row
+ * that stayed "open" indefinitely, and every gate keyed on it behaved as though a
+ * form were mid-flight for ever.
+ */
 function wa_enroll_active($conn, $contactId) {
     $contactId = (int)$contactId;
+    $hrs = (int)WA_ENROLL_STALE_HOURS;
+    // Idempotent and cheap; keeps an abandoned form from wedging the chat.
+    @mysqli_query($conn, "UPDATE wa_enroll_sessions
+            SET status = 'cancelled'
+          WHERE contact_id = $contactId
+            AND status IN ('offered','collecting','confirm')
+            AND updated_at < (NOW() - INTERVAL $hrs HOUR)");
     $res = mysqli_query($conn, "SELECT * FROM wa_enroll_sessions
         WHERE contact_id = $contactId AND status IN ('offered','collecting','confirm') LIMIT 1");
     return $res ? mysqli_fetch_assoc($res) : null;
+}
+
+/**
+ * Does a registration OWN the conversation — i.e. must the AI stay silent?
+ *
+ * Only while the form is actually asking questions ('collecting') or waiting for a
+ * yes/no ('confirm'). NOT in 'offered', where we have merely shared a link and
+ * asked whether they would like to do it here: wa_enroll_handle() explicitly
+ * DEFERS anything else in that state by returning false, so the AI is supposed to
+ * answer.
+ *
+ * Keying the AI's silence on wa_enroll_active() instead made those two guards
+ * defer to each other — the form said "not mine, let the AI take it", the AI said
+ * "a form owns this chat" — and the customer got nothing at all. Permanently,
+ * because nothing moves an 'offered' session on until the customer opts in.
+ */
+function wa_enroll_owns_chat($conn, $contactId) {
+    $sess = wa_enroll_active($conn, $contactId);
+    return $sess && in_array((string)$sess['status'], ['collecting', 'confirm'], true);
 }
 
 /** Idempotently ensure the 'offered' status exists (added after the first
