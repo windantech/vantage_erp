@@ -221,6 +221,46 @@ check('non-array payload -> ignore', 'ignore',
 check('every ignore is HTTP 200', 200,
     wa_call_webhook_classify(['event' => 'call_status'], $WABA)['code']);
 
+echo "\n-- webhook authentication (header or ?token=) --\n";
+
+$SECRET = 'abcdef0123456789abcdef0123456789';
+$hdr = function ($v) { return ['HTTP_X_VANTAGE_CALL_TOKEN' => $v]; };
+
+check('correct header accepted',  true,
+    wa_call_webhook_authenticate($SECRET, $hdr($SECRET), []));
+check('correct ?token= accepted', true,
+    wa_call_webhook_authenticate($SECRET, [], ['token' => $SECRET]));
+check('header wins when both present and header is right', true,
+    wa_call_webhook_authenticate($SECRET, $hdr($SECRET), ['token' => 'wrong']));
+check('query still accepted when the header is wrong', true,
+    wa_call_webhook_authenticate($SECRET, $hdr('wrong'), ['token' => $SECRET]));
+
+check('wrong header rejected',  false, wa_call_webhook_authenticate($SECRET, $hdr('wrong'), []));
+check('wrong ?token= rejected', false, wa_call_webhook_authenticate($SECRET, [], ['token' => 'wrong']));
+check('no credentials at all rejected', false, wa_call_webhook_authenticate($SECRET, [], []));
+check('empty header value rejected', false, wa_call_webhook_authenticate($SECRET, $hdr(''), []));
+check('empty ?token= rejected', false, wa_call_webhook_authenticate($SECRET, [], ['token' => '']));
+
+// The most dangerous case: an unconfigured server must reject everything rather
+// than treating "both empty" as a match and accepting anonymous webhooks.
+check('unset secret rejects a matching empty header', false,
+    wa_call_webhook_authenticate('', $hdr(''), []));
+check('unset secret rejects an empty ?token=', false,
+    wa_call_webhook_authenticate('', [], ['token' => '']));
+check('unset secret rejects any value', false,
+    wa_call_webhook_authenticate('', $hdr('anything'), ['token' => 'anything']));
+
+// Near-miss values must not pass: hash_equals is length-safe and constant-time.
+check('prefix of the secret rejected', false,
+    wa_call_webhook_authenticate($SECRET, [], ['token' => substr($SECRET, 0, 20)]));
+check('secret with trailing space rejected', false,
+    wa_call_webhook_authenticate($SECRET, [], ['token' => $SECRET . ' ']));
+check('case-changed secret rejected', false,
+    wa_call_webhook_authenticate($SECRET, [], ['token' => strtoupper($SECRET)]));
+
+check('header name is read case-insensitively via SERVER key', true,
+    wa_call_webhook_authenticate($SECRET, ['HTTP_X_VANTAGE_CALL_TOKEN' => $SECRET], []));
+
 echo "\n-- CSRF --\n";
 
 $tok = wa_csrf_token();

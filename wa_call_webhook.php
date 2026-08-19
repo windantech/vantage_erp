@@ -19,8 +19,12 @@
  *       "waba_id": "2402344606956698",
  *       "recipient": "2547XXXXXXXX" }
  *
+ * The query form is supported because the 360dialog console does not always allow
+ * a custom header. It is weaker — the secret is written into access logs on every
+ * delivery — so rotate it if you later switch to the header.
+ *
  * Response contract (what 360dialog does with each is why they differ):
- *   403  missing or invalid X-Vantage-Call-Token
+ *   403  missing or invalid credentials (header or ?token=)
  *   400  unreadable body — malformed JSON, or larger than the size limit
  *   200  applied, a duplicate retry, or an authenticated event we do not care
  *        about. Retrying would change nothing, so we acknowledge.
@@ -55,14 +59,14 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // here). Answer without revealing anything.
 if ($method !== 'POST') { wa_call_reply(405, ['error' => 'method_not_allowed']); }
 
-// ---- Authentication: custom header, separate secret from the messaging channel --
+// ---- Authentication: separate secret from the messaging channel ---------------
+// Accepts the X-Vantage-Call-Token header or ?token=, because 360dialog's channel
+// webhook configuration does not always allow a custom header.
 $secrets = wa_call_secrets();
-$given   = wa_call_webhook_header(WA_CALL_WEBHOOK_HEADER);
-if ($secrets['webhook_token'] === '' || $given === ''
-    || !hash_equals($secrets['webhook_token'], $given)) {
-    // The header NAME is logged, never the value submitted — an attacker's guess is
-    // still a secret-shaped string, and our own token must never reach a log file.
-    error_log('[wa-call-webhook] 403 — missing or invalid ' . WA_CALL_WEBHOOK_HEADER);
+if (!wa_call_webhook_authenticate($secrets['webhook_token'])) {
+    // Neither the submitted value nor our own is logged — an attacker's guess is
+    // still a secret-shaped string, and our token must never reach a log file.
+    error_log('[wa-call-webhook] 403 — missing or invalid credentials');
     wa_call_reply(403, ['error' => 'forbidden']);
 }
 

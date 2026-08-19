@@ -25,6 +25,43 @@ function wa_call_webhook_header($name, $server = null) {
 }
 
 /**
+ * Authenticate a webhook request. Pure — pass in the arrays rather than reading
+ * superglobals, so every branch is testable.
+ *
+ * Two accepted forms, header first:
+ *
+ *   1. X-Vantage-Call-Token: <secret>      preferred
+ *   2. ?token=<secret>                     accepted
+ *
+ * The query form exists because 360dialog's channel webhook configuration does not
+ * always allow a custom header, and it is the shape the messaging webhook already
+ * uses. It is genuinely weaker: a URL lands in web-server access logs, proxy logs
+ * and anything that records request lines, so the secret is written to disk on
+ * every delivery. Prefer the header where the console allows it, and treat a
+ * query-parameter token as rotatable rather than long-lived.
+ *
+ * @return bool
+ */
+function wa_call_webhook_authenticate($expected, $server = null, $get = null) {
+    $expected = (string)$expected;
+    // An unset secret must never authenticate anything, and must not be allowed to
+    // match an equally empty submission.
+    if ($expected === '') { return false; }
+
+    $header = wa_call_webhook_header(
+        defined('WA_CALL_WEBHOOK_HEADER') ? WA_CALL_WEBHOOK_HEADER : 'X-Vantage-Call-Token',
+        $server
+    );
+    if ($header !== '' && hash_equals($expected, $header)) { return true; }
+
+    $q = is_array($get) ? $get : $_GET;
+    $query = isset($q['token']) ? (string)$q['token'] : '';
+    if ($query !== '' && hash_equals($expected, $query)) { return true; }
+
+    return false;
+}
+
+/**
  * Decide what to do with a decoded webhook body. Pure — no database, no I/O.
  *
  * The payload is documented at the ROOT of the body, not nested in
