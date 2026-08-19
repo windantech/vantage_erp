@@ -16,6 +16,8 @@ $is_supervisor = in_array(777, $role);
 wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before the inbox query reads it
 wa_conv_reengage_schema_ensure($conn);   // ensure reengaged_at exists before the inbox query reads it
 wa_conv_mode_schema_ensure($conn);       // ensure program_id exists before the scope/triage SQL reads it
+wa_channel_schema_ensure($conn);         // ensure last_channel exists before the query below reads it
+wa_call_permission_schema_ensure($conn); // ensure wa_call_permissions exists for the Ready-to-Call predicate
 
 $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);

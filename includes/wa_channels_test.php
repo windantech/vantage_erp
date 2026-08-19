@@ -198,6 +198,27 @@ check('manual button uses the chooser', true,
 check('neither calls the template sender directly', 0,
     preg_match('/wa_call_send_permission_template/', $offer . $proc));
 
+echo "\n-- every page that READS a channel column creates it first --\n";
+
+// mysqli throws on PHP 8.1+, so a query naming a column that does not exist yet is
+// an uncaught fatal — the page renders its sidebar and then simply stops, with
+// nothing in the log to say why. Each entry point must run the schema ensure
+// BEFORE its query, not rely on some other request having done it.
+foreach (['wa_inbox.php' => __DIR__ . '/../wa_inbox.php',
+          'wa_api.php'   => __DIR__ . '/wa_api.php'] as $label => $path) {
+    $src = file_get_contents($path);
+    $reads  = strpos($src, 'cv.last_channel');
+    $ensure = strpos($src, 'wa_channel_schema_ensure($conn)');
+    check($label . ': reads last_channel', true, $reads !== false);
+    check($label . ': ensures the column first', true, $ensure !== false && $ensure < $reads);
+
+    // Same for the Ready-to-Call predicate's table.
+    $rtc  = strpos($src, 'wa_ready_to_call_sql');
+    $perm = strpos($src, 'wa_call_permission_schema_ensure($conn)');
+    check($label . ': ensures wa_call_permissions first', true,
+        $perm !== false && $rtc !== false && $perm < $rtc);
+}
+
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }
 exit($failures === 0 ? 0 : 1);

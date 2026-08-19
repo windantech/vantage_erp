@@ -360,6 +360,8 @@ if ($action === 'inbox') {
     wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before we read it
     wa_conv_reengage_schema_ensure($conn);   // ensure reengaged_at exists before we read it
     wa_conv_mode_schema_ensure($conn);       // ensure program_id exists before the scope/triage SQL reads it
+wa_channel_schema_ensure($conn);         // ensure last_channel exists before the query below reads it
+wa_call_permission_schema_ensure($conn); // ensure wa_call_permissions exists for the Ready-to-Call predicate
     $where = wa_inbox_scope_where($staff_id, $is_supervisor);   // reps see their own courses' chats
     $sql = "
         SELECT cv.id, cv.handler, cv.escalated, cv.last_message_at,
