@@ -288,6 +288,54 @@ check('names the calling line', true, strpos(WA_CALL_OFFER_NOTICE, '+254 798 009
 check('offers to keep chatting',  true, strpos(WA_CALL_OFFER_NOTICE, 'continue chatting') !== false);
 check('no second requested event exists', 0, preg_match('/auto_requested/', $src));
 
+echo "\n-- a first enquiry on the calling line always asks --\n";
+
+// Only the calling line. A message to the enquiry number must change nothing.
+check('messaging line -> not this trigger', 'not_calling_line',
+    wa_call_offer_force_on_calling_line(null, 1, '254745811248', 'messaging')['skip']);
+check('empty channel -> not this trigger', 'not_calling_line',
+    wa_call_offer_force_on_calling_line(null, 1, '254745811248', '')['skip']);
+check('no contact -> refused', 'no_contact',
+    wa_call_offer_force_on_calling_line(null, 0, '254745811248', 'calling')['skip']);
+check('no number -> refused', 'no_contact',
+    wa_call_offer_force_on_calling_line(null, 1, '', 'calling')['skip']);
+
+$src = file_get_contents(__DIR__ . '/wa_call_offer.php');
+// It must NOT wait for the model or the interest detector — that is the point.
+$fn  = substr($src, strpos($src, 'function wa_call_offer_force_on_calling_line'));
+check('does not require the model flag', 0, preg_match('/\$aiFlag/', $fn));
+check('does not require detected interest', 0, preg_match('/wa_call_interest_detected/', $fn));
+check('does not require an identified topic', 0, preg_match('/wa_call_offer_topic_known/', $fn));
+// But it must NOT bypass the things that protect the customer and the quota.
+check('still honours opt-out',        true, strpos($fn, 'opted_out') !== false);
+check('still honours configuration',  true, strpos($fn, 'wa_call_unavailable_reason()') !== false);
+check('still validates the number',   true, strpos($fn, 'wa_voice_e164($waId)') !== false);
+check('still honours Phase 1.1 eligibility', true,
+    strpos($fn, 'wa_call_offer_auto_allowed(') !== false);
+check('uses the shared request sequence', true,
+    strpos($fn, 'wa_call_offer_do_request($conn, $contactId, $waId, $e164)') !== false);
+
+// Fires once, on the first inbound on that line.
+check('counts inbound on the calling line only', true,
+    strpos($fn, "channel = 'calling'") !== false);
+check('fires only when that count is 1', true, strpos($fn, "!== 1") !== false);
+check('later messages are skipped', true, strpos($fn, 'not_first_on_line') !== false);
+
+// Both automated paths converge on one request sequence.
+check('the interest path uses it too', true,
+    strpos($src, 'return wa_call_offer_do_request($conn, $contactId, $waId, $e164);') !== false);
+check('only one place claims the lease', 1,
+    preg_match_all('/wa_call_claim_request\(/', $src));
+check('only one place sends the notice', 1,
+    preg_match_all('/WA_CALL_OFFER_NOTICE\)/', $src));
+
+$inb = file_get_contents(__DIR__ . '/wa_inbound.php');
+check('runs before the enrolment interceptor', true,
+    strpos($inb, 'wa_call_offer_force_on_calling_line') < strpos($inb, 'wa_enroll_active($conn, $contactId)'));
+check('runs before opt-out handling', true,
+    strpos($inb, 'wa_call_offer_force_on_calling_line') < strpos($inb, 'wa_handle_optout'));
+check('cannot break message handling', true, strpos($inb, 'catch (Throwable $e)') !== false);
+
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }
 exit($failures === 0 ? 0 : 1);

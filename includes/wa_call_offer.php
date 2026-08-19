@@ -202,6 +202,22 @@ function wa_call_offer_maybe_request($conn, $conv, $inboundText, $aiFlag) {
     $auto   = wa_call_offer_auto_allowed($status['derived']['state'], $status['throttle']);
     if (empty($auto['allowed'])) { $out['skip'] = $auto['reason']; return $out; }
 
+    return wa_call_offer_do_request($conn, $contactId, $waId, $e164);
+}
+
+/**
+ * Claim, send and explain — the part shared by every automated request.
+ *
+ * Split out so the forced calling-line request runs the IDENTICAL sequence as the
+ * interest-driven one: same Phase 1.1 lease, same throttle, same 'api' attribution,
+ * same rollback, and the same rule that the customer is only told once 360dialog
+ * has accepted it.
+ *
+ * @return array {sent:bool, skip:string, error:string}
+ */
+function wa_call_offer_do_request($conn, $contactId, $waId, $e164) {
+    $out = ['sent' => false, 'skip' => '', 'error' => ''];
+
     // --- Reuse Phase 1.1 end to end. actor_id NULL marks it automated. -----
     $claim = wa_call_claim_request($conn, $contactId, null, WA_CALL_PHONE_ID);
     if (empty($claim['ok'])) {
@@ -288,4 +304,61 @@ function wa_ready_to_call_granted_sql($a = 'cv') {
               WHERE rp3.contact_id = $a.contact_id
                 AND rp3.business_phone_id = $pid
                 AND rp3.status = 'granted' LIMIT 1)";
+}
+
+/**
+ * A first enquiry on the CALLING line always gets a permission request.
+ *
+ * Someone who writes to +254798009935 has gone to the calling number rather than
+ * the enquiry number, which is intent enough on its own — so this deliberately
+ * does NOT wait for the model's flag or for wa_call_interest_detected() to agree,
+ * and does not require a course to have been identified yet. Any prior history on
+ * the messaging line is irrelevant.
+ *
+ * It fires on their FIRST inbound on that line only. Every later message is
+ * ignored here, so a conversation on the calling line does not re-ask; a repeat
+ * would in any case be refused by the Phase 1.1 lease and throttle, but not asking
+ * is better than being refused.
+ *
+ * What it does NOT bypass: the Phase 1.1 eligibility, lease, throttle and
+ * configuration checks. Those exist because Meta counts the requests and the
+ * customer only tolerates so many.
+ *
+ * A side benefit of the timing: they have just messaged that line, so its window
+ * is open and the request goes by the free in-window route rather than a paid
+ * template.
+ *
+ * @return array {sent:bool, skip:string, error:string}
+ */
+function wa_call_offer_force_on_calling_line($conn, $contactId, $waId, $channel) {
+    $out = ['sent' => false, 'skip' => '', 'error' => ''];
+
+    if ((string)$channel !== 'calling') { $out['skip'] = 'not_calling_line'; return $out; }
+
+    $contactId = (int)$contactId;
+    if ($contactId < 1 || trim((string)$waId) === '') { $out['skip'] = 'no_contact'; return $out; }
+
+    // First message on this line only. The row for THIS message is already stored,
+    // so the first one counts exactly 1.
+    $n = wa_call_fetch($conn,
+        "SELECT COUNT(*) AS n FROM wa_messages
+          WHERE contact_id = ? AND direction = 'inbound' AND type <> 'note' AND channel = 'calling'",
+        'i', [$contactId]);
+    if ((int)($n['n'] ?? 0) !== 1) { $out['skip'] = 'not_first_on_line'; return $out; }
+
+    $opted = wa_call_fetch($conn, "SELECT opted_out FROM wa_contacts WHERE id = ? LIMIT 1",
+                           'i', [$contactId]);
+    if ($opted && (int)$opted['opted_out'] === 1) { $out['skip'] = 'opted_out'; return $out; }
+
+    if (wa_call_unavailable_reason() !== '') { $out['skip'] = 'not_configured'; return $out; }
+
+    if (!function_exists('wa_voice_e164')) { $out['skip'] = 'no_voice_helper'; return $out; }
+    $e164 = wa_voice_e164($waId);
+    if ($e164 === '') { $out['skip'] = 'invalid_number'; return $out; }
+
+    $status = wa_call_status($conn, $contactId, WA_CALL_PHONE_ID);
+    $auto   = wa_call_offer_auto_allowed($status['derived']['state'], $status['throttle']);
+    if (empty($auto['allowed'])) { $out['skip'] = $auto['reason']; return $out; }
+
+    return wa_call_offer_do_request($conn, $contactId, $waId, $e164);
 }

@@ -77,6 +77,27 @@ function wa_webhook_store($conn, $message, $names, $channel = null) {
         // every existing reader kept working while channels were introduced.
         wa_ensure_conversation($conn, $contactId);
         wa_channel_touch_inbound($conn, $contactId, $channel, $ts);
+
+        // A FIRST enquiry on the calling line always gets a permission request.
+        // Going to the calling number rather than the enquiry number is intent
+        // enough, so this does not wait for the AI to judge it, and does not care
+        // whether they have talked to us on the messaging line before.
+        //
+        // Placed here, before the interceptors, because it must run whatever else
+        // this message turns out to be — an enrolment step, an opt-out, a bare
+        // greeting. It only ever fires once per contact, and still obeys the
+        // Phase 1.1 eligibility, lease and throttle.
+        if (function_exists('wa_call_offer_force_on_calling_line')) {
+            try {
+                $forced = wa_call_offer_force_on_calling_line($conn, $contactId, $waId, $channel);
+                if (!empty($forced['sent']) || ($forced['skip'] ?? '') !== 'not_calling_line') {
+                    error_log('[wa-call-force] ' . json_encode($forced));
+                }
+            } catch (Throwable $e) {
+                // Must never stop the message being handled normally.
+                error_log('[wa-call-force] ' . $e->getMessage());
+            }
+        }
         // If a registration capture is ALREADY in progress, let it handle the
         // message FIRST — so "cancel"/"stop" ends the FORM (not the whole
         // subscription) and questions can be diverted to the AI. Runs before
