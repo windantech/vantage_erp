@@ -755,19 +755,28 @@ if (!function_exists('bdo_rollup')) {
             $out['threshold'] = $tr['threshold_pct'] !== null ? (float) $tr['target_value'] * (float) $tr['threshold_pct'] / 100.0 : 0.0;
         }
 
-        // resolve the department's BDEs by product family in bde_targets (user-scoped, excluding the BDO)
+        // resolve the department's BDEs
         $dl = strtolower($out['dept']);
-        $filter = '';
-        if (strpos($dl, 'corporate') !== false) { $filter = "product='Corporate'"; }
-        elseif (strpos($dl, 'international') !== false) { $filter = "product='International'"; }
-        elseif (strpos($dl, 'virtual') !== false) { $filter = "metric_label='Course revenue'"; }
-        elseif (strpos($dl, 'digital') !== false) { $filter = "(product LIKE 'Eval%' OR product LIKE '%Appraisal%')"; }
-
+        $isDigital = strpos($dl, 'digital') !== false;
         $bdeIds = [];
-        if ($filter !== '') {
-            $q = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets
-                WHERE scope_type='user' AND $filter AND metric NOT IN ('dept_revenue','dept_participants') AND scope_ref <> '$bdoId'");
-            while ($q && ($r = mysqli_fetch_assoc($q))) { $bdeIds[] = (int) $r['scope_ref']; }
+        if ($isDigital && function_exists('bde_digital_roster')) {
+            // Digital BDE targets are DEPARTMENT-scoped (not user), so a product filter finds no users —
+            // resolve Austin/Ruth by the named roster (Alein is the BDO and is excluded).
+            foreach (bde_digital_roster() as $dn) {
+                $like = '%' . str_replace(' ', '%', mysqli_real_escape_string($conn, $dn)) . '%';
+                $nq = @mysqli_query($conn, "SELECT id FROM registered_users WHERE fullname LIKE '$like' AND status=1 ORDER BY id LIMIT 1");
+                if ($nq && ($nr = mysqli_fetch_assoc($nq))) { $rid = (int) $nr['id']; if ($rid !== $bdoId) { $bdeIds[] = $rid; } }
+            }
+        } else {
+            $filter = '';
+            if (strpos($dl, 'corporate') !== false) { $filter = "product='Corporate'"; }
+            elseif (strpos($dl, 'international') !== false) { $filter = "product='International'"; }
+            elseif (strpos($dl, 'virtual') !== false) { $filter = "metric_label='Course revenue'"; }
+            if ($filter !== '') {
+                $q = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets
+                    WHERE scope_type='user' AND $filter AND metric NOT IN ('dept_revenue','dept_participants') AND scope_ref <> '$bdoId'");
+                while ($q && ($r = mysqli_fetch_assoc($q))) { $bdeIds[] = (int) $r['scope_ref']; }
+            }
         }
 
         // each BDE's own revenue target (for the team table's vs-target column)
@@ -777,6 +786,12 @@ if (!function_exists('bdo_rollup')) {
             $mtq = @mysqli_query($conn, "SELECT scope_ref, SUM(target_value) t FROM bde_targets
                 WHERE scope_type='user' AND metric='revenue' AND scope_ref IN ($in) GROUP BY scope_ref");
             while ($mtq && ($mr = mysqli_fetch_assoc($mtq))) { $memTarget[(int) $mr['scope_ref']] = (float) $mr['t']; }
+        }
+        // Digital targets are department-scoped (Eval360 / 360 Appraisal) — resolve each member's by product.
+        $evalT = 0.0; $apprT = 0.0;
+        if ($isDigital) {
+            $dtq = @mysqli_query($conn, "SELECT product, SUM(target_value) t FROM bde_targets WHERE scope_type='department' AND metric='revenue' AND (product LIKE 'Eval%' OR product LIKE '%Appraisal%') GROUP BY product");
+            while ($dtq && ($dtr = mysqli_fetch_assoc($dtq))) { $p = strtolower((string) $dtr['product']); if (strpos($p, 'eval') !== false) { $evalT += (float) $dtr['t']; } elseif (strpos($p, 'appraisal') !== false) { $apprT += (float) $dtr['t']; } }
         }
 
         // aggregate each BDE's REAL numbers, deduped by name (duplicate logins share a person)
@@ -790,9 +805,11 @@ if (!function_exists('bdo_rollup')) {
             // sum, or Josiah #69+#98 would double the department's lead count.
             $ml = (int) ($m['total_leads'] ?? 0);
             if ($ml > (int) $byName[$key]['leads']) { $byName[$key]['leads'] = $ml; $byName[$key]['srcRow'] = ($m['sources'] ?? []); }
-            // target is seeded identically on each duplicate login of the same person — take it ONCE
-            // (max), never summed, or a duplicate login doubles the target (e.g. Josiah #69+#98 → 4M).
-            $byName[$key]['target']  = max($byName[$key]['target'], $memTarget[$bid] ?? 0.0);
+            // target: take it ONCE (max), never summed across a person's duplicate logins. Digital
+            // members get their product's department-scoped target (Austin→Eval360, Ruth→360 Appraisal).
+            $mt = $memTarget[$bid] ?? 0.0;
+            if ($isDigital) { $nm = strtolower((string) $m['name']); if (strpos($nm, 'austin') !== false) { $mt = $evalT; } elseif (strpos($nm, 'ruth') !== false) { $mt = $apprT; } }
+            $byName[$key]['target']  = max($byName[$key]['target'], $mt);
             $byName[$key]['actual']  += (float) $m['revenue_kes'];
             $byName[$key]['clients'] += (int) $m['paid_clients'];
             $byName[$key]['pipeline'] += max(0.0, ((float) $m['expected_usd'] - (float) $m['revenue_usd'])) * $rate;
