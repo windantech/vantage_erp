@@ -817,7 +817,7 @@ function wa_classify_event($conn, $text) {
     $msg = ' ' . wa_normalize($text) . ' ';
     $res = mysqli_query($conn,
         "SELECT event_id, event_title, location FROM `Event`
-          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%'
+          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%' AND location NOT LIKE 'CORPORATE#%'
             AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
                  OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())");
     if (!$res) { return ['event_id' => null, 'confidence' => 0.0]; }
@@ -954,7 +954,7 @@ function wa_ai_classify_event($conn, $text) {
     if (!wa_provider_ready($provider)) { return ['event_id' => null, 'confidence' => 0.0]; }
     $res = mysqli_query($conn,
         "SELECT event_id, event_title, location FROM `Event`
-          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%'
+          WHERE status = 1 AND location IS NOT NULL AND location <> '' AND location NOT LIKE 'ACADEMIC#%' AND location NOT LIKE 'CORPORATE#%'
             AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
                  OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
           ORDER BY event_title ASC LIMIT 60");
@@ -1133,7 +1133,7 @@ function wa_course_onsite_event($conn, $courseId) {
     // In-person only: exclude academic/online rows; keep upcoming (tolerant of legacy dates).
     $res = mysqli_query($conn,
         "SELECT event_id FROM `Event`
-          WHERE status = 1 AND location NOT LIKE 'ACADEMIC#%' AND $match
+          WHERE status = 1 AND location NOT LIKE 'ACADEMIC#%' AND location NOT LIKE 'CORPORATE#%' AND $match
             AND (end_on IS NULL OR end_on = '0000-00-00' OR end_on >= CURDATE()
                  OR start_on IS NULL OR start_on = '0000-00-00' OR start_on >= CURDATE())
           ORDER BY (start_on IS NULL OR start_on = '0000-00-00'), start_on ASC
@@ -3040,6 +3040,13 @@ function wa_active_events($conn) {
  *  are open year-round (register anytime), not date-bound like location events. */
 function wa_event_is_academic($location) {
     return stripos(ltrim((string)$location), 'ACADEMIC#') === 0;
+}
+
+/** True if an Event row is a corporate training — flagged by a location marker
+ *  'CORPORATE#<qualification>' (mirrors the ACADEMIC# convention). Register-anytime,
+ *  not a date-bound country event. */
+function wa_event_is_corporate($location) {
+    return stripos(ltrim((string)$location), 'CORPORATE#') === 0;
 }
 
 /** How one Event session reads in a catalogue. Academic (intake-based) rows show

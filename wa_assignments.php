@@ -34,7 +34,8 @@ foreach (wa_active_courses($conn) as $c) {
                'primary'   => (int) wa_owner_override($conn, 'course', (int)$c['id'])];
 }
 foreach (wa_active_events($conn) as $e) {
-    $cat = wa_event_is_academic($e['location'] ?? '') ? 'academic' : 'international';
+    $loc = $e['location'] ?? '';
+    $cat = wa_event_is_corporate($loc) ? 'corporate' : (wa_event_is_academic($loc) ? 'academic' : 'international');
     $rows[] = ['cat' => $cat, 'type' => 'event', 'id' => (int)$e['id'], 'name' => $e['name'],
                'assignees' => $assignee_ids($conn, 'event', (int)$e['id']),
                'primary'   => (int) wa_owner_override($conn, 'event', (int)$e['id'])];
@@ -43,6 +44,7 @@ foreach (wa_active_events($conn) as $e) {
 // Group for display.
 $groups = [
     'virtual'       => ['label' => 'Virtual Courses',      'icon' => 'bi-laptop',     'rows' => []],
+    'corporate'     => ['label' => 'Corporate Trainings',  'icon' => 'bi-briefcase',  'rows' => []],
     'international'  => ['label' => 'International Events',  'icon' => 'bi-globe',      'rows' => []],
     'academic'      => ['label' => 'Academic Programmes',   'icon' => 'bi-mortarboard','rows' => []],
 ];
@@ -179,7 +181,7 @@ function wa_render_assign_row($r, $staff, $staffMap) {
                         <table class="table table-hover mb-0 assignTable">
                             <thead class="bg-light">
                                 <tr>
-                                    <th scope="col" class="ps-3" style="width:26%"><?php echo $key === 'virtual' ? 'Course' : 'Event / Programme'; ?></th>
+                                    <th scope="col" class="ps-3" style="width:26%"><?php echo $key === 'virtual' ? 'Course' : ($key === 'corporate' ? 'Training' : 'Event / Programme'); ?></th>
                                     <th scope="col">Assigned reps <small class="text-muted fw-normal">— ★ = primary · ✕ removes</small></th>
                                     <th scope="col" style="width:430px">Actions</th>
                                 </tr>
