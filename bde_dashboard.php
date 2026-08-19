@@ -894,19 +894,17 @@ if ($bde_is_admin) {
 
       function vPipeline(){
         const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
-        const dept=(B.dept||"").toLowerCase();const isCorp=/corporate/.test(dept);
+        const dept=(B.dept||"").toLowerCase();
         const nChat=(B.unreadCount||0), nQuiet=(B.quietLeads||[]).length, nProm=(B.promises||[]).length;
         const stale=[];
         if(nChat>0) stale.push({t:`${nChat} WhatsApp chat${nChat>1?"s":""} escalated to you`,p:"Chats routed to you for a human reply — respond today.",c:"red",act:"chats"});
         if(nProm>0) stale.push({t:`${nProm} client${nProm>1?"s":""} promised to pay in chat`,p:"They said they'd pay on WhatsApp — confirm and close.",c:"amber",act:"promises"});
         if(nQuiet>0) stale.push({t:`${nQuiet} unpaid lead${nQuiet>1?"s":""} gone quiet`,p:"Registered, not yet paid, no recent contact — follow up.",c:"amber",act:"quiet"});
-        if(isCorp) stale.push({t:`Proposals awaiting a confirmed review date`,p:"Corporate proposals need a scheduled review.",c:"amber",act:""});
         // Conversion-quality — derived from this BDE's real numbers.
         const quality=[];
         const leadN=(B.totalLeads||B.totalRegs||0);const convR=leadN?((B.paidClients||0)/leadN):0;
         if(leadN>5&&convR<0.4) quality.push(`Low conversion — only ${pct(convR,0)} of ${nf.format(leadN)} leads have paid`);
         if(B.collection!=null&&B.collection>0&&B.collection<0.7) quality.push(`Collection at ${pct(B.collection,0)} — fees expected but not fully in`);
-        if((B.sources||[]).length===1) quality.push(`All leads from one channel (${B.sources[0][0]}) — diversify sources`);
         // Cross-SBU — opportunities another department logged (via field visits) for this BDE's SBU.
         const cross=(B.crossSbu||[]);
         const showPriorities=/digital/i.test(B.dept||"");
