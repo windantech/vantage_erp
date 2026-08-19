@@ -329,6 +329,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+        // Edwin (the Corporate BDO) also carries the 2M Corporate floor as his PERSONAL minimum
+        // (shown in his personal-performance section), on top of his 10M department target.
+        foreach ($resolveAll('Edwin Otieno') as $a) {
+            $slE = mysqli_real_escape_string($conn, $a['name']);
+            @mysqli_query($conn, "DELETE FROM bde_targets WHERE scope_type='user' AND scope_ref='{$a['id']}' AND metric='revenue' AND product='Corporate'");
+            if (@mysqli_query($conn, "INSERT INTO bde_targets (scope_type,scope_ref,scope_label,product,metric,metric_label,unit,target_value,threshold_pct,notes,created_by)
+                VALUES ('user','{$a['id']}','$slE','Corporate','revenue','Monthly revenue','KES',2000000,NULL,'Kshs 2,000,000 personal floor',$me)")) { $seeded++; $done[] = $a['name'] . ' #' . $a['id'] . ' → 2M floor'; }
+        }
         $flash = "Seeded $seeded Corporate course target(s): " . implode('; ', $done) . '.'
             . (empty($unresolved) ? '' : ' COULD NOT MATCH: ' . implode(', ', array_unique($unresolved)) . ' — send exact CRM names.');
         $flash_ok = $seeded > 0;

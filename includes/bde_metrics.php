@@ -823,6 +823,10 @@ if (!function_exists('bdo_rollup')) {
         $btq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets
             WHERE scope_type='user' AND scope_ref='$bdoId' AND metric IN ('revenue','course_revenue')");
         if ($btq && ($btr = mysqli_fetch_assoc($btq))) { $bdoTarget = (float) $btr['t']; }
+        // the BDO's PERSONAL monthly floor (their own revenue target, e.g. Edwin's 2M) — courses show separately
+        $ownFloor = 0.0;
+        $fq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets WHERE scope_type='user' AND scope_ref='$bdoId' AND metric='revenue'");
+        if ($fq && ($fr = mysqli_fetch_assoc($fq))) { $ownFloor = (float) $fr['t']; }
         if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
@@ -848,6 +852,10 @@ if (!function_exists('bdo_rollup')) {
             $out['courses'][] = ['name' => (string) $cr['product'], 'target' => (float) $cr['target_value'],
                 'threshold' => $cr['threshold_pct'] !== null ? (float) $cr['target_value'] * (float) $cr['threshold_pct'] / 100.0 : 0.0];
         }
+        $out['ownTarget'] = $ownFloor;
+        $out['ownActual'] = (float) $bm['revenue_kes'];
+        $out['ownClients'] = (int) $bm['paid_clients'];
+        $out['ownLeads'] = (int) ($bm['total_leads'] ?? 0);
         return $out;
     }
 }

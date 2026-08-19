@@ -223,6 +223,7 @@ if ($bdo && !empty($bdo['team'])) {
     .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
     .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
 
+    .bde-app .persband{background:var(--surface2);border:1px solid var(--line);border-radius:18px;padding:4px 16px 16px;margin:4px 0}
     .bde-app .bde-foot{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6} .bde-app .bde-foot code{background:var(--surface2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
 
     @media(max-width:1000px){
@@ -332,6 +333,10 @@ if ($bdo && !empty($bdo['team'])) {
       B.totalLeads = <?php echo (int) ($bdo['totalLeads'] ?? 0); ?>;
       B.paidClients = <?php echo (int) ($bdo['clients'] ?? 0); ?>;
       B.courses = <?php echo json_encode($bdo['courses'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.ownTarget = <?php echo (float) ($bdo['ownTarget'] ?? 0); ?>;
+      B.ownActual = <?php echo (float) ($bdo['ownActual'] ?? 0); ?>;
+      B.ownClients = <?php echo (int) ($bdo['ownClients'] ?? 0); ?>;
+      B.ownLeads = <?php echo (int) ($bdo['ownLeads'] ?? 0); ?>;
       B.notes = <?php echo json_encode((object) $bdo_notes, JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}'; ?>;
       B.canNote = <?php echo $bdo_is_admin ? 'true' : 'false'; ?>;
       B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
@@ -467,30 +472,44 @@ if ($bdo && !empty($bdo['team'])) {
         return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th>${B.canNote?'<th style="width:96px">Note</th>':""}</tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span></td>${B.canNote?`<td>${t.id?`<button type="button" class="notebtn tbtn" data-bde="${t.id}" data-name="${esc(t.name)}" style="padding:5px 11px;font-size:11.5px;white-space:nowrap">✎ ${(B.notes&&B.notes[t.id]&&((((B.notes[t.id].t||"").trim())||((B.notes[t.id].c||"").trim())))?"Edit":"Add note")}</button>`:""}</td>`:""}</tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
-      function bdoCoursesCard(){
-        if(!B.courses||!B.courses.length) return "";
-        return `<div class="card"><div class="chead"><h4>Your own course targets</h4><span class="chip slate">${B.courses.length} course${B.courses.length>1?"s":""}</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">${B.courses.map(c=>`<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface2)"><div style="font-size:13px;font-weight:800;color:var(--ink);margin-bottom:10px">${esc(c.name)}</div><div style="display:flex;gap:10px"><div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px">100% target</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.target)}</b></div>${c.threshold>0?`<div style="flex:1;background:var(--surface);border:1px solid var(--gold-line);border-radius:10px;padding:8px 11px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);margin-bottom:3px">80% qualifying</span><b style="font-size:15.5px;font-weight:800;color:var(--ink)">${kMoney(c.threshold)}</b></div>`:""}</div></div>`).join("")}</div></div>`;
+      function bdoTargetsCard(){
+        const box=(cap,val,gold)=>`<div style="flex:1;min-width:130px;background:var(--surface);border:1px solid ${gold?"var(--gold-line)":"var(--line)"};border-radius:10px;padding:9px 12px"><span style="display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${gold?"var(--gold)":"var(--muted)"};margin-bottom:3px">${cap}</span><b style="font-size:16px;font-weight:800;color:var(--ink)">${kMoney(val)}</b></div>`;
+        const floor=(+B.ownTarget)||0;
+        let body="";
+        if(floor>0){ body+=`<div><div style="font-size:13px;font-weight:800;color:var(--ink)">Corporate</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 8px">Monthly revenue · your floor</div><div style="display:flex;gap:10px">${box("100% target",floor,false)}</div></div>`; }
+        (B.courses||[]).forEach((c,i)=>{ body+=`<div style="${(floor>0||i>0)?"border-top:1px solid var(--line);padding-top:13px;margin-top:13px":""}"><div style="font-size:13px;font-weight:800;color:var(--ink)">${esc(c.name)}</div><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 8px">Course revenue</div><div style="display:flex;gap:10px;flex-wrap:wrap">${box("100% target",c.target,false)}${c.threshold>0?box("80% qualifying",c.threshold,true):""}</div></div>`; });
+        return `<div class="card"><div class="chead"><h4>Your targets</h4><span class="chip slate">Monthly</span></div>${body}</div>`;
+      }
+      function personalDrivers(){
+        const pt=(+B.ownTarget)||0;const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;
+        const dAcc=["var(--brand)","var(--jade)","#3a7bd5","var(--gold)"];
+        const items=[["Cleared revenue",kMoney(pa),pct(att,0)+" of your target"],["Remaining to target",kMoney(Math.max(0,pt-pa)),"target − collected"],["Paid clients",nf.format(B.ownClients||0),"Finance-verified"],["Your leads",nf.format(B.ownLeads||0),"attributed to you"]];
+        return `<div class="card"><div class="chead"><h4>Your execution drivers</h4><span class="chip slate">Personal</span></div><div class="drivers">${items.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="live">You</span></div><div class="n num">${esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function bdoPersonalSection(){
-        if(!B.courses||!B.courses.length) return "";
-        const me=(B.team||[]).find(t=>t.me)||{target:0,actual:0,clients:0};
-        const pt=(+me.target)||B.courses.reduce((s,c)=>s+(+c.target||0),0);
-        const pa=(+me.actual)||0;const att=pt?pa/pt:0;
+        const floor=(+B.ownTarget)||0;
+        if(floor<=0 && (!B.courses||!B.courses.length)) return "";
+        const pt=floor||(B.courses||[]).reduce((s,c)=>s+(+c.target||0),0);
+        const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;
         const st=att>=1?"jade":att>=.8?"amber":"coral";
-        return `<div class="section-tag"><h3>Your personal performance</h3><span>You sell too — your own course target, tracked alongside the department's</span><div class="rule"></div></div>
+        return `<div class="persband">
+          <div class="section-tag"><h3>Your personal performance</h3><span>You sell too — your own target, tracked separately from the department</span><div class="rule"></div></div>
           <section class="hero">
-            ${bdoCoursesCard()}
+            ${bdoTargetsCard()}
             <div class="card prog"><div class="chead"><h4>Progress to your target</h4><span class="chip ${st} num">${pct(att)}</span></div>
               <div class="pl">Your cleared · <b class="num">${kMoney(pa)} / ${kMoney(pt)}</b></div>
               <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div></div>
-              <div class="mini3"><div class="cm"><span>Cleared</span><b class="num">${kMoney(pa)}</b></div><div class="cm"><span>Remaining</span><b class="num">${kMoney(Math.max(0,pt-pa))}</b></div><div class="cm"><span>Paid clients</span><b class="num">${nf.format(me.clients||0)}</b></div></div>
+              <div class="mini3"><div class="cm"><span>Cleared</span><b class="num">${kMoney(pa)}</b></div><div class="cm"><span>Remaining</span><b class="num">${kMoney(Math.max(0,pt-pa))}</b></div><div class="cm"><span>Paid clients</span><b class="num">${nf.format(B.ownClients||0)}</b></div></div>
             </div>
-          </section>`;
+          </section>
+          ${personalDrivers()}
+        </div>`;
       }
       /* ---------- views ---------- */
       function vCommand(){
         const ps=pace();
         return `${strategyStrip()}
+          <div class="section-tag"><h3>Department performance</h3><span>The whole ${esc(B.dept||"department")} — target, cleared revenue and pace across every BDE</span><div class="rule"></div></div>
           <section class="hero">
             <div class="card"><div class="chead"><h4>Department portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
@@ -617,11 +636,12 @@ if ($bdo && !empty($bdo['team'])) {
         var ta="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:var(--surface2);color:var(--ink);resize:vertical";
         var lb="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:6px";
         ov.innerHTML='<form method="post" action="bdo_dashboard.php?as=<?php echo (int) $bdo_id; ?>" style="background:var(--surface);color:var(--ink);border-radius:16px;max-width:520px;width:100%;box-shadow:0 24px 60px rgba(16,24,40,.35);overflow:hidden">'
+          +'<style>.nmta:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}.nmta:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}</style>'
           +'<input type="hidden" name="action" value="save_note"><input type="hidden" name="bde_user_id" value="'+bid+'">'
           +'<div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center"><b style="font-size:15px">Message to '+esc(name)+'</b><span class="nclose" style="cursor:pointer;font-size:18px;color:var(--muted)">✕</span></div>'
           +'<div style="padding:18px 22px;display:grid;gap:14px">'
-          +'<div><label style="'+lb+'">Message on their target</label><textarea name="target_note" rows="3" maxlength="600" style="'+ta+'" placeholder="e.g. Strong start — push the two hot accounts to close this week.">'+esc(n.t)+'</textarea></div>'
-          +'<div><label style="'+lb+'">Message on their commission</label><textarea name="commission_note" rows="3" maxlength="600" style="'+ta+'" placeholder="e.g. You are 30 paid staff from the 80% threshold — clear those fees to unlock.">'+esc(n.c)+'</textarea></div>'
+          +'<div><label style="'+lb+'">Message on their target</label><textarea name="target_note" rows="3" maxlength="600" class="nmta" style="'+ta+'" placeholder="e.g. Strong start — push the two hot accounts to close this week.">'+esc(n.t)+'</textarea></div>'
+          +'<div><label style="'+lb+'">Message on their commission</label><textarea name="commission_note" rows="3" maxlength="600" class="nmta" style="'+ta+'" placeholder="e.g. You are 30 paid staff from the 80% threshold — clear those fees to unlock.">'+esc(n.c)+'</textarea></div>'
           +'</div>'
           +'<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="tbtn nclose">Cancel</button><button type="submit" class="tbtn solid">Save message</button></div>'
           +'</form>';

@@ -735,6 +735,8 @@ if ($bde_is_admin) {
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+      // High-contrast "message from your BDO" block (used on Progress-to-target + Commission).
+      const bdoNoteBlock=txt=>`<div style="margin-top:12px;border:1px solid var(--brand);border-left:4px solid var(--brand);background:var(--brand-soft);border-radius:10px;padding:12px 14px"><span style="display:inline-block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--brand);padding:3px 9px;border-radius:999px;margin-bottom:8px">✎ From your BDO</span><p style="margin:0;font-size:13px;color:var(--ink);line-height:1.55;white-space:pre-wrap;font-weight:500">${esc(txt)}</p></div>`;
       const el=id=>document.getElementById(id);
       const fmtDate=s=>{const d=new Date(s+"T00:00:00");return isNaN(d.getTime())?s:d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});};
       const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
@@ -811,7 +813,7 @@ if ($bde_is_admin) {
           <div class="bar"><div class="bf" style="width:${clamp(att*100,0,100)}%"></div><div class="exp" style="left:${clamp((p.elapsed/p.working)*100,0,100)}%"></div></div>
           <div class="mini3"><div class="cm"><span>Expected by today</span><b class="num">${kMoney(ps.expected)}</b></div><div class="cm"><span>Remaining gap</span><b class="num">${kMoney(Math.max(0,B.target-B.actual))}</b></div><div class="cm"><span>Days left</span><b class="num">${daysLeft}</b><small style="display:block;font-size:9.5px;color:var(--muted);font-weight:600">to end of ${esc(period().label||"month")}</small></div></div>
           <div class="motiv ${ps.status}">${motiv}</div>
-          ${B.bdoTargetNote?`<div style="margin-top:12px;border-left:3px solid var(--brand);background:var(--brand-soft);border-radius:8px;padding:10px 13px"><span style="display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-deep);margin-bottom:4px">✎ From your BDO</span><p style="margin:0;font-size:12.5px;color:var(--ink);line-height:1.5;white-space:pre-wrap">${esc(B.bdoTargetNote)}</p></div>`:""}
+          ${B.bdoTargetNote?bdoNoteBlock(B.bdoTargetNote):""}
         </div>`;
       }
 
@@ -846,6 +848,7 @@ if ($bde_is_admin) {
           <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
           <div class="mini3"><div class="cm gold"><span>Eligible now</span><b class="num">${kMoney(elig)}</b></div><div class="cm"><span>Paid to date</span><b class="num">${kMoney(paid)}</b></div><div class="cm"><span>Target attainment</span><b class="num">${pct(att,0)}</b></div></div>
           <div class="nextstep"><b>From the CRM commission engine.</b> Full per-target commission projection comes with the commission phase.</div>
+          ${B.bdoCommissionNote?bdoNoteBlock(B.bdoCommissionNote):""}
         </div>`;
       }
 
@@ -1007,7 +1010,7 @@ if ($bde_is_admin) {
             const ok=m.att>=1;const c=ok?"var(--jade)":m.att>=0.7?"var(--amber)":"var(--coral)";
             return `<div class="stepbox"><span>${esc(m.label)}</span><b>${ok?"Target met":m.att>=0.7?"Close":"Below"}</b><div class="st" style="color:${c}">${pct(m.att,0)} · ${kMoney(m.rev)}</div></div>`;}).join("")}</div>
           <div style="font-size:11.5px;color:var(--muted);margin-top:10px">Hit 100% for three consecutive months (from Aug 2026) to unlock the consistency reward (Kshs 50,000 + 20% salary review).</div></div>`:"";
-        const bdoNote=B.bdoCommissionNote?`<div class="card" style="border-left:3px solid var(--brand)"><div class="chead"><h4>✎ From your BDO</h4></div><p style="margin:0;font-size:13px;color:var(--ink);line-height:1.55;white-space:pre-wrap">${esc(B.bdoCommissionNote)}</p></div>`:"";
+        const bdoNote=B.bdoCommissionNote?`<div class="card">${bdoNoteBlock(B.bdoCommissionNote)}</div>`:"";
         return summary + bdoNote
           + `<div class="section-tag"><h3>Commission records</h3><span>Per source · straight from the CRM commission engine</span><div class="rule"></div></div>` + table
           + `<section class="grid-2">${checklist}${auditCard}</section>`
