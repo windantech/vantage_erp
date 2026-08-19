@@ -134,10 +134,17 @@ $res = wa_call_offer_maybe_request(null, ['contact_id' => 1, 'wa_id' => '2547458
 check('flag true + no explicit interest -> refused', 'no_explicit_interest', $res['skip']);
 check('nothing was sent', false, $res['sent']);
 // Gate 1 false: the model did not ask, so nothing runs at all.
+// Flag false but the words DO qualify: reported distinctly, because that means the
+// prompt is failing to raise the flag rather than the customer not asking.
 $res2 = wa_call_offer_maybe_request(null, ['contact_id' => 1], 'I want to join', false);
-check('flag false -> refused before anything else', 'ai_flag_false', $res2['skip']);
-check('flag absent behaves as false', 'ai_flag_false',
+check('flag false, words qualify -> reported distinctly',
+    'ai_flag_false_but_words_qualify', $res2['skip']);
+check('nothing sent either way', false, $res2['sent']);
+check('flag absent behaves as false', 'ai_flag_false_but_words_qualify',
     wa_call_offer_maybe_request(null, ['contact_id' => 1], 'I want to join', null)['skip']);
+// Flag false and the words do not qualify: the ordinary, uninteresting case.
+check('flag false, words do not qualify -> plain ai_flag_false', 'ai_flag_false',
+    wa_call_offer_maybe_request(null, ['contact_id' => 1], 'How much is it?', false)['skip']);
 // Both gates pass, but the topic is unknown.
 $res3 = wa_call_offer_maybe_request(null, ['contact_id' => 1, 'wa_id' => '254745811248',
     'ref_type' => 'unknown', 'ref_id' => null, 'handler' => 'ai'], 'I want to join', true);
@@ -169,7 +176,10 @@ $ai = substr($ai, 0, strpos($ai, "\n}\n"));
 check('the hook lives inside wa_ai_answer', true,
     strpos($ai, 'wa_call_offer_maybe_request') !== false);
 check('it only runs after a successful send', true,
-    strpos($ai, "!empty(\$send['ok']) && \$wantsCall") !== false);
+    strpos($ai, "if (!empty(\$send['ok']) && function_exists('wa_call_offer_maybe_request'))") !== false);
+// Every delivered reply is evaluated, so the log always says WHY nothing was sent.
+check('the model flag is passed in, not used as a gate', true,
+    strpos($ai, 'wa_call_offer_maybe_request($conn, $conv, $inboundText, $wantsCall)') !== false);
 check('the model flag is read from the JSON', true,
     strpos($ai, "\$data['request_call_permission']") !== false);
 check('a failure there cannot break the chat', true, strpos($ai, 'catch (Throwable') !== false);

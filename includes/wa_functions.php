@@ -5228,10 +5228,15 @@ function wa_ai_answer($conn, $conv, $inboundText) {
     // The model's flag is only half the decision — wa_call_offer_maybe_request()
     // re-checks the customer's own words, the topic, the number and the whole of the
     // Phase 1.1 eligibility before anything is sent.
+    // Run the check on EVERY delivered reply, not only when the model raised the
+    // flag. wa_call_offer_maybe_request() returns immediately with skip
+    // 'ai_flag_false' when it did, and that single log line is what distinguishes
+    // "the model never asked" from "the model asked and a gate refused" — without
+    // it, both look identical from the outside: no request, no log, no clue.
     $callOffer = ['sent' => false, 'skip' => 'not_attempted'];
-    if (!empty($send['ok']) && $wantsCall && function_exists('wa_call_offer_maybe_request')) {
+    if (!empty($send['ok']) && function_exists('wa_call_offer_maybe_request')) {
         try {
-            $callOffer = wa_call_offer_maybe_request($conn, $conv, $inboundText, true);
+            $callOffer = wa_call_offer_maybe_request($conn, $conv, $inboundText, $wantsCall);
         } catch (Throwable $e) {
             // Never let this break a working conversation.
             error_log('[wa-call-offer] ' . $e->getMessage());

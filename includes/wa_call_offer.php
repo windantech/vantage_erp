@@ -159,7 +159,16 @@ function wa_call_offer_maybe_request($conn, $conv, $inboundText, $aiFlag) {
     // --- Gate 1: the model asked for it -----------------------------------
     // Absent means false, so an older prompt or a fallback raw-text reply simply
     // never triggers this. Backward compatible by construction.
-    if (empty($aiFlag)) { $out['skip'] = 'ai_flag_false'; return $out; }
+    if (empty($aiFlag)) {
+        // Report whether the customer's words WOULD have qualified. When the
+        // detector agrees but the model never raised the flag, the prompt is the
+        // problem; when neither agrees, the message simply was not a joining
+        // request. Those need opposite fixes, so the log has to tell them apart.
+        $out['skip'] = wa_call_interest_detected($inboundText)
+                     ? 'ai_flag_false_but_words_qualify'
+                     : 'ai_flag_false';
+        return $out;
+    }
 
     // --- Gate 2: the customer's own words ---------------------------------
     if (!wa_call_interest_detected($inboundText)) {
