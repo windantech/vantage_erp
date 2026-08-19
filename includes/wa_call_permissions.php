@@ -144,12 +144,25 @@ function wa_call_throttle_check($state, $requestCount, $oldestRequestTs, $now) {
             'retry_after' => $retry];
 }
 
-/** Map a webhook status string to a stored status, or '' when unrecognised. */
+/**
+ * Map a webhook status to a stored status, or '' when unrecognised.
+ *
+ * Two vocabularies, because the live channel does not use the documented one: a
+ * customer's reply carries response "accept" / "reject", while the integration
+ * notes described GRANTED / REJECTED / REVOKED. Both are accepted so the parser
+ * does not depend on which one a given delivery happens to use.
+ */
 function wa_call_map_status($status) {
     switch (strtoupper(trim((string)$status))) {
-        case 'GRANTED':  return 'granted';
-        case 'REJECTED': return 'rejected';
-        case 'REVOKED':  return 'revoked';
+        case 'GRANTED':
+        case 'ACCEPT':
+        case 'ACCEPTED': return 'granted';
+        case 'REJECTED':
+        case 'REJECT':
+        case 'DECLINE':
+        case 'DECLINED': return 'rejected';
+        case 'REVOKED':
+        case 'REVOKE':   return 'revoked';
     }
     return '';
 }
@@ -163,13 +176,20 @@ function wa_call_map_status($status) {
  * and must NOT push expires_at further out, or a retry storm would silently
  * extend a customer's permission indefinitely.
  */
-function wa_call_transition($currentStatus, $incomingStatus, $now) {
+function wa_call_transition($currentStatus, $incomingStatus, $now, $expiresAt = null) {
     $to = wa_call_map_status($incomingStatus);
     if ($to === '') { return null; }                       // unrecognised -> ignore
     if ($to === (string)$currentStatus) { return null; }   // identical retry -> no-op
 
     $change = ['status' => $to, 'responded_at' => $now, 'expires_at' => null];
-    if ($to === 'granted') { $change['expires_at'] = $now + WA_CALL_GRANT_TTL; }
+    if ($to === 'granted') {
+        // Prefer the platform's own expiry when it sends one — a reply carries
+        // expiration_timestamp whenever the grant is not permanent. Falling back to
+        // our pilot window only when it tells us nothing keeps the CRM from
+        // claiming permission lasts longer than WhatsApp actually allows.
+        $given = ($expiresAt !== null) ? (int)$expiresAt : 0;
+        $change['expires_at'] = ($given > $now) ? $given : ($now + WA_CALL_GRANT_TTL);
+    }
     return $change;
 }
 
@@ -481,7 +501,7 @@ function wa_call_fail_request($conn, $contactId, $staffId, $previous, $error, $p
  *   error     — transient/database failure. The caller answers HTTP 500 so the
  *               platform retries; anything else would silently lose the event.
  */
-function wa_call_apply_webhook($conn, $contactId, $status, $wabaId = null, $phoneId = null) {
+function wa_call_apply_webhook($conn, $contactId, $status, $wabaId = null, $phoneId = null, $expiresAt = null) {
     $pid = (string)($phoneId ?? WA_CALL_PHONE_ID);
     $cid = (int)$contactId;
     $now = time();
@@ -494,7 +514,7 @@ function wa_call_apply_webhook($conn, $contactId, $status, $wabaId = null, $phon
         if (!$row) { mysqli_rollback($conn); return 'error'; }
 
         $from   = (string)$row['status'];
-        $change = wa_call_transition($from, $status, $now);
+        $change = wa_call_transition($from, $status, $now, $expiresAt);
         if ($change === null) { mysqli_rollback($conn); return 'duplicate'; }
 
         $ok = wa_call_exec($conn,

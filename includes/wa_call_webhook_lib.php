@@ -76,6 +76,47 @@ function wa_call_webhook_authenticate($expected, $server = null, $get = null) {
 function wa_call_find_permission($value) {
     if (!is_array($value)) { return null; }
 
+    // ---- The shape the live channel actually uses --------------------------
+    // A decision arrives as an INBOUND INTERACTIVE MESSAGE, not as a status event:
+    //
+    //   value.messages[].type                            = "interactive"
+    //   value.messages[].interactive.type                = "call_permission_reply"
+    //   value.messages[].interactive.call_permission_reply
+    //        .response              "accept" | "reject"
+    //        .is_permanent          true when the grant does not lapse
+    //        .expiration_timestamp  unix seconds, present when it does
+    //
+    // Handled explicitly because it is confirmed, rather than left to the
+    // shape-matching fallback below.
+    foreach ($value['messages'] ?? [] as $msg) {
+        if (!is_array($msg)) { continue; }
+        $inter = $msg['interactive'] ?? null;
+        if (!is_array($inter) || ($inter['type'] ?? '') !== 'call_permission_reply') { continue; }
+        $reply = $inter['call_permission_reply'] ?? null;
+        if (!is_array($reply)) { continue; }
+
+        $response = (string)($reply['response'] ?? '');
+        if (wa_call_map_status($response) === '') { continue; }
+
+        // The customer is the sender here — this is their reply to us, so 'from'
+        // is the number we want, not the business number in 'context'.
+        $recipient = (string)($msg['from'] ?? '');
+        if ($recipient === '' && isset($value['contacts'][0]['wa_id'])) {
+            $recipient = (string)$value['contacts'][0]['wa_id'];
+        }
+
+        $expires = null;
+        if (!empty($reply['expiration_timestamp'])) {
+            $expires = (int)$reply['expiration_timestamp'];
+        }
+
+        return ['status'      => strtoupper($response),
+                'recipient'   => $recipient,
+                'expires_at'  => $expires,
+                'permanent'   => !empty($reply['is_permanent'])];
+    }
+
+    // ---- Fallback: a status-shaped decision in some other container ---------
     $nodes = [];
     foreach (['call_permission_update', 'call_permission_updates', 'call_permission',
               'call_permissions', 'permissions', 'user_preferences', 'calls'] as $k) {
@@ -108,7 +149,8 @@ function wa_call_find_permission($value) {
             if ($recipient === '' && isset($value['contacts'][0]['wa_id'])) {
                 $recipient = (string)$value['contacts'][0]['wa_id'];
             }
-            return ['status' => strtoupper(trim((string)$node[$sk])), 'recipient' => $recipient];
+            return ['status' => strtoupper(trim((string)$node[$sk])), 'recipient' => $recipient,
+                    'expires_at' => null, 'permanent' => false];
         }
     }
     return null;
@@ -131,7 +173,7 @@ function wa_call_find_permission($value) {
  */
 function wa_call_webhook_classify($payload, $expectedWabaId, $expectedPhoneId = null) {
     $out = ['action' => 'ignore', 'code' => 200, 'reason' => '',
-            'status' => '', 'recipient' => '', 'waba_id' => ''];
+            'status' => '', 'recipient' => '', 'waba_id' => '', 'expires_at' => null];
 
     if (!is_array($payload)) { $out['reason'] = 'unparsable_body'; return $out; }
 
@@ -189,7 +231,8 @@ function wa_call_webhook_classify($payload, $expectedWabaId, $expectedPhoneId = 
                 $out['reason'] = 'phone_id_mismatch:' . $phoneId;
                 return $out;
             }
-            return wa_call_webhook_finish($out, $perm['status'], $perm['recipient']);
+            return wa_call_webhook_finish($out, $perm['status'], $perm['recipient'],
+                                          $perm['expires_at'] ?? null);
         }
     }
 
@@ -198,7 +241,7 @@ function wa_call_webhook_classify($payload, $expectedWabaId, $expectedPhoneId = 
 }
 
 /** Shared tail: validate the status and the customer number. */
-function wa_call_webhook_finish($out, $status, $recipient) {
+function wa_call_webhook_finish($out, $status, $recipient, $expiresAt = null) {
     $status = strtoupper(trim((string)$status));
     if (wa_call_map_status($status) === '') {
         $out['reason'] = 'unknown_status:' . ($status !== '' ? $status : 'none');
@@ -209,8 +252,9 @@ function wa_call_webhook_finish($out, $status, $recipient) {
     $e164 = wa_voice_e164($recipient);
     if ($e164 === '') { $out['reason'] = 'bad_recipient'; return $out; }
 
-    $out['action']    = 'apply';
-    $out['status']    = $status;
-    $out['recipient'] = $e164;
+    $out['action']     = 'apply';
+    $out['status']     = $status;
+    $out['recipient']  = $e164;
+    $out['expires_at'] = $expiresAt;
     return $out;
 }

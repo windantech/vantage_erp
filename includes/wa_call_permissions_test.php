@@ -340,6 +340,54 @@ check('missing entry names the keys seen', true,
 check('root-level payload still applies', 'apply',
     wa_call_webhook_classify($good, $WABA, $PID)['action']);
 
+echo "\n-- the real acceptance payload (verbatim from the live log) --\n";
+
+// Copied byte-for-byte from the 2026-08-19 11:05 capture, is_permanent = true.
+$acceptPermanent = json_decode('{"object":"whatsapp_business_account","entry":[{"id":"2402344606956698","changes":[{"value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"254798009935","phone_number_id":"1255293457670620"},"contacts":[{"profile":{"name":"Vantage Africa School of Leadership"},"wa_id":"254787103027","user_id":"KE.1557130399410366"}],"messages":[{"context":{"from":"254798009935","id":"wamid.CTX"},"from":"254787103027","from_user_id":"KE.1557130399410366","id":"wamid.MSG","timestamp":"1787126700","type":"interactive","interactive":{"type":"call_permission_reply","call_permission_reply":{"response":"accept","is_permanent":true,"response_source":"user_action"}}}]},"field":"messages"}]}]}', true);
+
+$v = wa_call_webhook_classify($acceptPermanent, $WABA, $PID);
+check('live accept -> apply',      'apply',        $v['action']);
+check('status read as accept',     'ACCEPT',       $v['status']);
+check('maps to granted',           'granted',      wa_call_map_status($v['status']));
+check('customer taken from messages[].from, not context', '254787103027', $v['recipient']);
+check('permanent grant sends no expiry', null,     $v['expires_at']);
+
+// The 11:04:54 capture: is_permanent = false, with the platform's own expiry.
+$acceptTemporary = json_decode('{"object":"whatsapp_business_account","entry":[{"id":"2402344606956698","changes":[{"value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"254798009935","phone_number_id":"1255293457670620"},"contacts":[{"wa_id":"254787103027"}],"messages":[{"from":"254787103027","id":"wamid.MSG2","timestamp":"1787126692","type":"interactive","interactive":{"type":"call_permission_reply","call_permission_reply":{"response":"accept","is_permanent":false,"expiration_timestamp":1787731492,"response_source":"user_action"}}}]},"field":"messages"}]}]}', true);
+
+$v2 = wa_call_webhook_classify($acceptTemporary, $WABA, $PID);
+check('temporary accept -> apply',   'apply',      $v2['action']);
+check("platform's expiry carried through", 1787731492, $v2['expires_at']);
+
+// The platform's expiry must be USED, not replaced by our seven-day default.
+$t = wa_call_transition('pending', 'accept', 1787126692, 1787731492);
+check('transition honours the given expiry', 1787731492, $t['expires_at']);
+check('transition stores granted',           'granted',  $t['status']);
+$tNoExp = wa_call_transition('pending', 'accept', $NOW, null);
+check('no platform expiry -> pilot 7 days',  $NOW + 7 * $DAY, $tNoExp['expires_at']);
+// An expiry already in the past must not be trusted over our own window.
+$tStale = wa_call_transition('pending', 'accept', $NOW, $NOW - 100);
+check('past expiry ignored, falls back',     $NOW + 7 * $DAY, $tStale['expires_at']);
+
+echo "\n-- decline and the accept/reject vocabulary --\n";
+
+$decline = $acceptPermanent;
+$decline['entry'][0]['changes'][0]['value']['messages'][0]['interactive']['call_permission_reply']['response'] = 'reject';
+check('reject -> apply',    'apply',    wa_call_webhook_classify($decline, $WABA, $PID)['action']);
+check('reject maps to rejected', 'rejected', wa_call_map_status('reject'));
+check('accept maps to granted',  'granted',  wa_call_map_status('accept'));
+check('revoke maps to revoked',  'revoked',  wa_call_map_status('revoke'));
+check('documented GRANTED still maps', 'granted', wa_call_map_status('GRANTED'));
+check('a delivery status still maps to nothing', '', wa_call_map_status('delivered'));
+check('read receipt still maps to nothing',      '', wa_call_map_status('read'));
+
+// A different interactive reply (a button press) must not be taken for a decision.
+$button = $acceptPermanent;
+$button['entry'][0]['changes'][0]['value']['messages'][0]['interactive'] =
+    ['type' => 'button_reply', 'button_reply' => ['id' => '1', 'title' => 'Yes']];
+check('an ordinary button reply is not a decision', 'ignore',
+    wa_call_webhook_classify($button, $WABA, $PID)['action']);
+
 echo "\n-- CSRF --\n";
 
 $tok = wa_csrf_token();

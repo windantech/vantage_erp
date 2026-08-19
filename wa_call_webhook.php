@@ -149,7 +149,7 @@ if (!$row) {
 }
 
 $result = wa_call_apply_webhook(
-    $wa_conn, (int)$row['id'], $verdict['status'], $verdict['waba_id'], WA_CALL_PHONE_ID
+    $wa_conn, (int)$row['id'], $verdict['status'], $verdict['waba_id'], WA_CALL_PHONE_ID, $verdict['expires_at'] ?? null
 );
 error_log('[wa-call-webhook] ' . $verdict['status'] . ' for contact ' . (int)$row['id']
         . ' (' . wa_call_mask_msisdn($verdict['recipient']) . ') -> ' . $result);
