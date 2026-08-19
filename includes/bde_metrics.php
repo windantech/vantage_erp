@@ -771,7 +771,7 @@ if (!function_exists('bdo_rollup')) {
             $filter = '';
             if (strpos($dl, 'corporate') !== false) { $filter = "product='Corporate'"; }
             elseif (strpos($dl, 'international') !== false) { $filter = "product='International'"; }
-            elseif (strpos($dl, 'virtual') !== false) { $filter = "metric_label='Course revenue'"; }
+            elseif (strpos($dl, 'virtual') !== false) { $filter = "metric='revenue' AND metric_label='Course revenue'"; }
             if ($filter !== '') {
                 $q = @mysqli_query($conn, "SELECT DISTINCT scope_ref FROM bde_targets
                     WHERE scope_type='user' AND $filter AND metric NOT IN ('dept_revenue','dept_participants') AND scope_ref <> '$bdoId'");
