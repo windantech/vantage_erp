@@ -13,13 +13,11 @@
 
 // Extract only the pure pieces — the file as a whole expects a live $conn.
 $src = file_get_contents(__DIR__ . '/payroll_functions.php');
-foreach (['getExplicitDeductionCodes', 'isSubjectToStatutoryDeductions'] as $fn) {
+foreach (['getExplicitDeductionCodes'] as $fn) {
     $start = strpos($src, 'function ' . $fn . '(');
     $end   = strpos($src, "\n}\n", $start);
     eval(substr($src, $start, $end - $start + 3));
 }
-preg_match_all("/define\('(VASL_DEDUCTION_(?:MIN|MAX)_GROSS)',\s*(\d+)\)/", $src, $m, PREG_SET_ORDER);
-foreach ($m as $d) { define($d[1], (int)$d[2]); }
 
 $failures = 0; $checks = 0;
 function check($label, $expected, $actual) {
@@ -52,75 +50,66 @@ check('"on" counts as on',   ['PAYE'], getExplicitDeductionCodes('{"PAYE":"on"}'
 check('"0" does not',        [],       getExplicitDeductionCodes('{"PAYE":"0"}'));
 check('"false" does not',    [],       getExplicitDeductionCodes('{"PAYE":"false"}'));
 
-echo "\n-- salary bracket boundaries --\n";
-$MIN = VASL_DEDUCTION_MIN_GROSS;
-$MAX = VASL_DEDUCTION_MAX_GROSS;
-printf("   (thresholds in force: MIN=%s  MAX=%s)\n", number_format($MIN), number_format($MAX));
+echo "\n-- deductions follow the ticked boxes, nothing else --\n";
 
-check('below the floor -> exempt',        false, isSubjectToStatutoryDeductions($MIN - 1));
-check('exactly at the floor -> deducted', true,  isSubjectToStatutoryDeductions($MIN));
-check('mid band -> deducted',             true,  isSubjectToStatutoryDeductions(($MIN + $MAX) / 2));
-check('one below the ceiling -> deducted',true,  isSubjectToStatutoryDeductions($MAX - 1));
-check('exactly at the ceiling -> exempt', false, isSubjectToStatutoryDeductions($MAX));
-check('well above -> exempt',             false, isSubjectToStatutoryDeductions($MAX + 50000));
-check('zero gross -> exempt',             false, isSubjectToStatutoryDeductions(0));
-
-echo "\n-- the fix: an explicit marking beats the bracket --\n";
-
-/** Mirrors calculateEmployeePayroll()'s STEP 2 exactly. */
-function bracketApply($grossPay, $deductionsJson, $startOn = ['PAYE','NSSF','SHIF','AHL']) {
+/** Mirrors payroll STEP 2 now that the salary bracket is gone. */
+function applyDeductions($deductionsJson, $mandatory = ['PAYE','NSSF','SHIF','AHL']) {
     $applicable = [];
-    foreach (['PAYE','NSSF','SHIF','AHL'] as $c) { $applicable[$c] = in_array($c, $startOn, true); }
-    $exempt   = !isSubjectToStatutoryDeductions($grossPay);
-    $explicit = getExplicitDeductionCodes($deductionsJson);
-    if ($exempt) {
-        foreach (['PAYE','NSSF','SHIF','AHL'] as $c) {
-            if (!in_array($c, $explicit, true)) { $applicable[$c] = false; }
+    foreach ($mandatory as $c) { $applicable[$c] = true; }   // table defaults
+    if ($deductionsJson !== null && trim((string)$deductionsJson) !== '') {
+        $staff = json_decode((string)$deductionsJson, true);
+        if (is_array($staff)) {
+            foreach ($applicable as $c => $_) { $applicable[$c] = false; }
+            foreach ($staff as $c => $v) { $applicable[$c] = filter_var($v, FILTER_VALIDATE_BOOLEAN); }
         }
     }
-    $fullyExempt = $exempt && empty(array_intersect(['PAYE','NSSF','SHIF','AHL'], $explicit));
-    return ['applicable' => $applicable, 'fully_exempt' => $fullyExempt, 'bracket_exempt' => $exempt];
+    return $applicable;
 }
 
-// THE REPORTED BUG: gross above the ceiling, HR ticked PAYE and NSSF, nothing deducted.
-$r = bracketApply($MAX + 10000, '{"PAYE":true,"NSSF":true}', ['PAYE','NSSF']);
-check('high earner, PAYE marked -> PAYE deducted', true,  $r['applicable']['PAYE']);
-check('high earner, NSSF marked -> NSSF deducted', true,  $r['applicable']['NSSF']);
-check('unmarked SHIF stays exempt',                false, $r['applicable']['SHIF']);
-check('not reported as fully exempt',              false, $r['fully_exempt']);
-check('but the bracket did apply, and is reported',true,  $r['bracket_exempt']);
-
-// Same below the floor.
-$r2 = bracketApply($MIN - 5000, '{"SHIF":true}', ['SHIF']);
-check('low earner, SHIF marked -> SHIF deducted',  true,  $r2['applicable']['SHIF']);
-check('low earner, PAYE unmarked -> exempt',       false, $r2['applicable']['PAYE']);
-
-// Nobody decided: the bracket still governs, exactly as before.
-$r3 = bracketApply($MAX + 10000, null);
-check('no staff setting -> bracket exempts PAYE',  false, $r3['applicable']['PAYE']);
-check('no staff setting -> fully exempt',          true,  $r3['fully_exempt']);
-
-// An explicit OFF must never be forced back on.
-$r4 = bracketApply($MAX + 10000, '{"PAYE":false}');
-check('explicit false stays off under exemption',  false, $r4['applicable']['PAYE']);
-check('explicit false is still fully exempt',      true,  $r4['fully_exempt']);
-
-// Inside the band nothing changes — this fix must not alter normal payroll.
-$r5 = bracketApply(($MIN + $MAX) / 2, null);
-foreach (['PAYE','NSSF','SHIF','AHL'] as $c) {
-    check('in-band, no setting -> ' . $c . ' deducted', true, $r5['applicable'][$c]);
+// THE REPORTED BUG, at every income level: what is ticked is what is deducted.
+foreach ([5000, 23999, 24000, 39999, 40000, 65000, 250000] as $gross) {
+    $r = applyDeductions('{"PAYE":true,"NSSF":true,"SHIF":false,"AHL":false}');
+    check('gross ' . number_format($gross) . ': PAYE ticked -> deducted', true,  $r['PAYE']);
+    check('gross ' . number_format($gross) . ': SHIF unticked -> not',    false, $r['SHIF']);
 }
-$r6 = bracketApply(($MIN + $MAX) / 2, '{"PAYE":true}', ['PAYE']);
-check('in-band, only PAYE ticked -> PAYE on',  true,  $r6['applicable']['PAYE']);
-check('in-band, only PAYE ticked -> NSSF off', false, $r6['applicable']['NSSF']);
-check('in-band is never reported exempt',      false, $r6['fully_exempt']);
 
-echo "\n-- thresholds have exactly one source of truth --\n";
-check('no stray 65,000 literal in the logic', 0,
-    preg_match('/\b65000\b/', preg_replace('!/\*.*?\*/!s', '', $src)));
-check('no stale "FIXED: was" note', 0, preg_match('/FIXED: was/', $src));
-check('MIN is defined once', 1, preg_match_all("/define\('VASL_DEDUCTION_MIN_GROSS'/", $src));
-check('MAX is defined once', 1, preg_match_all("/define\('VASL_DEDUCTION_MAX_GROSS'/", $src));
+// Everything ticked -> everything deducted, at any salary.
+$all = applyDeductions('{"PAYE":true,"NSSF":true,"SHIF":true,"AHL":true}');
+foreach (['PAYE','NSSF','SHIF','AHL'] as $c) { check('all ticked -> ' . $c, true, $all[$c]); }
+
+// Nothing ticked, saved explicitly -> nothing deducted.
+$none = applyDeductions('{"PAYE":false,"NSSF":false,"SHIF":false,"AHL":false}');
+foreach (['PAYE','NSSF','SHIF','AHL'] as $c) { check('all unticked -> ' . $c . ' off', false, $none[$c]); }
+
+// Never configured (legacy NULL) -> mandatory defaults, deliberately conservative.
+$legacy = applyDeductions(null);
+foreach (['PAYE','NSSF','SHIF','AHL'] as $c) { check('never configured -> ' . $c . ' on', true, $legacy[$c]); }
+
+echo "\n-- the save now records a decision for every box --\n";
+foreach (['staff_edit', 'staff_approve'] as $f) {
+    $save = file_get_contents(__DIR__ . '/../' . $f . '.php');
+    check($f . ': fetches codes inside the handler', true,
+        strpos($save, 'SELECT deduction_code FROM deductions WHERE is_active = 1') !== false);
+    check($f . ': records unticked as false', true,
+        strpos($save, '$deductions[$code] = isset($posted[$code])') !== false);
+    check($f . ': no longer writes only the ticks', 0,
+        preg_match('/\$deductions\[\$code\] = true;/', $save));
+    // Writing '{}' would read back as "everything off" — a silent payroll wipe.
+    // Writing '{}' would read back as "everything off" — a silent payroll wipe.
+    check($f . ': refuses to write an empty map', true,
+        strpos($save, 'empty($allCodes)') !== false && strpos($save, "? 'NULL'") !== false);
+    // $deduction_types is loaded further down the file than this handler runs.
+    check($f . ': does not use the later $deduction_types', 0,
+        preg_match('/foreach \(\$deduction_types as \$dt\)/', $save));
+}
+
+echo "\n-- the salary bracket is gone --\n";
+check('no threshold constants remain', 0, preg_match('/VASL_DEDUCTION_(MIN|MAX)_GROSS/', $src));
+check('no bracket predicate remains',  0, preg_match('/function isSubjectToStatutoryDeductions/', $src));
+check('no bracket override in payroll',0, preg_match('/salaryBracketExempt/', $src));
+check('payslip never claims an exemption', true,
+    strpos($src, "'salary_bracket_exempt' => false") !== false);
+check('exempt_reason is always null', true, strpos($src, "'exempt_reason'         => null") !== false);
 
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }

@@ -338,45 +338,20 @@ function getApplicableDeductions($conn, $deductionsJson = null) {
 }
 
 /**
- * VASL Salary Bracket Exemption Policy
- * ─────────────────────────────────────
- * Staff grossing BELOW  VASL_DEDUCTION_MIN_GROSS → exempt from statutory deductions
- * Staff grossing AT/ABOVE VASL_DEDUCTION_MAX_GROSS → exempt from statutory deductions
- * Between the two → normal deductions apply
+ * Statutory deductions are governed ENTIRELY by what is ticked on the staff
+ * record — see getApplicableDeductions().
  *
- * The thresholds are stated ONLY as the constants below. They used to be repeated
- * as literal figures in four comments, which had drifted to 65,000 while the code
- * used 40,000 — so the file documented a policy it did not implement.
+ * There used to be a salary-bracket exemption here: staff grossing below one
+ * threshold or at/above another had PAYE, NSSF, SHIF and the housing levy zeroed
+ * regardless of their record. It has been removed at the organisation's
+ * direction. Deducting somebody the payroll screen shows as ticked, and only
+ * those, is the whole rule now.
  *
- * EXEMPTION IS A DEFAULT, NOT A VETO: a deduction explicitly marked on a staff
- * record is applied whatever the bracket says (see calculateEmployeePayroll).
- *
- * "Statutory deductions" here means PAYE, NSSF, SHIF, and Housing Levy (AHL).
- * Non-statutory deductions (salary advance, loan, SACCO, HELB, other) are
- * always applied regardless of salary bracket.
+ * (For the record: the two thresholds it used had drifted out of step with the
+ * four comments describing them — the code enforced 40,000 while the comments
+ * claimed 65,000 — so the policy in force was not the policy anybody had written
+ * down. Removing it settles that as well.)
  */
-define('VASL_DEDUCTION_MIN_GROSS',  24000);   // below this → exempt
-define('VASL_DEDUCTION_MAX_GROSS',  40000);   // at or above this → exempt
-
-/**
- * Determine whether statutory deductions apply based on gross pay.
- *
- * @param  float $grossPay  The employee's gross pay for the period
- * @return bool             TRUE  = deductions apply normally
- *                          FALSE = employee is exempt (zero all statutory)
- */
-function isSubjectToStatutoryDeductions($grossPay) {
-    // Exempt if below minimum threshold
-    if ($grossPay < VASL_DEDUCTION_MIN_GROSS) {
-        return false;
-    }
-    // Exempt if at or above upper threshold
-    if ($grossPay >= VASL_DEDUCTION_MAX_GROSS) {
-        return false;
-    }
-    // Normal band: VASL_DEDUCTION_MIN_GROSS <= gross < VASL_DEDUCTION_MAX_GROSS
-    return true;
-}
 
 /**
  * MAIN FUNCTION: Calculate Full Payroll for One Employee
@@ -426,38 +401,11 @@ function calculateEmployeePayroll($conn, $staffId, $periodId, $inputs = []) {
     $grossPay = $basicSalary + $totalAllowances + $overtimeAmount + $bonus + $commission + $otherEarnings;
 
     // ============================================
-    // STEP 2: Apply VASL Salary Bracket Policy
+    // STEP 2: Deductions come from the staff record
     // ============================================
-    // Outside the VASL_DEDUCTION_MIN_GROSS..VASL_DEDUCTION_MAX_GROSS band, staff are
-    // exempt from statutory deductions (PAYE, NSSF, SHIF, Housing Levy) BY DEFAULT.
-    // If the bracket exempts the employee, override every statutory deduction
-    // code to false — regardless of individual staff settings or table defaults.
-    $salaryBracketExempt = !isSubjectToStatutoryDeductions($grossPay);
-
-    // An explicit marking on the staff record WINS over the salary bracket.
-    //
-    // The bracket used to override everything, so a staff member HR had ticked for
-    // PAYE and NSSF still had them zeroed purely because of their gross — with
-    // nothing on the payslip to distinguish "exempt by policy" from "HR said
-    // deduct". The bracket is a default for people nobody has decided about; it is
-    // not a veto over a decision somebody made deliberately.
-    //
-    // A code the record sets to FALSE stays off either way, and a code it does not
-    // mention is left to the bracket exactly as before.
-    $explicitlyOn = getExplicitDeductionCodes($staff['deductions'] ?? null);
-
-    if ($salaryBracketExempt) {
-        foreach (['PAYE', 'NSSF', 'SHIF', 'AHL'] as $statutoryCode) {
-            if (!in_array($statutoryCode, $explicitlyOn, true)) {
-                $applicableDeductions[$statutoryCode] = false;
-            }
-        }
-    }
-    // True only when the bracket actually zeroed everything, so the payslip's
-    // exemption note cannot claim a full exemption that did not happen.
-    $fullyExempt = $salaryBracketExempt && empty(array_intersect(
-        ['PAYE', 'NSSF', 'SHIF', 'AHL'], $explicitlyOn));
-
+    // No salary-bracket override. $applicableDeductions is already the answer:
+    // what the staff record ticks, or the mandatory defaults when that record has
+    // never been configured.
     // ============================================
     // STEP 3: Calculate Statutory Deductions
     // ============================================
@@ -538,20 +486,11 @@ function calculateEmployeePayroll($conn, $staffId, $periodId, $inputs = []) {
         ],
         'deductions' => [
             'applicable'            => $applicableDeductions,
-            // salary_bracket_exempt now means "the bracket zeroed EVERY statutory
-            // deduction". A staff member the bracket would exempt but whose record
-            // explicitly marks deductions is not exempt, and must not be reported as
-            // such — the statutory remittance reports read this flag.
-            'salary_bracket_exempt' => $fullyExempt,
-            'bracket_would_exempt'  => $salaryBracketExempt,   // before staff overrides
-            'deductions_forced_on'  => $salaryBracketExempt ? $explicitlyOn : [],
-            'exempt_reason'         => $fullyExempt
-                                        ? ($grossPay < VASL_DEDUCTION_MIN_GROSS
-                                            ? 'Gross pay below KES ' . number_format(VASL_DEDUCTION_MIN_GROSS)
-                                            : 'Gross pay at or above KES ' . number_format(VASL_DEDUCTION_MAX_GROSS))
-                                        : ($salaryBracketExempt
-                                            ? 'Salary bracket exempt, but deductions marked on the staff record apply'
-                                            : null),
+            // No bracket exemption exists any more, so nothing here can claim one.
+            // Kept as constant false/null rather than dropped: older payslip views
+            // and reports may still read these keys.
+            'salary_bracket_exempt' => false,
+            'exempt_reason'         => null,
             'nssf_employee'         => $nssf['employee'],
             'shif'                  => $shifAmount,
             'housing_levy_employee' => $housingLevy['employee'],

@@ -52,13 +52,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $allowances_json = !empty($allowances) ? "'" . mysqli_real_escape_string($conn, json_encode($allowances)) . "'" : 'NULL';
         
         // Build deductions JSON
+        // Record a decision for EVERY deduction code, not just the ticked ones. An
+        // unticked box IS a decision — "do not deduct this" — and saving only the
+        // ticks lost it: the column went NULL, which payroll reads as "never
+        // configured" and answers with the mandatory defaults. Unticking everything
+        // therefore switched every deduction ON, the opposite of what the screen says.
+        //
+        // The codes are fetched HERE rather than from $deduction_types, which is
+        // loaded further down this file and would be an empty array at this point —
+        // silently recording every deduction as OFF.
         $deductions = [];
-        if (isset($_POST['deductions']) && is_array($_POST['deductions'])) {
-            foreach ($_POST['deductions'] as $code => $checked) {
-                $deductions[$code] = true;
-            }
+        $posted = (isset($_POST['deductions']) && is_array($_POST['deductions'])) ? $_POST['deductions'] : [];
+        $codeRes = mysqli_query($conn, "SELECT deduction_code FROM deductions WHERE is_active = 1");
+        $allCodes = [];
+        if ($codeRes) { while ($cr = mysqli_fetch_assoc($codeRes)) { $allCodes[] = $cr['deduction_code']; } }
+        foreach ($allCodes as $code) {
+            $deductions[$code] = isset($posted[$code]) && filter_var($posted[$code], FILTER_VALIDATE_BOOLEAN);
         }
-        $deductions_json = !empty($deductions) ? "'" . mysqli_real_escape_string($conn, json_encode($deductions)) . "'" : 'NULL';
+        // If the deductions table could not be read, leave the column NULL rather than
+        // writing '{}' — an empty map reads back as "everything off" and would wipe
+        // this employee's deductions.
+        $deductions_json = empty($allCodes)
+            ? 'NULL'
+            : "'" . mysqli_real_escape_string($conn, json_encode($deductions)) . "'";
         
         $updated_by = intval($_SESSION['login_id'] ?? 1);
         
