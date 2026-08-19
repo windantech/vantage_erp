@@ -223,7 +223,7 @@ if ($bdo && !empty($bdo['team'])) {
     .bde-app .report-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
     .bde-app .report-preview{white-space:pre-wrap;background:var(--surface2);border:1px dashed var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.6;min-height:130px;color:var(--ink2)}
 
-    .bde-app .persband{background:var(--surface2);border:1px solid var(--line);border-radius:18px;padding:4px 16px 16px;margin:4px 0}
+    .bde-app .persband{display:grid;gap:16px;margin:2px 0}
     .bde-app .tgroup{padding-top:9px} .bde-app .tgroup + .tgroup{border-top:1px solid var(--line);margin-top:9px}
     .bde-app .tgroup-h{font-weight:800;font-size:13px;color:var(--ink)} .bde-app .tgroup-sub{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:2px 0 0}
     .bde-app .tlevels{display:flex;gap:10px;margin:8px 0 4px;flex-wrap:wrap}
