@@ -883,6 +883,7 @@ if (!function_exists('bdo_rollup')) {
         $out['ownActual'] = (float) $bm['revenue_kes'];
         $out['ownClients'] = (int) $bm['paid_clients'];
         $out['ownLeads'] = (int) ($bm['total_leads'] ?? 0);
+        $out['ownSources'] = $bm['sources'] ?? [];
         // the BDO's own escalated chats count as an action alert too
         if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
         // highest → lowest

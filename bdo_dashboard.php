@@ -398,6 +398,7 @@ if ($bdo) {
       B.ownActual = <?php echo (float) ($bdo['ownActual'] ?? 0); ?>;
       B.ownClients = <?php echo (int) ($bdo['ownClients'] ?? 0); ?>;
       B.ownLeads = <?php echo (int) ($bdo['ownLeads'] ?? 0); ?>;
+      B.ownSources = <?php echo json_encode($bdo['ownSources'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.deptAlerts = <?php echo json_encode($bdo['deptAlerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.deptQuality = <?php echo json_encode($bdo['deptQuality'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.crossSbu = <?php echo json_encode($bdo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
@@ -645,7 +646,19 @@ if ($bdo) {
             <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
           </section>
           <div class="section-tag"><h3>Field visits &amp; opportunities</h3><span>Logged visits across ${esc(B.dept||"the department")} — log your own under the Field Visits tab</span><div class="rule"></div></div>
-          ${bdoVisitsTable()}`;
+          ${bdoVisitsTable()}
+          ${bdoOwnPipeline()}`;
+      }
+      function bdoOwnPipeline(){
+        if(!((+B.ownTarget>0)||(+B.ownLeads>0))) return "";
+        const ol=+B.ownLeads||0, opd=+B.ownClients||0;
+        const of=[["Leads",ol],["Paid",opd]];const ofmax=Math.max(1,...of.map(f=>f[1]));
+        const os=B.ownSources||[];const osmax=Math.max(1,...os.map(s=>s[1]));
+        return `<div class="section-tag"><h3>Your own pipeline</h3><span>The leads and conversion on the courses you personally sell</span><div class="rule"></div></div>
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Your acquisition funnel</h4><span class="chip slate">You</span></div><div class="funnel">${of.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/ofmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?(of[i-1][1]>0?Math.round(n/of[i-1][1]*100)+"%":"—"):"100%"}</span></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Your lead sources</h4><span class="chip slate">You</span></div>${os.length?os.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/osmax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No leads attributed to you yet.</p>'}</div>
+          </section>`;
       }
       function vVisits(){
         const s=bdoVisitStats();
