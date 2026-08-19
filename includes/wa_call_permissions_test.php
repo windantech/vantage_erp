@@ -261,6 +261,85 @@ check('case-changed secret rejected', false,
 check('header name is read case-insensitively via SERVER key', true,
     wa_call_webhook_authenticate($SECRET, ['HTTP_X_VANTAGE_CALL_TOKEN' => $SECRET], []));
 
+echo "\n-- Meta envelope (the shape 360dialog actually delivers) --\n";
+
+$PID = '1255293457670620';
+$env = function ($value, $waba = '2402344606956698', $field = 'messages') {
+    return ['object' => 'whatsapp_business_account',
+            'entry'  => [['id' => $waba, 'changes' => [['value' => $value, 'field' => $field]]]]];
+};
+$meta = ['messaging_product' => 'whatsapp',
+         'metadata' => ['display_phone_number' => '254798009935', 'phone_number_id' => $PID]];
+
+// Verbatim from the live log: a delivery receipt for the permission template.
+// It must never be mistaken for a decision — 'delivered' maps to no status.
+$receipt = $env($meta + ['contacts' => [['wa_id' => '254707061459']],
+                         'statuses' => [['id' => 'wamid.X', 'status' => 'delivered',
+                                         'recipient_id' => '254707061459']]]);
+check('real delivery receipt ignored', 'ignore',
+    wa_call_webhook_classify($receipt, $WABA, $PID)['action']);
+check('ignored reason names field and keys', true,
+    strpos(wa_call_webhook_classify($receipt, $WABA, $PID)['reason'], 'messages{') !== false);
+$sent = $env($meta + ['statuses' => [['id' => 'wamid.Y', 'status' => 'sent']]]);
+check('sent receipt ignored', 'ignore', wa_call_webhook_classify($sent, $WABA, $PID)['action']);
+
+// A permission decision carried in the envelope, in each plausible container.
+$perm1 = $env($meta + ['contacts' => [['wa_id' => '254707061459']],
+                       'call_permission_update' => ['status' => 'GRANTED']]);
+check('call_permission_update -> apply', 'apply',
+    wa_call_webhook_classify($perm1, $WABA, $PID)['action']);
+check('recipient falls back to contacts[]', '254707061459',
+    wa_call_webhook_classify($perm1, $WABA, $PID)['recipient']);
+check('status carried through', 'GRANTED',
+    wa_call_webhook_classify($perm1, $WABA, $PID)['status']);
+
+$perm2 = $env($meta + ['call_permission_update' =>
+                       [['call_permission_status' => 'REJECTED', 'recipient' => '254707061459']]]);
+check('list form + explicit recipient -> apply', 'apply',
+    wa_call_webhook_classify($perm2, $WABA, $PID)['action']);
+check('REJECTED carried through', 'REJECTED',
+    wa_call_webhook_classify($perm2, $WABA, $PID)['status']);
+
+$perm3 = $env($meta + ['user_preferences' => [['status' => 'REVOKED', 'wa_id' => '254707061459']]]);
+check('user_preferences container -> apply', 'apply',
+    wa_call_webhook_classify($perm3, $WABA, $PID)['action']);
+
+// Guards still bite, but only once we know it IS a decision.
+$wrongWaba = $env($meta + ['contacts' => [['wa_id' => '254707061459']],
+                           'call_permission_update' => ['status' => 'GRANTED']], '9999');
+check('wrong WABA on a decision -> ignore', 'ignore',
+    wa_call_webhook_classify($wrongWaba, $WABA, $PID)['action']);
+check('wrong WABA names the value received', 'waba_mismatch:9999',
+    wa_call_webhook_classify($wrongWaba, $WABA, $PID)['reason']);
+
+$wrongPhone = $env(['messaging_product' => 'whatsapp',
+                    'metadata' => ['phone_number_id' => '111111'],
+                    'contacts' => [['wa_id' => '254707061459']],
+                    'call_permission_update' => ['status' => 'GRANTED']]);
+check('wrong phone_number_id -> ignore', 'ignore',
+    wa_call_webhook_classify($wrongPhone, $WABA, $PID)['action']);
+check('phone mismatch names the value', 'phone_id_mismatch:111111',
+    wa_call_webhook_classify($wrongPhone, $WABA, $PID)['reason']);
+
+// A decision with no usable customer number must not become a lookup key.
+$noRecip = $env($meta + ['call_permission_update' => ['status' => 'GRANTED']]);
+check('decision without a recipient -> ignore', 'bad_recipient',
+    wa_call_webhook_classify($noRecip, $WABA, $PID)['reason']);
+
+// Ordinary call events (ringing/answered) are not permission decisions.
+$callEvt = $env($meta + ['calls' => [['status' => 'RINGING', 'from' => '254707061459']]]);
+check('a ringing call event is not a decision', 'ignore',
+    wa_call_webhook_classify($callEvt, $WABA, $PID)['action']);
+
+check('envelope with no entry -> ignore', 'ignore',
+    wa_call_webhook_classify(['object' => 'whatsapp_business_account'], $WABA, $PID)['action']);
+check('missing entry names the keys seen', true,
+    strpos(wa_call_webhook_classify(['object' => 'x', 'foo' => 1], $WABA, $PID)['reason'], 'no_entry:') !== false);
+
+// The documented root-level form still works.
+check('root-level payload still applies', 'apply',
+    wa_call_webhook_classify($good, $WABA, $PID)['action']);
+
 echo "\n-- CSRF --\n";
 
 $tok = wa_csrf_token();

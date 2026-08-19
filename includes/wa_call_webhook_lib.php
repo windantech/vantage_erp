@@ -62,54 +62,155 @@ function wa_call_webhook_authenticate($expected, $server = null, $get = null) {
 }
 
 /**
+ * Find a call-permission decision anywhere inside a `value` object.
+ *
+ * The exact key is not something we have documentation for, and the first live
+ * capture showed only delivery receipts, so this matches on SHAPE rather than on
+ * one guessed field name: any candidate container holding a status that maps to
+ * GRANTED / REJECTED / REVOKED. A delivery receipt ("sent", "delivered") maps to
+ * nothing and is therefore skipped, so ordinary message traffic cannot be
+ * mistaken for a permission decision.
+ *
+ * @return array|null {status, recipient} or null when there is no decision here
+ */
+function wa_call_find_permission($value) {
+    if (!is_array($value)) { return null; }
+
+    $nodes = [];
+    foreach (['call_permission_update', 'call_permission_updates', 'call_permission',
+              'call_permissions', 'permissions', 'user_preferences', 'calls'] as $k) {
+        if (!isset($value[$k])) { continue; }
+        $c = $value[$k];
+        if (is_array($c) && array_key_exists(0, $c)) {
+            foreach ($c as $item) { $nodes[] = $item; }   // a list of updates
+        } else {
+            $nodes[] = $c;                                 // a single object
+        }
+    }
+    $nodes[] = $value;   // in case the fields sit directly on `value`
+
+    foreach ($nodes as $node) {
+        if (!is_array($node)) { continue; }
+        foreach (['call_permission_status', 'permission_status', 'status',
+                  'response', 'decision'] as $sk) {
+            if (!isset($node[$sk]) || !is_scalar($node[$sk])) { continue; }
+            if (wa_call_map_status((string)$node[$sk]) === '') { continue; }
+
+            $recipient = '';
+            foreach (['recipient', 'wa_id', 'user_wa_id', 'recipient_id', 'from'] as $rk) {
+                if (isset($node[$rk]) && is_scalar($node[$rk])) {
+                    $recipient = (string)$node[$rk];
+                    break;
+                }
+            }
+            // Fall back to the envelope's contacts list, which carries the customer
+            // on every delivery we have actually observed.
+            if ($recipient === '' && isset($value['contacts'][0]['wa_id'])) {
+                $recipient = (string)$value['contacts'][0]['wa_id'];
+            }
+            return ['status' => strtoupper(trim((string)$node[$sk])), 'recipient' => $recipient];
+        }
+    }
+    return null;
+}
+
+/**
  * Decide what to do with a decoded webhook body. Pure — no database, no I/O.
  *
- * The payload is documented at the ROOT of the body, not nested in
- * entry/changes/value the way message webhooks are:
+ * Handles the standard Meta envelope, which is what 360dialog actually delivers:
  *
- *   { "event":"call_permission_status", "status":"GRANTED",
- *     "waba_id":"…", "recipient":"2547…" }
+ *   { "object":"whatsapp_business_account",
+ *     "entry":[{ "id":"<WABA>", "changes":[{ "field":"messages",
+ *                "value":{ "metadata":{"phone_number_id":"..."}, ... } }] }] }
+ *
+ * A root-level {event,status,waba_id,recipient} payload is still accepted, since
+ * that is what the integration notes described and it costs nothing to keep.
  *
  * @return array {action:'apply'|'ignore', code:int, reason:string,
  *                status:string, recipient:string, waba_id:string}
  */
-function wa_call_webhook_classify($payload, $expectedWabaId) {
+function wa_call_webhook_classify($payload, $expectedWabaId, $expectedPhoneId = null) {
     $out = ['action' => 'ignore', 'code' => 200, 'reason' => '',
             'status' => '', 'recipient' => '', 'waba_id' => ''];
 
     if (!is_array($payload)) { $out['reason'] = 'unparsable_body'; return $out; }
 
-    $event = strtolower(trim((string)($payload['event'] ?? '')));
-    if ($event !== 'call_permission_status') {
-        // Ordinary call-status events (ringing / answered / ended) arrive here too.
-        // They are not permission events and must never be mistaken for one.
-        $out['reason'] = 'not_a_permission_event:' . ($event !== '' ? $event : 'none');
+    // ---- Form 1: root-level payload -----------------------------------------
+    if (isset($payload['event'])) {
+        $event = strtolower(trim((string)$payload['event']));
+        if ($event !== 'call_permission_status') {
+            $out['reason'] = 'not_a_permission_event:' . ($event !== '' ? $event : 'none');
+            return $out;
+        }
+        $waba = trim((string)($payload['waba_id'] ?? ''));
+        $out['waba_id'] = $waba;
+        if ($waba === '' || !hash_equals((string)$expectedWabaId, $waba)) {
+            $out['reason'] = 'waba_mismatch:' . ($waba !== '' ? $waba : 'none');
+            return $out;
+        }
+        return wa_call_webhook_finish($out, (string)($payload['status'] ?? ''),
+                                      $payload['recipient'] ?? '');
+    }
+
+    // ---- Form 2: the Meta envelope ------------------------------------------
+    if (!isset($payload['entry']) || !is_array($payload['entry'])) {
+        $out['reason'] = 'no_entry:' . implode(',', array_slice(array_keys($payload), 0, 6));
         return $out;
     }
 
-    $waba = trim((string)($payload['waba_id'] ?? ''));
-    $out['waba_id'] = $waba;
-    if ($waba === '' || !hash_equals((string)$expectedWabaId, $waba)) {
-        // The reason names the value received on purpose: a silent drop here is the
-        // failure mode that leaves every contact pending for ever with nothing in
-        // the logs to explain why.
-        $out['reason'] = 'waba_mismatch:' . ($waba !== '' ? $waba : 'none');
-        return $out;
+    $seen = [];
+    foreach ($payload['entry'] as $entry) {
+        if (!is_array($entry)) { continue; }
+        $waba = trim((string)($entry['id'] ?? ''));
+        $out['waba_id'] = $waba;
+
+        foreach ($entry['changes'] ?? [] as $change) {
+            if (!is_array($change)) { continue; }
+            $field = (string)($change['field'] ?? '');
+            $value = is_array($change['value'] ?? null) ? $change['value'] : [];
+            $phoneId = (string)($value['metadata']['phone_number_id'] ?? '');
+
+            // Record what arrived, so an unrecognised event names its own shape in
+            // the log instead of leaving us guessing again.
+            $seen[] = $field . '{' . implode(',', array_slice(array_keys($value), 0, 8)) . '}';
+
+            $perm = wa_call_find_permission($value);
+            if ($perm === null) { continue; }   // ordinary traffic: statuses, messages
+
+            // Only guard the number once we know this IS a permission decision, so
+            // the reason we report is about the decision and not about routine
+            // delivery receipts for some other number.
+            if ($waba === '' || !hash_equals((string)$expectedWabaId, $waba)) {
+                $out['reason'] = 'waba_mismatch:' . ($waba !== '' ? $waba : 'none');
+                return $out;
+            }
+            if ($expectedPhoneId !== null && $phoneId !== ''
+                && !hash_equals((string)$expectedPhoneId, $phoneId)) {
+                $out['reason'] = 'phone_id_mismatch:' . $phoneId;
+                return $out;
+            }
+            return wa_call_webhook_finish($out, $perm['status'], $perm['recipient']);
+        }
     }
 
-    $status = strtoupper(trim((string)($payload['status'] ?? '')));
+    $out['reason'] = 'no_permission_in_payload:' . implode('|', array_slice($seen, 0, 4));
+    return $out;
+}
+
+/** Shared tail: validate the status and the customer number. */
+function wa_call_webhook_finish($out, $status, $recipient) {
+    $status = strtoupper(trim((string)$status));
     if (wa_call_map_status($status) === '') {
         $out['reason'] = 'unknown_status:' . ($status !== '' ? $status : 'none');
         return $out;
     }
-
     // wa_voice_e164() refuses anything that is not a plain telephone number, so a
     // hostile "recipient" can never become a database lookup key.
-    $recipient = wa_voice_e164($payload['recipient'] ?? '');
-    if ($recipient === '') { $out['reason'] = 'bad_recipient'; return $out; }
+    $e164 = wa_voice_e164($recipient);
+    if ($e164 === '') { $out['reason'] = 'bad_recipient'; return $out; }
 
     $out['action']    = 'apply';
     $out['status']    = $status;
-    $out['recipient'] = $recipient;
+    $out['recipient'] = $e164;
     return $out;
 }

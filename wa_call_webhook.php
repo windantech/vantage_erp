@@ -121,7 +121,7 @@ if (json_last_error() !== JSON_ERROR_NONE || !is_array($payload)) {
     wa_call_reply(400, ['error' => 'bad_request']);
 }
 
-$verdict = wa_call_webhook_classify($payload, WA_CALL_WABA_ID);
+$verdict = wa_call_webhook_classify($payload, WA_CALL_WABA_ID, WA_CALL_PHONE_ID);
 
 if ($WA_CALL_DEBUG) {
     error_log('[wa-call-webhook][debug] verdict: ' . $verdict['action']
