@@ -734,7 +734,7 @@ if (!function_exists('bdo_rollup')) {
         $bdoId = (int) $bdoId;
         $out = ['name' => '', 'title' => 'BDO', 'dept' => '', 'metric' => 'revenue', 'unit' => 'KES',
             'target' => 0.0, 'threshold' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0,
-            'collection' => 0.0, 'team' => [], 'members' => 0];
+            'collection' => 0.0, 'team' => [], 'members' => 0, 'deptAlerts' => [], 'deptQuality' => [], 'crossSbu' => []];
         if ($bdoId <= 0) { return $out; }
         $rate = function_exists('bde_usd_to_kes') ? bde_usd_to_kes($conn) : 129.0;
 
@@ -800,7 +800,8 @@ if (!function_exists('bdo_rollup')) {
             $m = bde_fetch_metrics($conn, $bid, $from, $to);
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
             if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
-            if (!isset($byName[$key])) { $byName[$key] = ['id' => $bid, 'name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0, 'leads' => 0, 'srcRow' => []]; }
+            if (!isset($byName[$key])) { $byName[$key] = ['id' => $bid, 'name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0, 'leads' => 0, 'srcRow' => [], 'unread' => 0]; }
+            $byName[$key]['unread'] = max((int) $byName[$key]['unread'], (int) ($m['wa_unread'] ?? 0));
             // leads/sources: a duplicate login is the SAME person — take their richest login ONCE, never
             // sum, or Josiah #69+#98 would double the department's lead count.
             $ml = (int) ($m['total_leads'] ?? 0);
@@ -824,6 +825,13 @@ if (!function_exists('bdo_rollup')) {
             $deptRevenue += $t['actual']; $deptClients += $t['clients']; $deptPipe += $t['pipeline']; $collN += $t['collN']; $collD += $t['collD'];
             $deptLeadsTotal += (int) ($t['leads'] ?? 0);
             foreach (($t['srcRow'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
+            // per-member action alerts + conversion signals (real, for the BDO's oversight)
+            $un = (int) ($t['unread'] ?? 0);
+            if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'text' => $un . ' escalated chat' . ($un > 1 ? 's' : '') . ' to reply']; }
+            $ld = (int) ($t['leads'] ?? 0); $conv = $ld > 0 ? $t['clients'] / $ld : 0;
+            if ($ld > 5 && $conv < 0.4) { $out['deptQuality'][] = $t['name'] . ' — low conversion (' . round($conv * 100) . '% of ' . $ld . ' leads)'; }
+            $mcoll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0;
+            if ($mcoll > 0 && $mcoll < 0.7) { $out['deptQuality'][] = $t['name'] . ' — collection at ' . round($mcoll * 100) . '%'; }
         }
 
         // the BDO's own attributed numbers count toward the department too
@@ -873,6 +881,11 @@ if (!function_exists('bdo_rollup')) {
         $out['ownActual'] = (float) $bm['revenue_kes'];
         $out['ownClients'] = (int) $bm['paid_clients'];
         $out['ownLeads'] = (int) ($bm['total_leads'] ?? 0);
+        // the BDO's own escalated chats count as an action alert too
+        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
+        // Cross-SBU awareness = every opportunity flagged on a field visit (any department).
+        $xq = @mysqli_query($conn, "SELECT opportunity_note FROM bde_visits WHERE TRIM(opportunity_note) <> '' ORDER BY id DESC LIMIT 12");
+        while ($xq && ($xr = mysqli_fetch_assoc($xq))) { $out['crossSbu'][] = trim((string) $xr['opportunity_note']); }
         return $out;
     }
 }

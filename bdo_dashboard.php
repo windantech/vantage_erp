@@ -348,6 +348,9 @@ if ($bdo && !empty($bdo['team'])) {
       B.ownActual = <?php echo (float) ($bdo['ownActual'] ?? 0); ?>;
       B.ownClients = <?php echo (int) ($bdo['ownClients'] ?? 0); ?>;
       B.ownLeads = <?php echo (int) ($bdo['ownLeads'] ?? 0); ?>;
+      B.deptAlerts = <?php echo json_encode($bdo['deptAlerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.deptQuality = <?php echo json_encode($bdo['deptQuality'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.crossSbu = <?php echo json_encode($bdo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.notes = <?php echo json_encode((object) $bdo_notes, JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}'; ?>;
       B.canNote = <?php echo $bdo_is_admin ? 'true' : 'false'; ?>;
       B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
@@ -551,6 +554,11 @@ if ($bdo && !empty($bdo['team'])) {
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?(B.funnel[i-1][1]>0?Math.round(n/B.funnel[i-1][1]*100)+"%":"—"):"100%"}</span></div>`).join("")}</div></div>
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Live</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No leads attributed to this department yet.</p>'}</div>
+          </section>
+          <section class="grid-3">
+            <div class="card"><div class="chead"><h4>Action alerts</h4><span class="chip ${(B.deptAlerts||[]).length?"coral":"jade"}">${(B.deptAlerts||[]).length?(B.deptAlerts.length+" flagged"):"all clear"}</span></div><div class="list">${(B.deptAlerts||[]).length?B.deptAlerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.name)}</b><p>${esc(a.text)}</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Nothing needs action right now across the department.</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Conversion-quality signals</h4><span class="chip ${(B.deptQuality||[]).length?"amber":"jade"}">${(B.deptQuality||[]).length?(B.deptQuality.length+" to review"):"healthy"}</span></div><div class="list">${(B.deptQuality||[]).length?B.deptQuality.map(x=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(x)}</b></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">Conversion and collection across the department look healthy (or too little activity to flag).</p>'}</div></div>
+            <div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">${(B.crossSbu||[]).length} shared</span></div><div class="list">${(B.crossSbu||[]).length?B.crossSbu.map(x=>`<div class="arow"><span class="pd blue"></span><div><b>${esc(x)}</b><p>Flagged on a field visit — for everyone's awareness.</p></div></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No cross-SBU opportunities yet. When anyone flags one on a field visit, it shows here.</p>'}</div></div>
           </section>`;
       }
 
