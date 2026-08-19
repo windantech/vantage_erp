@@ -274,59 +274,47 @@ function getExplicitDeductionCodes($deductionsJson) {
 
 function getApplicableDeductions($conn, $deductionsJson = null) {
 
-    // ── Step 1: Build defaults from the deductions table ─────────────────────
+    // ── Step 1: every known deduction code, all OFF ──────────────────────────
+    //
+    // A deduction is applied ONLY where it is ticked on the staff record.
+    // is_mandatory describes the deduction type — it groups the checkboxes on the
+    // payroll screen — but it no longer decides anything for a person. A staff
+    // member whose statutory deductions have not been ticked is not deducted.
+    //
+    // This used to seed the mandatory codes as TRUE, so a record nobody had
+    // configured (column NULL) was deducted everything, and the screen showing no
+    // ticks did not reflect what payroll actually did.
     $applicableDeductions = [];
 
     $result = mysqli_query($conn, "
-        SELECT deduction_code, is_mandatory 
-        FROM deductions 
+        SELECT deduction_code
+        FROM deductions
         WHERE is_active = 1
     ");
 
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
-            $applicableDeductions[$row['deduction_code']] = (bool)$row['is_mandatory'];
+            $applicableDeductions[$row['deduction_code']] = false;
         }
     }
 
-    // Fallback hardcoded defaults if the deductions table is empty / missing
-    if (empty($applicableDeductions)) {
-        $applicableDeductions = [
-            'PAYE' => true,
-            'NSSF' => true,
-            'SHIF' => true,
-            'AHL'  => true
-        ];
+    // The four statutory codes are always represented, so a payslip can state
+    // "not deducted" for each rather than omitting it, even if the deductions
+    // table is unreadable. They stay FALSE until the staff record says otherwise.
+    foreach (['PAYE', 'NSSF', 'SHIF', 'AHL'] as $statutoryCode) {
+        if (!array_key_exists($statutoryCode, $applicableDeductions)) {
+            $applicableDeductions[$statutoryCode] = false;
+        }
     }
 
-    // ── Step 2: Apply staff-level overrides ───────────────────────────────────
-    //
-    // FIX: Use a stricter check than empty(). The string '{}' is technically
-    // "not empty" as a string but json_decodes to an empty array. We want to
-    // honour an explicit empty {} as "HR turned everything off."
-    //
-    // Detection rule: if the column is NULL or literal empty string '', fall
-    // through to defaults. Anything else (including '{}') is treated as an
-    // explicit HR setting.
-    if ($deductionsJson !== null && $deductionsJson !== '') {
+    // ── Step 2: apply what the staff record ticks ────────────────────────────
+    // NULL or '' means nobody has configured this employee, which now means
+    // nothing is deducted — not "fall back to the defaults".
+    if ($deductionsJson !== null && trim((string)$deductionsJson) !== '') {
 
-        $staffDeductions = json_decode($deductionsJson, true);
+        $staffDeductions = json_decode((string)$deductionsJson, true);
 
-        // Only treat as "explicit settings" if JSON parses to an array
-        // (handles {}, {"PAYE":true}, {"PAYE":false,"NSSF":false}, etc.)
         if (is_array($staffDeductions)) {
-
-            /*
-             * The staff record has explicit deduction settings.
-             * Reset ALL codes to FALSE first so that mandatory deductions
-             * from the table don't silently remain active for codes the
-             * staff JSON simply didn't mention.
-             */
-            foreach ($applicableDeductions as $code => $value) {
-                $applicableDeductions[$code] = false;
-            }
-
-            // Now apply only what the staff JSON explicitly declares
             foreach ($staffDeductions as $code => $value) {
                 // Handles true/false/1/0/"1"/"0"/"true"/"false"/"on"/"off"
                 $applicableDeductions[$code] = filter_var($value, FILTER_VALIDATE_BOOLEAN);
