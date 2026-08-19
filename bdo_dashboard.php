@@ -418,8 +418,8 @@ if ($bdo && !empty($bdo['team'])) {
         </div>`;
       }
 
-      function trendSVG(){
-        const target=B.target,actual=B.actual,forecast=B.forecast;const p=period();const frac=p.elapsed/p.working;const N=9;
+      function trendSVG(target,actual,forecast){
+        target=(target==null?B.target:target);actual=(actual==null?B.actual:actual);forecast=(forecast==null?B.forecast:forecast);const p=period();const frac=p.elapsed/p.working;const N=9;
         const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);pts.push(x<=frac?actual*(x/Math.max(.01,frac)):actual+(forecast-actual)*((x-frac)/Math.max(.01,1-frac)));}
         const max=Math.max(target,forecast,...pts)*1.1;const w=560,h=200,pd=30;
         const P=pts.map((v,i)=>[pd+i*(w-2*pd)/(N-1),h-pd-v/max*(h-2*pd)]);
@@ -503,6 +503,7 @@ if ($bdo && !empty($bdo['team'])) {
         const pt=floor||(B.courses||[]).reduce((s,c)=>s+(+c.target||0),0);
         const pa=(+B.ownActual)||0;const att=pt?pa/pt:0;
         const st=att>=1?"jade":att>=.8?"amber":"coral";
+        const p=period();const pf=pa>0?Math.round(pa/Math.max(.01,p.elapsed/p.working)):pa;const shown=clamp(att,0,1.2)/1.2;
         return `<div class="persband">
           <div class="section-tag"><h3>Your personal performance</h3><span>You sell too — your own target, tracked separately from the department</span><div class="rule"></div></div>
           <section class="hero">
@@ -514,6 +515,14 @@ if ($bdo && !empty($bdo['team'])) {
             </div>
           </section>
           ${personalDrivers()}
+          <section class="grid-2">
+            <div class="card"><div class="chead"><h4>Your revenue pace &amp; forecast</h4><span class="chip jade">${kMoney(pf)} forecast</span></div>${trendSVG(pt,pa,pf)}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">Your own cleared revenue vs your monthly target.</div></div>
+            <div class="card"><div class="chead"><h4>Your commission</h4><span class="chip ${att>=.8?"jade":"gold"}">${att>=.8?"On track":"Not yet unlocked"}</span></div>
+              <div class="road-wrap"><div class="road"><div class="rf" style="width:${shown*100}%"></div></div><div class="rmark" style="left:66.6%"><i></i><span>80%</span></div><div class="rmark" style="left:83.3%"><i></i><span>100%</span></div><div class="rmark" style="left:100%"><i></i><span>120%</span></div></div>
+              <div class="mini3"><div class="cm"><span>Your cleared</span><b class="num">${kMoney(pa)}</b></div><div class="cm"><span>Your target</span><b class="num">${kMoney(pt)}</b></div><div class="cm"><span>Attainment</span><b class="num">${pct(att,0)}</b></div></div>
+              <div class="nextstep"><b>Next step:</b> ${att>=1?"At or above your target — protect collections to keep your commission.":att>=.8?"Above 80% — clear outstanding fees to confirm eligibility.":"Reach 80% of your "+kMoney(pt)+" target, then clear fees to unlock."}</div>
+            </div>
+          </section>
         </div>`;
       }
       /* ---------- views ---------- */
@@ -525,14 +534,14 @@ if ($bdo && !empty($bdo['team'])) {
             <div class="card"><div class="chead"><h4>Department portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
-          ${bdoPersonalSection()}
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
           </section>
           <section class="grid-2">${actionsCard()}${driversCard()}</section>
           <div class="section-tag"><h3>BDE performance &amp; coaching</h3><span>Cleared = Finance-verified collected revenue · Open pipeline = expected from registrations, not yet collected</span><div class="rule"></div></div>
-          ${teamTable()}`;
+          ${teamTable()}
+          ${bdoPersonalSection()}`;
       }
 
       function vPipeline(){
