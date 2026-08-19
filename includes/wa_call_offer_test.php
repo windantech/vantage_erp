@@ -336,6 +336,31 @@ check('runs before opt-out handling', true,
     strpos($inb, 'wa_call_offer_force_on_calling_line') < strpos($inb, 'wa_handle_optout'));
 check('cannot break message handling', true, strpos($inb, 'catch (Throwable $e)') !== false);
 
+echo "\n-- a 2xx is not proof: a request must return a message id --\n";
+
+$api = file_get_contents(__DIR__ . '/wa_call_api.php');
+// The live failure: GET answered 200 while merely reporting permission state, we
+// called it sent, and the customer was told so but received nothing.
+check('direct route needs a message id', true,
+    strpos($api, "\$wamid !== ''") !== false);
+check('a 2xx with no id is reported, not swallowed', true,
+    strpos($api, 'reported state rather than sending a request') !== false);
+check('the template path applies the same rule', true,
+    strpos($api, "\$mid === ''") !== false);
+check('the direct route is off until proven', true,
+    strpos($api, "define('WA_CALL_DIRECT_ENABLED', false)") !== false);
+check('and it is gated on that flag', true,
+    strpos($api, 'if ($windowOpen && WA_CALL_DIRECT_ENABLED)') !== false);
+
+$offer = file_get_contents(__DIR__ . '/wa_call_offer.php');
+check('the offer refuses to confirm without an id', true,
+    strpos($offer, "trim((string)(\$send['message_id'] ?? '')) === ''") !== false);
+check('and releases the lease when that happens', true,
+    (bool)preg_match("/message_id.*?=== ''.*?wa_call_fail_request/s", $offer));
+check('so the notice cannot be sent without proof', true,
+    strpos($offer, "\$out['error'] = 'no message id returned';")
+        < strpos($offer, 'wa_send_text($conn, $waId, WA_CALL_OFFER_NOTICE)'));
+
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);
 if ($failures === 0) { echo "OK\n"; }
 exit($failures === 0 ? 0 : 1);

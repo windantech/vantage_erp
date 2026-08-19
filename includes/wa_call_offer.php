@@ -243,6 +243,17 @@ function wa_call_offer_do_request($conn, $contactId, $waId, $e164) {
     // source='api', actor NULL — attributed at the point of record, so exactly ONE
     // 'requested' row exists. A second event to correct attribution would double the
     // throttle count, which reads its window from these rows.
+    // Last line of defence: never tell a customer a request is on its way without a
+    // message id proving one was created. A customer was told exactly that and got
+    // nothing, because a 2xx from a status endpoint had been read as a send.
+    if (trim((string)($send['message_id'] ?? '')) === '') {
+        wa_call_fail_request($conn, $contactId, null, $claim['previous'],
+                             'API reported success but returned no message id', WA_CALL_PHONE_ID, 'api');
+        $out['error'] = 'no message id returned';
+        error_log('[wa-call-offer] refused to claim a send with no message id for contact ' . $contactId);
+        return $out;
+    }
+
     wa_call_confirm_request($conn, $contactId, null, $send['message_id'], WA_CALL_PHONE_ID, 'api');
     error_log('[wa-call-offer] permission requested via ' . (string)($send['route'] ?? '?')
             . ' for contact ' . $contactId);

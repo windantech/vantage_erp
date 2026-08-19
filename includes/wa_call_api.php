@@ -25,6 +25,20 @@ require_once __DIR__ . '/wa_call_config.php';
 if (!defined('WA_CALL_CONNECT_TIMEOUT')) { define('WA_CALL_CONNECT_TIMEOUT', 8);  }
 if (!defined('WA_CALL_TIMEOUT'))         { define('WA_CALL_TIMEOUT',         25); }
 
+/**
+ * Is the in-window "direct" permission request trusted?
+ *
+ * OFF by default. It was enabled on the assumption that GET /calling/permissions/
+ * creates a request when the customer-service window is open. Live traffic showed
+ * otherwise: it answers 200 with no message id — it REPORTS permission state, it
+ * does not ask for it. A customer was told a request had been sent and never
+ * received one.
+ *
+ * Define WA_CALL_DIRECT_ENABLED once that endpoint is confirmed to create a
+ * request; the message-id guard below keeps it honest either way.
+ */
+if (!defined('WA_CALL_DIRECT_ENABLED')) { define('WA_CALL_DIRECT_ENABLED', false); }
+
 /** Largest response body we will read from 360dialog (bytes). */
 if (!defined('WA_CALL_MAX_RESPONSE'))    { define('WA_CALL_MAX_RESPONSE', 256 * 1024); }
 
@@ -178,9 +192,15 @@ function wa_call_send_permission_template($toE164, $components = null) {
     $status = (int)($res['status'] ?? 0);
     $body   = is_array($res['body'] ?? null) ? $res['body'] : [];
 
-    if ($status >= 200 && $status < 300) {
-        $mid = (string)($body['messages'][0]['id'] ?? '');
+    $mid = (string)($body['messages'][0]['id'] ?? '');
+    if ($status >= 200 && $status < 300 && $mid !== '') {
         return ['ok' => true, 'message_id' => $mid, 'error' => '', 'status' => $status];
+    }
+    if ($status >= 200 && $status < 300 && $mid === '') {
+        // Same rule as the direct route: accepted but nothing created. Do not tell
+        // the customer a request is on its way.
+        return ['ok' => false, 'message_id' => '',
+                'error' => 'accepted but no message id returned', 'status' => $status];
     }
 
     $err = (string)($body['error']['message']
@@ -218,7 +238,7 @@ function wa_call_request_permission($conn, $contactId, $toE164) {
         $windowOpen = wa_channel_within_window($conn, (int)$contactId, 'calling', null);
     }
 
-    if ($windowOpen) {
+    if ($windowOpen && WA_CALL_DIRECT_ENABLED) {
         $direct = wa_call_permission_direct($toE164);
         if (!empty($direct['ok'])) {
             $direct['route'] = 'direct_free';
@@ -262,11 +282,22 @@ function wa_call_permission_direct($toE164) {
 
     $status = (int)($res['status'] ?? 0);
     $body   = is_array($res['body'] ?? null) ? $res['body'] : [];
-    $ok     = ($status >= 200 && $status < 300) && empty($body['error']);
+    $wamid  = (string)($body['messages'][0]['id'] ?? '');
+
+    // A 2xx is NOT proof. This endpoint answers 200 while merely reporting the
+    // customer's current permission state, and that is what made us tell someone a
+    // request had been sent when nothing had been. A request creates a message, so
+    // a message id is the only evidence worth acting on; without one we fall back
+    // to the template, which does return one.
+    $ok = ($status >= 200 && $status < 300) && empty($body['error']) && $wamid !== '';
 
     if ($ok) {
-        return ['ok' => true, 'message_id' => (string)($body['messages'][0]['id'] ?? ''),
-                'error' => '', 'status' => $status];
+        return ['ok' => true, 'message_id' => $wamid, 'error' => '', 'status' => $status];
+    }
+    if ($status >= 200 && $status < 300 && $wamid === '') {
+        return ['ok' => false, 'message_id' => '',
+                'error' => 'no message id returned — the endpoint reported state rather than sending a request',
+                'status' => $status];
     }
     $err = (string)($body['error']['message'] ?? $body['raw'] ?? ('HTTP ' . $status));
     return ['ok' => false, 'message_id' => '',
