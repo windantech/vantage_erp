@@ -714,38 +714,49 @@ if ($bdo) {
 
       function vReport(){
         const p=period();
-        const teamGreen=B.team.filter(t=>t.actual>=t.target*(p.elapsed/p.working)).length;
-        const teamRed=B.team.filter(t=>t.actual<t.target*(p.elapsed/p.working)*.85).length;
+        const teamGreen=B.team.filter(t=>t.target>0&&t.actual>=t.target*(p.elapsed/p.working)).length;
+        const teamRed=B.team.filter(t=>t.target>0&&t.actual<t.target*(p.elapsed/p.working)*.85).length;
+        const auP='<span style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--jade);background:var(--jade-soft);padding:2px 6px;border-radius:5px;margin-left:6px;vertical-align:middle">auto</span>';
+        // [label, type, prefill, auto?] — auto=true is filled from live data (still editable)
         const fields=[
-          ["Department daily revenue target","number",Math.round(B.target/p.working)],
-          ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
-          ["BDEs on / above pace","number",teamGreen],
-          ["Red portfolios","number",teamRed],
-          ["Qualified pipeline value","number",B.pipeline],
-          ["Meetings / demos / sessions today","number",6],
-          ["Proposals / commitments moved","number",4],
-          ["Collection commitments due","number",9],
-          ["BDE performance and coaching actions","textarea",B.team.map(x=>`${x.name}: ${x.notes}`).join("\n")],
-          ["Course / product recovery action","textarea","State target, actual, exact gap, owner, deadline and evidence required."],
-          ["Marketing, CRM, AI and product issues","textarea","Lead-flow variance, data quality, automation failure and corrective action."],
-          ["Executive support and tomorrow's priorities","textarea","Top opportunities, decisions required and the next-day departmental result."]
+          [(isCount?"Department client target":"Department revenue target"),"number",Math.round(B.target),true],
+          [(isCount?"Paid clients so far":"Cleared revenue so far (KES)"),"number",Math.round(B.actual),true],
+          ["BDEs on / above pace","number",teamGreen,true],
+          ["Red portfolios (behind pace)","number",teamRed,true],
+          ["Qualified pipeline (KES)","number",Math.round(B.pipeline||0),true],
+          ["Meetings / demos / sessions today","number","",false],
+          ["Proposals / commitments moved","number","",false],
+          ["Collection commitments due","number","",false],
+          ["BDE performance & coaching actions","textarea",B.team.map(x=>`${x.name}: `).join("\n"),false],
+          ["Course / product recovery action","textarea","",false],
+          ["Marketing, CRM, AI & product issues","textarea","",false],
+          ["Executive support & tomorrow's priorities","textarea","",false]
         ];
-        const fieldHTML=f=>`<div class="field ${f[1]==="textarea"?"span2":""}"><label>${esc(f[0])}</label>${f[1]==="textarea"?`<textarea data-label="${esc(f[0])}">${esc(f[2])}</textarea>`:`<input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}">`}</div>`;
+        const fieldHTML=f=>f[1]==="textarea"
+          ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="…">${esc(f[2])}</textarea></div>`
+          :`<div class="field"><label>${esc(f[0])}${f[3]?auP:''}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
+        const how=[
+          ['<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>',"Auto-filled from your data","Department target, cleared revenue, BDEs on/off pace, pipeline and team status are pulled live — check and adjust if needed."],
+          ['<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.5-4.2 3.7 1.3 5.5L12 20l-5.1 2.7 1.3-5.5L4 8.5 9.6 8z"/></svg>',"Your judgement","Explain why the department moved, what's blocked, what was learned and which support or decision you need."],
+          ['<svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-9-9"/></svg>',"BDM review","Your supervisor reviews, comments, approves or returns it, and turns commitments into tracked actions."]
+        ];
+        const dlSvg='<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg>';
         return `
           <div class="card"><div class="chead"><h4>BDO / HOD daily command report</h4><span class="chip jade">Auto-prefilled</span></div>
             <div id="reportForm">
-              <div class="form-sub">Today's numbers <i>· auto-prefilled</i></div>
+              <div class="form-sub">Today's numbers <i>· auto-prefilled from live data, editable</i></div>
               <div class="form-grid">${nums}</div>
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
             </div>
-            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">Download</button><button class="tbtn" id="clrReport" type="button">Clear narrative</button></div>
+            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">${dlSvg} Download</button></div>
           </div>
-          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Select "Generate report summary" to compile the dashboard data and your explanations.</div></div>
+          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Fill in the fields above, then hit <b>Generate report summary</b> to compile your numbers and narrative into a shareable summary. Use <b>Download</b> to save it.</div></div>
+          <div class="section-tag"><h3>How this report works</h3><span>Numbers are automatic · you add the judgement · your BDM reviews</span><div class="rule"></div></div>
           <section class="grid-3">
-            ${[["Automatic evidence","Revenue, payments, activity logs, opportunities, meetings, proposals and CRM completeness are system-calculated."],["Required human judgement","You explain why performance moved, what is blocked, what was learned and which support or decision is required."],["Manager workflow","Your supervisor reviews, comments, approves or returns the report and converts commitments into tracked actions."]].map(([a,b])=>`<div class="card"><h4>${esc(a)}</h4><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5">${esc(b)}</p></div>`).join("")}
+            ${how.map(([ic,a,b])=>`<div class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="width:36px;height:36px;flex:none;border-radius:9px;background:var(--surface2);display:grid;place-items:center;color:var(--brand)"><span style="display:grid;place-items:center;width:19px;height:19px">${ic.replace('<svg','<svg style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"')}</span></span><h4 style="margin:0">${esc(a)}</h4></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.5">${esc(b)}</p></div>`).join("")}
           </section>`;
       }
 
@@ -804,19 +815,77 @@ if ($bdo) {
         if(v==="report")bindReport();
         root.querySelectorAll(".notebtn").forEach(b=>b.addEventListener("click",()=>openNoteModal(b.dataset.bde,b.dataset.name)));
       }
+      function downloadReport(){
+        if(!window.__reportBlob)genReport();
+        const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_"+esc(B.name).replace(/\s+/g,"_")+"_"+(period().label||"report").replace(/\s+/g,"_")+"_Command_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+        window.__reportBlob=null;
+        setTimeout(()=>{if(state.view==="report"){render();var ws=el("workspace");if(ws&&ws.scrollIntoView)ws.scrollIntoView({behavior:"smooth",block:"start"});}},450);
+      }
       function bindReport(){
-        el("genReport").addEventListener("click",genReport);
-        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDE_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
-        el("clrReport").addEventListener("click",()=>root.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
+        var g=el("genReport"); if(g) g.addEventListener("click",genReport);
+        var d=el("dlReport"); if(d) d.addEventListener("click",downloadReport);
+      }
+      function buildReportHTML(){
+        const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+        const att=B.target>0?B.actual/B.target:0;const attW=Math.min(100,Math.max(0,Math.round(att*100)));
+        const numRows=[...root.querySelectorAll("#reportForm input")].map(x=>`<tr><td class="k">${esc(x.dataset.label)}</td><td class="v">${esc(x.value.trim()||"—")}</td></tr>`).join("");
+        const narr=[...root.querySelectorAll("#reportForm textarea")].map(x=>`<div class="nblock"><div class="nlabel">${esc(x.dataset.label)}</div><div class="ntext">${esc(x.value.trim()||"—")}</div></div>`).join("");
+        const team80=(B.team||[]).filter(t=>t.target>0&&t.actual/t.target>=.8).length;
+        const dash=[["Qualified pipeline",kMoney(B.pipeline||0)],["Collection rate",pct(B.collection,0)],["Team at 80%+",team80+" / "+(B.team||[]).length]]
+          .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Department Command Report — ${esc(B.dept||B.name)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#eeeeec;padding:30px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;background:#fffdfa;border-radius:16px;overflow:hidden;box-shadow:0 20px 54px rgba(45,28,12,.17);border:1px solid #eee4d4}
+.rhead{background:linear-gradient(125deg,#4a2c18,#291409);color:#fff;padding:32px 44px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+.rhead h1{font-family:Georgia,"Times New Roman",serif;font-size:29px;font-weight:700;letter-spacing:-.01em;line-height:1.06}
+.rhead p{opacity:.68;font-size:11px;margin-top:9px;letter-spacing:.16em;text-transform:uppercase}
+.rlogo{flex:none;background:#fff;border-radius:12px;padding:10px 13px;display:flex;align-items:center}
+.rlogo img{height:44px;width:auto;display:block}
+.metastrip{display:flex;flex-wrap:wrap;gap:20px 52px;padding:22px 44px;background:#faf3e8;border-bottom:1px solid #eee4d4}
+.mk{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:700;margin-bottom:5px}
+.metastrip .mv{font-size:15px;font-weight:600;color:#2a2018}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px 44px 20px}
+.hbig{font-family:Georgia,"Times New Roman",serif;font-size:37px;font-weight:700;color:#2a2018;line-height:1;font-variant-numeric:tabular-nums}
+.hsub{display:block;font-size:12.5px;color:#7a6c5c;margin-top:9px}
+.hpct{font-family:Georgia,"Times New Roman",serif;font-size:35px;font-weight:700;color:#bd8a30;line-height:1;font-variant-numeric:tabular-nums}
+.pbar{height:6px;border-radius:20px;background:#efe6d6;margin:0 44px 28px;overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#c99a3c,#a86f22)}
+.sec{display:flex;align-items:center;gap:12px;padding:28px 44px 13px}
+.sec .dot{flex:none;width:7px;height:7px;background:#bd8a30;border-radius:2px;transform:rotate(45deg)}
+.sec .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:#3d2416;white-space:nowrap}
+.sec .ln{flex:1;height:1px;background:#ebe6dd}
+table.nums{width:100%;border-collapse:collapse}
+table.nums td{padding:11px 44px;border-bottom:1px solid #f3ebdc;font-size:13.5px}
+table.nums tr:last-child td{border-bottom:none}
+table.nums td.k{color:#7a6c5c}
+table.nums td.v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:#2a2018}
+.narrwrap{margin:2px 44px 4px;background:#faf6ec;border:1px solid #efe6d3;border-radius:12px}
+.nblock{padding:15px 22px}
+.nblock+.nblock{border-top:1px solid #f0e7d5}
+.nlabel{font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:800;margin-bottom:6px}
+.ntext{font-size:13.5px;color:#2a2018;line-height:1.6;white-space:pre-wrap}
+footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;border-top:1px solid #eee4d4;letter-spacing:.02em}
+@media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
+</style></head><body>
+<div class="wrap">
+  <div class="rhead"><div><h1>Department Command Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
+  <div class="metastrip"><div><span class="mk">Head of department</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Department</span><span class="mv">${esc(B.dept||"Department")}</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
+  <div class="hero"><div><span class="mk">${isCount?"Paid clients so far":"Cleared so far"}</span><div class="hbig">${mfmt(B.actual)}</div><span class="hsub">of ${mfmt(B.target)} ${isCount?"combined target":"monthly target"}</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
+  <div class="pbar"><i style="width:${attW}%"></i></div>
+  <div class="sec"><span class="dot"></span><span class="lbl">Today's numbers</span><span class="ln"></span></div><table class="nums">${numRows}</table>
+  <div class="sec"><span class="dot"></span><span class="lbl">Narrative</span><span class="ln"></span></div><div class="narrwrap">${narr}</div>
+  <div class="sec"><span class="dot"></span><span class="lbl">Department position</span><span class="ln"></span></div><table class="nums">${dash}</table>
+  <footer>All figures are subject to CRM evidence and Finance verification. &middot; Generated ${today}.</footer>
+</div></body></html>`;
       }
       function genReport(){
-        const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
-        root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
-        const att=B.actual/B.target;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
-        lines.push("Qualified pipeline: "+kMoney(B.pipeline)+". Collection: "+pct(B.collection,0)+".");
-        lines.push("Commission estimate: "+kMoney(commission().current)+".");
-        lines.push("All figures subject to CRM evidence and Finance verification.");
-        el("reportPreview").textContent=lines.join("\n");
+        const html=buildReportHTML();
+        window.__reportBlob=new Blob([html],{type:"text/html;charset=utf-8"});
+        const pv=el("reportPreview");
+        pv.innerHTML=`<iframe title="Report preview" style="width:100%;height:600px;border:1px solid #dce4eb;border-radius:10px;background:#fff" src="${URL.createObjectURL(window.__reportBlob)}"></iframe><div class="report-actions" style="margin-top:14px;justify-content:flex-end"><button class="tbtn solid" id="dlReportBottom" type="button"><svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg> Download report</button></div>`;
+        var db=el("dlReportBottom"); if(db) db.addEventListener("click",downloadReport);
       }
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
