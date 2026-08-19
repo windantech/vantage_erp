@@ -780,9 +780,11 @@ if (!function_exists('bdo_rollup')) {
         }
 
         // aggregate each BDE's REAL numbers, deduped by name (duplicate logins share a person)
-        $byName = [];
+        $byName = []; $deptLeadsTotal = 0; $srcAgg = [];
         foreach ($bdeIds as $bid) {
             $m = bde_fetch_metrics($conn, $bid, $from, $to);
+            $deptLeadsTotal += (int) ($m['total_leads'] ?? 0);
+            foreach (($m['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
             if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
             if (!isset($byName[$key])) { $byName[$key] = ['name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0]; }
@@ -808,6 +810,8 @@ if (!function_exists('bdo_rollup')) {
         $deptRevenue += (float) $bm['revenue_kes']; $deptClients += (int) $bm['paid_clients'];
         $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
         $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
+        $deptLeadsTotal += (int) ($bm['total_leads'] ?? 0);
+        foreach (($bm['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
 
         // The BDO sells too — show their own contribution as a team row (their course/revenue target,
         // e.g. Edwin's MEAL Nairobi). Their department-total target stays the headline, not this row.
@@ -818,7 +822,7 @@ if (!function_exists('bdo_rollup')) {
         if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
-            $team[] = ['name' => ($out['name'] ?: 'BDO'), 'title' => (($out['title'] !== '' ? $out['title'] : 'BDO') . ' · sells too'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+            $team[] = ['name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => $bdoTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
         }
 
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
@@ -827,6 +831,19 @@ if (!function_exists('bdo_rollup')) {
         $out['clients'] = $deptClients;
         $out['pipeline'] = $deptPipe;
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
+        $out['totalLeads'] = $deptLeadsTotal;
+        $out['funnel'] = [['Leads', $deptLeadsTotal], ['Paid', $deptClients]];
+        arsort($srcAgg);
+        $srcOut = []; foreach (array_slice($srcAgg, 0, 8, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
+        $out['sources'] = $srcOut;
+        // the BDO's own course targets (e.g. Edwin's MEAL Nairobi) — to display on the BDO dashboard
+        $out['courses'] = [];
+        $cq = @mysqli_query($conn, "SELECT product, target_value, threshold_pct FROM bde_targets
+            WHERE scope_type='user' AND scope_ref='$bdoId' AND metric='course_revenue' ORDER BY id");
+        while ($cq && ($cr = mysqli_fetch_assoc($cq))) {
+            $out['courses'][] = ['name' => (string) $cr['product'], 'target' => (float) $cr['target_value'],
+                'threshold' => $cr['threshold_pct'] !== null ? (float) $cr['target_value'] * (float) $cr['threshold_pct'] / 100.0 : 0.0];
+        }
         return $out;
     }
 }

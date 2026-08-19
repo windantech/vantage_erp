@@ -230,7 +230,7 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
         <button class="tab" data-v="strategy"><svg viewBox="0 0 24 24"><path d="M12 20v-6M6 20v-3M18 20v-10"/><circle cx="12" cy="11" r="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.6" fill="currentColor" stroke="none"/></svg>Strategy &amp; Scorecard</button>
       </nav>
       <main id="workspace"></main>
-      <div class="bde-foot"><b>Command Centre</b> is live — department target from <code>bde_targets</code>, cleared revenue &amp; team rolled up from each BDE's real attributed payments (<code>assigned_to</code>). Execution drivers, the pipeline funnel and lead sources are still illustrative and will be wired next.</div>
+      <div class="bde-foot">Live from the CRM — department target from <code>bde_targets</code>; cleared revenue, execution drivers, the funnel, lead sources, the team and the scorecard all roll up from each BDE's real attributed payments (<code>assigned_to</code>). The account-priorities table and the operating-rhythm / principles are guidance templates.</div>
     </div>
 
     <script>
@@ -294,6 +294,11 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
         focus: <?php echo json_encode($bdo_mandate['focus'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '""'; ?>
       });
       B.team = <?php echo json_encode($bdo['team'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.funnel = <?php echo json_encode(!empty($bdo['funnel']) ? $bdo['funnel'] : [['Leads', 0], ['Paid', 0]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[["Leads",0],["Paid",0]]'; ?>;
+      B.sources = <?php echo json_encode($bdo['sources'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
+      B.totalLeads = <?php echo (int) ($bdo['totalLeads'] ?? 0); ?>;
+      B.paidClients = <?php echo (int) ($bdo['clients'] ?? 0); ?>;
+      B.courses = <?php echo json_encode($bdo['courses'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>;
       B.forecast = (function(){var dT=<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>,dim=<?php echo (int) date('t', strtotime($bdo_to)); ?>;return B.actual>0?Math.round(B.actual/dT*dim):B.actual;})();
 <?php endif; ?>
       const periods=[{label:<?php echo json_encode(date('F Y', strtotime($bdo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($bdo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($bdo_to)), (int) date('t', strtotime($bdo_to)))); ?>}];
@@ -406,7 +411,18 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
           '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.4a3.4 3.4 0 0 1 0 5.2M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>',
           '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 3M20 5v6h-6"/></svg>'
         ];
-        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${B.drivers.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
+        // Real department drivers from the roll-up.
+        const att=B.target?B.actual/B.target:0;
+        const team=(B.team||[]);const team80=team.filter(t=>t.target>0&&t.actual/t.target>=.8).length;
+        const drivers=[
+          ["Cleared revenue",kMoney(B.actual),pct(att)+" of target"],
+          ["Remaining to target",kMoney(Math.max(0,B.target-B.actual)),"target − collected"],
+          ["Paid clients",B.paidClients||0,"Finance-verified"],
+          ["Leads (department)",B.totalLeads||0,"all channels"],
+          ["Team at 80%+",team80+" / "+team.length,"balanced performance"],
+          ["Collection",pct(B.collection||0,0),"fees settled vs expected"]
+        ];
+        return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept)}</span></div><div class="drivers">${drivers.map(([l,n,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${typeof n==="number"?nf.format(n):esc(n)}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;
       }
       function teamTable(){
         const avatarCols=["var(--slate)","var(--violet)","var(--coral)","#2f8f88","var(--gold)"];
@@ -416,6 +432,11 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
         return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Target</th><th>Cleared</th><th>Achievement</th><th>Open pipeline</th><th>Status</th></tr></thead><tbody>${B.team.map((t,i)=>{const a=t.actual/t.target;const p=period();const exp=t.target*(p.elapsed/p.working);const st=t.actual>=exp?"green":t.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const ini=t.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr class="${t.me?"me":""}"><td><div class="prow"><span class="a"${t.me?"":` style="background:${avatarCols[i%avatarCols.length]}"`}>${ini}</span><div><b>${esc(t.name)}${t.me?" · you":""}</b><span>${esc(t.title)}</span></div></div></td><td class="num">${kMoney(t.target)}</td><td class="num">${kMoney(t.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${t.pipeline>0?`${kMoney(t.pipeline)}<div style="font-size:9.5px;color:var(--muted);font-weight:600;margin-top:2px">expected · uncollected</div>`:`<span style="color:var(--faint)">—</span>`}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${esc(t.notes)}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
+      function bdoCoursesCard(){
+        if(!B.courses||!B.courses.length) return "";
+        const dAcc=["var(--brand)","var(--jade)","#3a7bd5","var(--gold)"];
+        return `<div class="card"><div class="chead"><h4>Your own course targets</h4><span class="chip slate">You sell too</span></div><div class="drivers">${B.courses.map((c,i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="live">Target</span></div><div class="n num">${kMoney(c.target)}</div><b>${esc(c.name)}</b><small>${c.threshold>0?"80% qualifying "+kMoney(c.threshold):"course revenue"}</small></div>`).join("")}</div></div>`;
+      }
       /* ---------- views ---------- */
       function vCommand(){
         const ps=pace();
@@ -424,6 +445,7 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
             <div class="card"><div class="chead"><h4>Department portfolio</h4><span class="pace-pill ${ps.status==="green"?"pg":ps.status==="amber"?"pa":"pr"}"><span class="dot"></span>${ps.label} · pace ${pct(ps.ratio,0)}</span></div>${kpiBlock()}</div>
             ${progressCard()}
           </section>
+          ${bdoCoursesCard()}
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${commissionMini()}
@@ -434,14 +456,14 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
       }
 
       function vPipeline(){
-        const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
+        const fmax=Math.max(1,...B.funnel.map(f=>f[1]));const smax=Math.max(1,...B.sources.map(s=>s[1]));
         const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
         const quality=["Lead-to-qualified conversion below benchmark","Strong attendance but weak payment conversion","High proposal value with low decision-maker access"];
         const cross=["Virtual participant → employer briefing","Free-session attendee → corporate cohort","Alumnus → institutional sponsorship","Training client → Eval360 / 360 opportunity"];
         return `
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
+            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Live</span></div>${B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:6px 2px">No leads attributed to this department yet.</p>'}</div>
           </section>
           <div class="section-tag"><h3>Priority opportunity control</h3><span>No important opportunity may exist only in email, WhatsApp, a notebook or memory</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Account / opportunity</th><th>Stage</th><th>Value / volume</th><th>Next action</th><th>Due</th></tr></thead><tbody>${B.priorities.map(r=>{const dc=r[4]==="Today"?"hot":r[4]==="Tomorrow"?"soon":"cool";return `<tr><td><b>${esc(r[0])}</b></td><td><span class="stage-chip">${esc(r[1])}</span></td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td><span class="duec ${dc}">${esc(r[4])}</span></td></tr>`;}).join("")}</tbody></table></div></div>
@@ -516,14 +538,20 @@ foreach ($bdo_people as $p) { if ($p['id'] === $bdo_id) { $bdo_current_listed = 
       }
 
       function vStrategy(){
-        const score=[["Departmental revenue and collections",30],["Balanced team performance",20],["Pipeline and forecast control",15],["Coaching and recovery",15],["CRM / AI / reporting",10],["Market and product leadership",10]];
-        const smax=Math.max(...score.map(x=>x[1]));
+        const clamp2=x=>Math.max(0,Math.min(1,x||0));
+        const att2=B.target?B.actual/B.target:0;
+        const team=(B.team||[]);const team80=team.filter(t=>t.target>0&&t.actual/t.target>=.8).length;
+        const score=[
+          ["Departmental revenue vs target",`${kMoney(B.actual)} of ${kMoney(B.target)}`,clamp2(att2)],
+          ["Balanced team performance",`${team80} of ${team.length} BDEs at 80%+`,clamp2(team.length?team80/team.length:0)],
+          ["Collections quality",`${pct(B.collection||0,0)} of billed collected`,clamp2(B.collection||0)]
+        ];
         return `
           <div class="card"><div class="chead"><h4>Role mandate</h4><span class="chip jade">Department leadership</span></div><div class="motiv green"><b>${esc(B.mandate)}</b><br>${esc(B.mandateText)}</div></div>
           <div class="card"><div class="chead"><h4>Non-negotiable operating principles</h4></div><div class="principles">${B.principles.map(([a,b])=>`<div class="principle"><b>${esc(a)}</b><p>${esc(b)}</p></div>`).join("")}</div></div>
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Daily operating rhythm</h4></div><div class="timeline">${B.dailyRhythm.map(([t,x])=>`<div class="time-row"><time>${esc(t)}</time><div>${esc(x)}</div></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Performance scorecard</h4></div><div class="scorecard">${score.map(([n,w])=>`<div class="scr"><label>${esc(n)}</label><div class="sb"><div style="width:${w/smax*100}%"></div></div><b>${w}%</b></div>`).join("")}</div></div>
+            <div class="card"><div class="chead"><h4>Performance scorecard</h4><span class="chip jade">Live · your actuals</span></div><div class="scorecard">${score.map(([n,val,frac])=>`<div class="scr"><label>${esc(n)}<br><span style="font-size:10.5px;color:var(--muted);font-weight:600">${esc(val)}</span></label><div class="sb"><div style="width:${Math.round(frac*100)}%;background:linear-gradient(90deg,var(--brand),var(--brand-deep))"></div></div><b>${pct(frac,0)}</b></div>`).join("")}</div></div>
           </section>
           <section class="grid-3">
             <div class="card"><div class="chead"><h4>Green response</h4><span class="chip jade">At / above pace</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Protect quality, collections and client experience; pursue stretch opportunities and share winning practices.</p></div>
