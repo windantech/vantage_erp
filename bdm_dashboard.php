@@ -345,6 +345,26 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
 
+      // Every SBU's attainment trajectory on one comparable chart: 0 → cleared-so-far (today) → projected
+      // month-end. Normalised to each unit's own target, so client-based International compares to the KES ones.
+      function sbuPaceSVG(){
+        const p=period();const frac=clamp(p.elapsed/p.working,0.02,1);
+        const rows=liveSbus().map(d=>({name:d.name,attn:(+d.attn)||0,end:d.target>0?d.forecast/d.target:0}));
+        if(!rows.length) return `<p style="color:var(--muted);font-size:12.5px;margin:0">No SBUs to chart yet.</p>`;
+        const maxY=Math.max(1.15,...rows.flatMap(r=>[r.attn,r.end]))*1.08;
+        const w=680,h=262,pd=40,plotH=h-2*pd;
+        const X=t=>pd+t*(w-2*pd);const Y=v=>h-pd-(v/maxY)*plotH;
+        const colors=["#4f6f9c","#0e9e79","#ec6e2d","#6f5fbf","#c98a1c"];
+        const grid=[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plotH).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plotH).toFixed(1)}"/>`).join("");
+        const onpace=`<line x1="${X(0).toFixed(1)}" y1="${Y(0).toFixed(1)}" x2="${X(1).toFixed(1)}" y2="${Y(1).toFixed(1)}" stroke="var(--faint)" stroke-dasharray="2 4"/>`;
+        const tgt=`<line x1="${pd}" y1="${Y(1).toFixed(1)}" x2="${w-pd}" y2="${Y(1).toFixed(1)}" stroke="var(--jade)" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${(w-pd).toFixed(1)}" y="${(Y(1)-5).toFixed(1)}" text-anchor="end" style="font-size:9.5px;fill:var(--jade)">Target 100%</text>`;
+        const today=`<line x1="${X(frac).toFixed(1)}" y1="${pd}" x2="${X(frac).toFixed(1)}" y2="${(h-pd).toFixed(1)}" stroke="var(--faint)" stroke-dasharray="3 3"/>`;
+        const series=rows.map((r,i)=>{const c=colors[i%colors.length];const x1=X(frac),y1=Y(r.attn),x2=X(1),y2=Y(r.end);return `<path d="M${X(0).toFixed(1)},${Y(0).toFixed(1)} L${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${c}" stroke-width="2.4"/><path d="M${x1.toFixed(1)},${y1.toFixed(1)} L${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${c}" stroke-width="2.2" stroke-dasharray="5 4" opacity=".6"/><circle cx="${x1.toFixed(1)}" cy="${y1.toFixed(1)}" r="3.6" fill="${c}"/>`;}).join("");
+        const labels=`<text x="${X(0).toFixed(1)}" y="${(h-12).toFixed(1)}" style="font-size:10px;fill:var(--muted)">Start</text><text x="${X(frac).toFixed(1)}" y="${(h-12).toFixed(1)}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">Today</text><text x="${(w-pd).toFixed(1)}" y="${(h-12).toFixed(1)}" text-anchor="end" style="font-size:10px;fill:var(--muted)">Month end</text>`;
+        const legend=`<div class="legend">${rows.map((r,i)=>`<span class="lg"><i style="background:${colors[i%colors.length]}"></i>${esc(r.name)} · ${pct(r.attn,0)}</span>`).join("")}</div>`;
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" style="height:262px" role="img" aria-label="Attainment pace by SBU">${grid}${onpace}${tgt}${today}${series}${labels}</svg>${legend}`;
+      }
+
       function actionsCard(){
         const list=[
           ["red","Recover the weakest SBU","Require a quantified seven-day recovery forecast and a named opportunity list.","Today"],
@@ -406,9 +426,12 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           <div class="section-tag"><h3>Cross-SBU opportunities</h3><span>Opportunities flagged across the SBUs' field visits</span><div class="rule"></div></div>
           ${execTopDeals()}
 
-          <div class="section-tag"><h3>Pace, forecast &amp; today's execution</h3><span>Month-end trajectory and the actions in play now</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Pace to target — every SBU</h3><span>How each unit is tracking to month-end against its own target</span><div class="rule"></div></div>
+          <div class="card"><div class="chead"><h4>Attainment pace by SBU</h4><span class="chip jade">${(()=>{const live=liveSbus();const need=period().elapsed/period().working;const on=live.filter(d=>(+d.attn)>=need).length;return on+" of "+live.length+" on pace";})()}</span></div>${sbuPaceSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">Solid = cleared so far · dashed = projected to month-end · faint diagonal = the on-pace path to 100%.</div></div>
+
+          <div class="section-tag"><h3>Organization forecast &amp; today's execution</h3><span>Consolidated KES trajectory and the actions in play now</span><div class="rule"></div></div>
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Revenue pace &amp; month-end forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
+            <div class="card"><div class="chead"><h4>Consolidated revenue forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}<div style="font-size:11.5px;color:var(--muted);margin-top:10px">KES SBUs combined. The forecast moves whenever stage, probability, payment date or cleared revenue changes.</div></div>
             ${actionsCard()}
           </section>`;
       }
