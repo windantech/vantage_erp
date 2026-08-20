@@ -363,19 +363,20 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
       /* ---------- executive master view (BDM request) ---------- */
       function execRevenueBreakdown(){
         const shortName={"International":"Int'l","Virtual":"Virtual","Corporate":"Corporate","Digital Solutions":"Digital","Academic":"Academic"};
-        const data=liveSbus().filter(d=>d.kes).map(d=>({name:shortName[d.name]||d.name,target:d.target,actual:d.actual,attn:(+d.attn)||0}));
-        const max=(Math.max(1,...data.flatMap(d=>[d.target,d.actual])))*1.2;
-        const w=660,h=280,pd=40,base=h-pd-22,plot=base-pd,step=(w-2*pd)/Math.max(1,data.length),bw=40,gap=14;
-        const bars=data.map((d,i)=>{const cx=pd+step*i+step/2;const xT=cx-bw-gap/2,xA=cx+gap/2;const th=Math.max(0,d.target/max*plot),ah=Math.max(0,d.actual/max*plot);const st=d.attn>=1?"green":d.attn>=.7?"amber":"red";return `<g>
-          <rect x="${xT.toFixed(1)}" y="${(base-th).toFixed(1)}" width="${bw}" height="${th.toFixed(1)}" rx="4" fill="var(--slate-soft)" stroke="var(--slate)" stroke-width="1.2"/>
+        // Every SBU, normalised to its OWN target so client-based International compares to the KES ones.
+        const data=liveSbus().map(d=>({name:shortName[d.name]||d.name,attn:(+d.attn)||0,tLab:sbuTarget(d),aLab:sbuActual(d)}));
+        const maxA=Math.max(1.1,...data.map(d=>d.attn))*1.12;
+        const w=680,h=286,pd=42,base=h-pd-26,plot=base-pd,step=(w-2*pd)/Math.max(1,data.length),bw=38,gap=14;
+        const bars=data.map((d,i)=>{const cx=pd+step*i+step/2;const xT=cx-bw-gap/2,xA=cx+gap/2;const th=1/maxA*plot;const ah=Math.max(3,d.attn/maxA*plot);const st=d.attn>=1?"green":d.attn>=.7?"amber":"red";return `<g>
+          <rect x="${xT.toFixed(1)}" y="${(base-th).toFixed(1)}" width="${bw}" height="${th.toFixed(1)}" rx="4" fill="var(--slate)"/>
           <rect x="${xA.toFixed(1)}" y="${(base-ah).toFixed(1)}" width="${bw}" height="${ah.toFixed(1)}" rx="4" fill="${scol(st)}"/>
-          <text x="${(xT+bw/2).toFixed(1)}" y="${(base-th-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:700;fill:var(--slate)">${kMoney(d.target)}</text>
-          <text x="${(xA+bw/2).toFixed(1)}" y="${(base-ah-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:800;fill:${scol(st)}">${kMoney(d.actual)}</text>
+          <text x="${(xT+bw/2).toFixed(1)}" y="${(base-th-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:700;fill:var(--slate)">${d.tLab}</text>
+          <text x="${(xA+bw/2).toFixed(1)}" y="${(base-ah-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:800;fill:${scol(st)}">${d.aLab}</text>
           <text x="${cx.toFixed(1)}" y="${(base+16).toFixed(1)}" text-anchor="middle" style="font-weight:700">${esc(d.name)}</text>
           <text x="${cx.toFixed(1)}" y="${(base+30).toFixed(1)}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${pct(d.attn,0)} of target</text></g>`;}).join("");
-        return `<div class="card"><div class="chead"><div><h4>Target vs cleared revenue — by SBU</h4><p>Finance-verified collected revenue against each SBU's KES target. International is client-based — see its tile above.</p></div></div>
-          <svg class="chart" viewBox="0 0 ${w} ${h}" style="height:280px" role="img" aria-label="Target vs cleared revenue by SBU">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg>
-          <div class="legend"><span class="lg"><i style="background:var(--slate-soft);border:1px solid var(--slate)"></i>Target</span><span class="lg"><i style="background:var(--jade)"></i>Cleared (collected)</span></div></div>`;
+        return `<div class="card"><div class="chead"><div><h4>Cleared vs target — by SBU</h4><p>How far each SBU has cleared toward its own target. International is in clients, the rest in KES.</p></div></div>
+          <svg class="chart" viewBox="0 0 ${w} ${h}" style="height:286px" role="img" aria-label="Cleared versus target by SBU">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg>
+          <div class="legend"><span class="lg"><i style="background:var(--slate)"></i>Target</span><span class="lg"><i style="background:var(--jade)"></i>Cleared &nbsp;<span style="color:var(--muted)">· colour = pace</span></span></div></div>`;
       }
       function execTargetProgress(){
         const p=period();
