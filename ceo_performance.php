@@ -736,7 +736,7 @@ try {
           ["Commission earners",s.earners+" / "+s.total,"past the 80% gate","var(--gold)",ic.coin],
           ["SBUs on pace",s.sbusOnPace+" / "+s.liveN,"at / above required pace","var(--slate)",ic.pace]
         ];
-        return `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${tiles.map(([l,v,m,a,icn])=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a}">${icn}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        return `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">${tiles.map(([l,v,m,a,icn])=>`<div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid ${a};border-radius:12px;padding:15px 17px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">${l}</span><span style="flex:0 0 auto;color:${a};display:grid;place-items:center">${icn.replace('<svg','<svg style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"')}</span></div><b class="num" style="display:block;font-size:22px;color:var(--ink);line-height:1.1;margin:6px 0 2px">${v}</b><div style="font-size:11px;color:var(--muted)">${m}</div></div>`).join("")}</div>`;
       }
       function interventionCentre(){
         const s=orgStats();const per=period();const need=per.elapsed/per.working;
@@ -751,12 +751,13 @@ try {
           ["Org attainment",pct(B.target>0?B.actual/B.target:0,0),"of the KES target","var(--brand)"]
         ];
         const sev=a=>a>=.8?"var(--jade)":a>=.5?"var(--amber)":"var(--coral)";
-        const icItem=(nm,sub,a)=>{const c=sev(a);return `<div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;background:var(--surface2);border:1px solid var(--line)">`
-          +`<span style="flex:0 0 auto;width:32px;height:32px;border-radius:9px;background:${c};color:#fff;display:grid;place-items:center;font-weight:800;font-size:11px">${esc(pInitials(nm))}</span>`
+        const avPal=["var(--slate)","var(--violet)","#2f8f88","var(--brand)","var(--gold)","#4d8bd6"];
+        const icItem=(nm,sub,a,av)=>{const c=sev(a);return `<div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;background:var(--surface2);border:1px solid var(--line)">`
+          +`<span style="flex:0 0 auto;width:32px;height:32px;border-radius:9px;background:${av};color:#fff;display:grid;place-items:center;font-weight:800;font-size:11px">${esc(pInitials(nm))}</span>`
           +`<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</div><div style="font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(sub)}</div><div style="height:4px;border-radius:99px;background:var(--surface3);margin-top:6px;overflow:hidden"><div style="width:${clamp(a*100,3,100)}%;height:100%;background:${c}"></div></div></div>`
           +`<b class="num" style="flex:0 0 auto;font-size:13.5px;color:${c}">${pct(a,0)}</b></div>`;};
-        const sbuList=behind.length?behind.map(d=>icItem(d.name,d.leader,(+d.attn)||0)).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">Every SBU is at or above required pace.</div>`;
-        const pplList=lowPeople.length?lowPeople.map(p=>icItem(p.name,p.sbu,rAttn(p))).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">No staff below 80% of target.</div>`;
+        const sbuList=behind.length?behind.map((d,i)=>icItem(d.name,d.leader,(+d.attn)||0,avPal[i%avPal.length])).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">Every SBU is at or above required pace.</div>`;
+        const pplList=lowPeople.length?lowPeople.map((p,i)=>icItem(p.name,p.sbu,rAttn(p),avPal[i%avPal.length])).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">No staff below 80% of target.</div>`;
         const head='display:flex;align-items:center;gap:7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:10px';
         return `<div class="card"><div class="chead"><h4>Intervention Centre</h4><span class="chip coral">What needs you</span></div>
           <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">${ans.map(([l,v,sub,a])=>`<div style="background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${a};border-radius:11px;padding:14px 16px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">${l}</span><b class="num" style="display:block;font-size:19px;margin:6px 0 3px;color:var(--ink);line-height:1.15">${v}</b><div style="font-size:11px;color:var(--muted)">${sub}</div></div>`).join("")}</div>
