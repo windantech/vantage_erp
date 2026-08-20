@@ -1069,19 +1069,27 @@ $porcelain = [];
 if ($rc !== 0) {
     echo "  (git unavailable — repository checks skipped)\n";
 } else {
-    $changed = [];
-    $added   = [];
-    foreach ($porcelain as $line) {
-        $status = substr($line, 0, 2);
-        $path   = trim(substr($line, 3));
-        if ($status === '??') { $added[] = $path; } else { $changed[] = $path . ' [' . trim($status) . ']'; }
-    }
-    check('no tracked file has been modified or deleted', [], $changed);
+    // A blanket "nothing in the tree is modified" check lived here. It was right
+    // while the branch was awaiting review and is wrong as a standing test: it
+    // fails for anybody with an edit in progress, including an edit to this file,
+    // which is how it first failed. The two checks that follow keep the parts that
+    // still mean something.
 
-    sort($added);
-    $expectedSorted = $expectedNew;
-    sort($expectedSorted);
-    check('exactly the six new files are present', $expectedSorted, $added);
+    // Phase 2.1A's seven files must all be IN the repository.
+    //
+    // This used to assert they were the only UNTRACKED files, which was the right
+    // gate while the branch was awaiting review and became permanently false the
+    // moment it merged — a check that can never pass again is not a check. Tracked
+    // is the property that stays true, and it still catches a file dropped in a
+    // rebase or lost in a merge.
+    $tracked = [];
+    @exec('cd ' . escapeshellarg($root) . ' && git ls-files 2>/dev/null', $tracked);
+    $tracked = array_flip($tracked);
+    $missing = [];
+    foreach ($expectedNew as $f) {
+        if (!isset($tracked[$f])) { $missing[] = $f; }
+    }
+    check('all seven Phase 2.1A files are tracked', [], $missing);
 
     $protected = ['wa_webhook.php', 'includes/wa_inbound.php', 'includes/wa_functions.php',
                   'wa_cron.php', 'includes/wa_process.php', 'includes/wa_enroll.php',
