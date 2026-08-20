@@ -174,6 +174,7 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
     .bde-app .scorecard{display:grid;gap:11px} .bde-app .scr{display:grid;grid-template-columns:220px 1fr 48px;gap:12px;align-items:center} .bde-app .scr label{font-size:12px;font-weight:600} .bde-app .scr .sb{height:9px;border-radius:99px;background:var(--surface3);border:1px solid var(--line);overflow:hidden} .bde-app .scr .sb div{height:100%;border-radius:99px;background:linear-gradient(90deg,#2f5f9e,#4d8bd6)} .bde-app .scr b{font-size:12.5px;font-weight:800;text-align:right}
 
     .bde-app .form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px} .bde-app .field{display:grid;gap:5px} .bde-app .field.span2{grid-column:span 2}.bde-app .field.span4{grid-column:span 4}
+    .bde-app .numgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
     .bde-app .field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
     .bde-app .field input,.bde-app .field textarea{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%} .bde-app .field textarea{min-height:82px;resize:vertical;line-height:1.5} .bde-app .field input:focus,.bde-app .field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)} .bde-app .field input:hover,.bde-app .field textarea:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))} .bde-app .field input[type=number]{font-variant-numeric:tabular-nums;font-weight:650}
     .bde-app .form-sub{display:flex;align-items:center;gap:10px;margin:2px 2px 11px;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:800} .bde-app .form-sub i{color:var(--brand);font-style:normal;font-weight:800;letter-spacing:.03em} .bde-app .form-sub::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
@@ -183,9 +184,9 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
     .bde-app .bde-foot{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6} .bde-app .bde-foot code{background:var(--surface2);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
 
     @media(max-width:1000px){
-      .bde-app .hero,.bde-app .grid-2,.bde-app .grid-3,.bde-app .strategy{grid-template-columns:1fr} .bde-app .kpis{grid-template-columns:1fr 1fr} .bde-app .drivers{grid-template-columns:repeat(2,1fr)} .bde-app .principles{grid-template-columns:1fr} .bde-app .form-grid{grid-template-columns:repeat(2,1fr)} .bde-app .field.span4{grid-column:span 2}
+      .bde-app .hero,.bde-app .grid-2,.bde-app .grid-3,.bde-app .strategy{grid-template-columns:1fr} .bde-app .kpis{grid-template-columns:1fr 1fr} .bde-app .drivers{grid-template-columns:repeat(2,1fr)} .bde-app .principles{grid-template-columns:1fr} .bde-app .form-grid,.bde-app .numgrid{grid-template-columns:repeat(2,1fr)} .bde-app .field.span4{grid-column:span 2}
     }
-    @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
+    @media(max-width:560px){.bde-app{padding:12px 14px 40px} .bde-app .kpis,.bde-app .mini3,.bde-app .steps3,.bde-app .form-grid,.bde-app .numgrid{grid-template-columns:1fr} .bde-app .field.span2,.bde-app .field.span4{grid-column:span 1} .bde-app .fr{grid-template-columns:110px 1fr 42px} .bde-app .scr{grid-template-columns:130px 1fr 40px}}
     @media(prefers-reduced-motion:reduce){.bde-app *{transition:none!important}}
     </style>
 
@@ -467,14 +468,14 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           ["International clients this month","number",B.intl?Math.round(B.intl.actual):0],
           ["BDM personal revenue this month (KES)","number",Math.round(B.personalActual)],
           ["Open pipeline — expected, not yet collected (KES)","number",Math.round(B.pipeline)],
-          ["SBU performance summary","auto",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n")],
-          ["Strategic accounts and blocked deals","textarea","",false,"Account, value, stage, owner, blocker, executive action and next date."],
-          ["HOD coaching / recovery decisions","textarea","",false,"Named HOD, issue, action, deadline and review point."],
-          ["CEO decisions required","textarea","",false,"Budget, pricing, executive access, technology, legal, payment or capacity decision."]
+          ["SBU performance summary","auto",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n"),false,"",4],
+          ["Strategic accounts and blocked deals","textarea","",false,"Account, value, stage, owner, blocker, executive action and next date.",2],
+          ["HOD coaching / recovery decisions","textarea","",false,"Named HOD, issue, action, deadline and review point.",2],
+          ["CEO decisions required","textarea","",false,"Budget, pricing, executive access, technology, legal, payment or capacity decision.",4]
         ];
-        const fieldHTML=f=>(f[1]==="textarea"||f[1]==="auto")
-          ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="${esc(f[4]||"")}">${esc(f[2])}</textarea></div>`
-          :`<div class="field"><label>${esc(f[0])}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
+        const fieldHTML=f=>{const isTA=(f[1]==="textarea"||f[1]==="auto");return isTA
+          ?`<div class="field span${f[5]||2}"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="${esc(f[4]||"")}">${esc(f[2])}</textarea></div>`
+          :`<div class="field"><label>${esc(f[0])}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;};
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const auto=fields.filter(f=>f[1]==="auto").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
@@ -483,7 +484,7 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           <div class="card"><div class="chead"><h4>BDM consolidated commercial report</h4><span class="chip jade">Auto-prefilled</span></div>
             <div id="reportForm">
               <div class="form-sub">Today's numbers <i>· auto-prefilled, edit if needed</i></div>
-              <div class="form-grid">${nums}</div>
+              <div class="numgrid">${nums}</div>
               <div class="form-grid" style="margin-top:12px">${auto}</div>
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
