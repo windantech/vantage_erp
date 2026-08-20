@@ -835,7 +835,7 @@ if (!function_exists('bdo_rollup')) {
             foreach (($t['srcRow'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
             // per-member action alerts + conversion signals (real, for the BDO's oversight)
             $un = (int) ($t['unread'] ?? 0);
-            if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'id' => (int) ($t['id'] ?? 0), 'n' => $un, 'text' => $un . ' escalated chat' . ($un > 1 ? 's' : '') . ' to reply']; }
+            if ($un > 0) { $out['deptAlerts'][] = ['name' => $t['name'], 'id' => (int) ($t['id'] ?? 0), 'n' => $un, 'text' => $un . ' unread WhatsApp chat' . ($un > 1 ? 's' : '') . ' to reply']; }
             // conversion + collection for EVERY member (one merged line each), flagged or not
             $ld = (int) ($t['leads'] ?? 0); $conv = $ld > 0 ? $t['clients'] / $ld : 0;
             $mcoll = $t['collD'] > 0 ? min(1.0, $t['collN'] / $t['collD']) : 0;
@@ -916,7 +916,7 @@ if (!function_exists('bdo_rollup')) {
         $out['ownLeads'] = (int) ($bmOwn['total_leads'] ?? 0);
         $out['ownSources'] = $bmOwn['sources'] ?? [];
         // the BDO's own escalated chats count as an action alert too
-        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
+        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' unread WhatsApp chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
         // highest → lowest
         usort($out['deptAlerts'], function ($a, $b) { return ($b['n'] ?? 0) <=> ($a['n'] ?? 0); });
         usort($out['deptQuality'], function ($a, $b) { return ($b['leads'] ?? 0) <=> ($a['leads'] ?? 0); });

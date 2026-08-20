@@ -446,13 +446,13 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         const fmax=Math.max(1,B.funnel[0][1]);const smax=Math.max(1,...B.sources.map(s=>s[1]));
         const alerts=B.alerts||[];
         const sHTML=B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No lead-source data across the SBUs this period.</p>`;
-        const aHTML=alerts.length?alerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.text||((a.n||0)+" escalated chats to reply"))}</b><p>${esc(a.name||"")}${a.sbu?" · "+esc(a.sbu):""}</p></div><span class="due">${nf.format(a.n||0)}</span></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No escalated WhatsApp chats awaiting reply across the SBUs. </p>`;
+        const aHTML=alerts.length?alerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.text||((a.n||0)+" unread WhatsApp chats to reply"))}</b><p>${esc(a.name||"")}${a.sbu?" · "+esc(a.sbu):""}</p></div><span class="due">${nf.format(a.n||0)}</span></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No unread WhatsApp chats awaiting reply across the SBUs. </p>`;
         return `
           <section class="grid-2">
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live · all SBUs</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,B.funnel[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Consolidated leads → paid clients across every SBU.</div></div>
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${sHTML}</div>
           </section>
-          <div class="card"><div class="chead"><h4>Escalations awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} flagged</span></div><div class="list">${aHTML}</div></div>`;
+          <div class="card"><div class="chead"><h4>Unread WhatsApp chats awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} ${alerts.length===1?"person":"people"}</span></div><div class="list">${aHTML}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Open WhatsApp conversations assigned to each person with an unanswered message — a response backlog, not sales enquiries.</div></div>`;
       }
 
       function vReport(){
