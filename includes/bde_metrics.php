@@ -841,16 +841,9 @@ if (!function_exists('bdo_rollup')) {
             $out['deptQuality'][] = ['name' => $t['name'], 'leads' => $ld, 'clients' => (int) $t['clients'], 'conv' => $conv, 'coll' => $mcoll, 'active' => $active, 'flag' => $flag];
         }
 
-        // the BDO's own attributed numbers count toward the department too
         $bm = bde_fetch_metrics($conn, $bdoId, $from, $to);
-        $deptRevenue += (float) $bm['revenue_kes']; $deptClients += (int) $bm['paid_clients'];
-        $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
-        $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
-        $deptLeadsTotal += (int) ($bm['total_leads'] ?? 0);
-        foreach (($bm['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
 
-        // The BDO sells too — show their own contribution as a team row (their course/revenue target,
-        // e.g. Edwin's MEAL Nairobi). Their department-total target stays the headline, not this row.
+        // The BDO's own personal targets (needed first, to classify them as seller vs manager).
         $bdoTarget = 0.0;
         $btq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets
             WHERE scope_type='user' AND scope_ref='$bdoId' AND metric IN ('revenue','course_revenue')");
@@ -862,10 +855,43 @@ if (!function_exists('bdo_rollup')) {
         $bdoClientsTarget = 0.0;
         $bcq = @mysqli_query($conn, "SELECT COALESCE(MAX(target_value),0) t FROM bde_targets WHERE scope_type='user' AND scope_ref='$bdoId' AND metric='clients_per_country'");
         if ($bcq && ($bcr = mysqli_fetch_assoc($bcq))) { $bdoClientsTarget = (float) $bcr['t']; }
-        if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
+
+        // Is the BDO a genuine INDIVIDUAL SELLER, or a MANAGER co-tagged on the team's programmes?
+        // A pure co-assignee (e.g. Erick #121, always listed as '94,100,121' / '94,119,121') shares
+        // every event with their BDEs, so their paid clients & revenue are ALREADY counted under those
+        // BDEs — adding the BDO again double-counts the department. Only count a BDO's own numbers when
+        // they sell a DISTINCT product: a personal revenue/course target (Edwin's 2M + MEAL Nairobi),
+        // a solely-owned event (assigned_to = just their id), or an assigned intake.
+        $bdoIsSeller = ($bdoTarget > 0 || $ownFloor > 0);
+        if (!$bdoIsSeller) {
+            $soleEv = 0;
+            $seq = @mysqli_query($conn, "SELECT COUNT(*) c FROM Event WHERE TRIM(TRAILING ',' FROM REPLACE(assigned_to,' ','')) = '$bdoId'");
+            if ($seq && ($sr2 = mysqli_fetch_assoc($seq))) { $soleEv = (int) $sr2['c']; }
+            $intk = 0;
+            $ieq = @mysqli_query($conn, "SELECT COUNT(*) c FROM intake WHERE assigned_to = $bdoId");
+            if ($ieq && ($ir3 = mysqli_fetch_assoc($ieq))) { $intk = (int) $ir3['c']; }
+            if ($soleEv > 0 || $intk > 0) { $bdoIsSeller = true; }
+        }
+        $out['bdoIsSeller'] = $bdoIsSeller;
+
+        if ($bdoIsSeller) {
+            // a real seller (Edwin): count their own attribution toward the department and give them a row
+            $deptRevenue += (float) $bm['revenue_kes']; $deptClients += (int) $bm['paid_clients'];
+            $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
+            $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
+            $deptLeadsTotal += (int) ($bm['total_leads'] ?? 0);
+            foreach (($bm['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
             $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'clientsTarget' => $bdoClientsTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+        } else {
+            // a MANAGER BDO (Erick): their events are their BDEs' events, so their revenue/clients are
+            // ALREADY in the team rows and the department total — do NOT count them again. But still show
+            // a display-only row so the BDO sees themselves, flagged as co-led DEPARTMENT revenue (not
+            // separate personal sales) via the 'manager' marker the team table renders specially.
+            $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
+            $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
+            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => 0.0, 'clientsTarget' => 0.0, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true, 'manager' => true];
         }
 
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
