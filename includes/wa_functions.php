@@ -631,6 +631,363 @@ function wa_inbox_scope_where($staffId, $isSupervisor) {
     return " WHERE (" . wa_mine_sql($staffId, 'cv') . " OR " . wa_triage_sql('cv') . ") ";
 }
 
+// =====================================================================
+// Inbox listing — paginated, filtered and counted on the SERVER
+// =====================================================================
+//
+// The inbox used to select EVERY conversation a rep could see, with roughly
+// fourteen correlated subqueries per row, on page load and again every six
+// seconds. At eight hundred conversations that is some eleven thousand subquery
+// executions per poll, per open tab, per rep — which is what made the page slow
+// and what the functions below exist to stop.
+//
+// Two ideas do the work.
+//
+// FIRST, the rows are fetched in two phases. Phase one picks the ids for the
+// page using only wa_conversations and wa_contacts; phase two runs the expensive
+// per-row subqueries for those fifty ids and nothing else. The cost stops
+// scaling with the size of the inbox and starts scaling with the size of the
+// page.
+//
+// SECOND, filtering and counting move here. They used to happen in the browser
+// over the whole list, which is exactly why the whole list had to be sent. With
+// a page of fifty rows that would have quietly broken every chip — "Unread 3"
+// would have meant "three of the fifty I happen to have", which is worse than
+// slow because it looks right.
+
+/** The filter tabs the inbox offers. 'all' is the absence of a filter. */
+function wa_inbox_filters() {
+    return ['all', 'unread', 'escalated', 'reengaged', 'triage', 'mine', 'closing', 'ready'];
+}
+
+/** Largest page the inbox will ever ask for in one request. The live poll
+ *  re-reads the whole loaded window, so this also bounds the cost of polling
+ *  after somebody has pressed "Load more" several times. */
+if (!defined('WA_INBOX_PAGE'))     { define('WA_INBOX_PAGE', 50); }
+if (!defined('WA_INBOX_MAX_ROWS')) { define('WA_INBOX_MAX_ROWS', 300); }
+
+/**
+ * The SQL predicate for one filter tab, or '' for 'all'.
+ *
+ * Each mirrors exactly what the browser used to test on the loaded array, so the
+ * tabs behave as they always have — the arithmetic simply happens where the data
+ * is instead of after it has been shipped.
+ */
+function wa_inbox_filter_sql($filter, $staffId) {
+    switch ($filter) {
+        case 'escalated':
+            return "cv.escalated = 1";
+        case 'mine':
+            return wa_mine_sql($staffId, 'cv');
+        case 'triage':
+            return wa_triage_sql('cv');
+        case 'ready':
+            return wa_ready_to_call_sql('cv');
+        case 'closing':
+            // Inside the 24-hour window, with under an hour of it left.
+            $secs = (int)WA_CLOSING_SECS;
+            return "(" . wa_window_left_sql('c') . " > 0 AND " . wa_window_left_sql('c') . " <= $secs)";
+        case 'reengaged':
+            return "(cv.reengaged_at IS NOT NULL AND EXISTS(
+                        SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
+                          AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at))";
+        case 'unread':
+            // Unread means it needs a HUMAN: an AI conversing normally is not unread.
+            return "(( cv.escalated = 1 OR cv.handler = 'human')
+                     AND EXISTS (SELECT 1 FROM wa_messages m3
+                                  WHERE m3.contact_id = c.id AND m3.direction = 'inbound'
+                                    AND (cv.last_read_at IS NULL OR m3.created_at > cv.last_read_at)))";
+    }
+    return '';
+}
+
+/**
+ * WHERE fragment for the search box, or ''.
+ *
+ * Covers the contact name, the phone number, the course or event, and the owning
+ * rep. It deliberately does NOT search the last message body: that value is
+ * produced by a per-row subquery, so matching on it would either force the
+ * expensive query to run over every conversation again — undoing the whole point
+ * — or quietly change the meaning to "any message ever sent". Neither is worth
+ * it for a box people use to find a person.
+ */
+function wa_inbox_search_sql($conn, $q) {
+    $q = trim((string)$q);
+    if ($q === '') { return ''; }
+    $like = "'%" . mysqli_real_escape_string($conn, $q) . "%'";
+    return "(c.profile_name LIKE $like
+             OR c.wa_id LIKE $like
+             OR COALESCE(NULLIF(s.full_name,''), ru.fullname) LIKE $like
+             OR (CASE cv.ref_type
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+                 END) LIKE $like)";
+}
+
+/** WHERE fragment restricting to one course/event by NAME, or ''. The dropdown
+ *  offers names rather than ids because a course and an event can share neither
+ *  an id space nor a table. */
+function wa_inbox_course_sql($conn, $name) {
+    $name = trim((string)$name);
+    if ($name === '') { return ''; }
+    $v = "'" . mysqli_real_escape_string($conn, $name) . "'";
+    return "(CASE cv.ref_type
+                WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+             END) = $v";
+}
+
+/**
+ * Assemble the WHERE clause shared by the row, count and course queries.
+ *
+ * $opts: filter, course, handler, q. Anything unrecognised is ignored rather
+ * than passed through, so a hand-edited query string cannot widen the scope.
+ */
+function wa_inbox_where($conn, $staffId, $isSupervisor, array $opts, $applyFilters = true) {
+    $parts = [];
+
+    if (!$isSupervisor) {
+        $parts[] = "(" . wa_mine_sql($staffId, 'cv') . " OR " . wa_triage_sql('cv') . ")";
+    }
+
+    if ($applyFilters) {
+        $filter = (string)($opts['filter'] ?? 'all');
+        if (in_array($filter, wa_inbox_filters(), true)) {
+            $f = wa_inbox_filter_sql($filter, $staffId);
+            if ($f !== '') { $parts[] = $f; }
+        }
+        $handler = (string)($opts['handler'] ?? '');
+        if (in_array($handler, ['ai', 'human'], true)) {
+            $parts[] = "cv.handler = '" . $handler . "'";
+        }
+        $course = wa_inbox_course_sql($conn, $opts['course'] ?? '');
+        if ($course !== '') { $parts[] = $course; }
+        $search = wa_inbox_search_sql($conn, $opts['q'] ?? '');
+        if ($search !== '') { $parts[] = $search; }
+    }
+
+    return $parts ? ' WHERE ' . implode(' AND ', $parts) . ' ' : '';
+}
+
+/**
+ * ORDER BY for a filter tab.
+ *
+ * Two tabs are about a deadline rather than about recency, and for those the
+ * newest chat is close to the least urgent one — so they sort by whichever
+ * window shuts first, exactly as the browser used to re-sort them.
+ */
+function wa_inbox_order_sql($filter) {
+    if ($filter === 'closing') {
+        return " ORDER BY " . wa_window_left_sql('c') . " ASC, cv.id DESC ";
+    }
+    if ($filter === 'ready') {
+        return " ORDER BY COALESCE(" . wa_ready_to_call_left_sql('cv') . ", 999999999) ASC, cv.id DESC ";
+    }
+    return " ORDER BY cv.last_message_at DESC, cv.id DESC ";
+}
+
+/**
+ * One page of inbox rows, richest fields included.
+ *
+ * PHASE ONE selects the ids for the page. It reads wa_conversations and
+ * wa_contacts, joins the owner for search, and applies the scope, the filter and
+ * the ordering. No last-message lookup, no unread count, no call-permission
+ * columns — none of that is needed to decide WHICH conversations are on the page.
+ *
+ * PHASE TWO fetches everything the row displays, for those ids only. This is
+ * where the fourteen subqueries live, and they now run fifty times rather than
+ * eight hundred.
+ *
+ * @return array {rows, total_returned, has_more}
+ */
+function wa_inbox_rows($conn, $staffId, $isSupervisor, array $opts = []) {
+    $filter = (string)($opts['filter'] ?? 'all');
+    if (!in_array($filter, wa_inbox_filters(), true)) { $filter = 'all'; }
+
+    $limit = (int)($opts['limit'] ?? WA_INBOX_PAGE);
+    $limit = max(1, min(WA_INBOX_MAX_ROWS, $limit));
+
+    $where = wa_inbox_where($conn, $staffId, $isSupervisor, $opts);
+    $order = wa_inbox_order_sql($filter);
+
+    // ---- phase one: which conversations are on this page? -------------------
+    // One extra row is asked for so "is there another page" needs no COUNT.
+    $probe = $limit + 1;
+    $ids = [];
+    $res = mysqli_query($conn, "
+        SELECT cv.id
+          FROM wa_conversations cv
+          JOIN wa_contacts c       ON c.id  = cv.contact_id
+     LEFT JOIN registered_users ru ON ru.id = cv.assigned_user_id
+     LEFT JOIN staff s             ON s.system_user_id = cv.assigned_user_id
+        {$where}
+        {$order}
+         LIMIT {$probe}");
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $ids[] = (int)$r['id']; } }
+
+    $hasMore = count($ids) > $limit;
+    if ($hasMore) { array_pop($ids); }
+    if (!$ids) { return ['rows' => [], 'total_returned' => 0, 'has_more' => false]; }
+
+    // ---- phase two: everything those rows display ---------------------------
+    $idList = implode(',', $ids);
+    $sql = "
+        SELECT cv.id, cv.ref_type, cv.ref_id, cv.handler, cv.escalated, cv.last_message_at,
+               c.wa_id, c.profile_name,
+               (CASE WHEN cv.reengaged_at IS NOT NULL AND EXISTS(
+                    SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
+                      AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
+                 THEN 1 ELSE 0 END) AS reengaged_responded,
+               cv.last_channel,
+               " . wa_ready_to_call_sql('cv') . " AS is_ready_call,
+               " . wa_ready_to_call_left_sql('cv') . " AS call_win_left,
+               " . wa_ready_to_call_granted_sql('cv') . " AS call_granted_at,
+               " . wa_window_left_sql('c') . " AS win_left,
+               " . wa_triage_sql('cv') . " AS is_triage,
+               " . wa_mine_sql($staffId, 'cv') . " AS is_mine,
+               CASE cv.ref_type
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+               END AS ref_name,
+               COALESCE(NULLIF(s.full_name,''), ru.fullname) AS owner_name,
+               (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
+               (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
+                  FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
+               (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
+                  (SELECT COUNT(*) FROM wa_messages m
+                     WHERE m.contact_id = c.id AND m.direction = 'inbound'
+                       AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at))
+                ELSE 0 END) AS unread
+          FROM wa_conversations cv
+          JOIN wa_contacts c        ON c.id  = cv.contact_id
+     LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
+     LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
+         WHERE cv.id IN ($idList)
+         -- Phase one already decided the order; FIELD() replays it so the page
+         -- does not silently re-sort itself by primary key.
+      ORDER BY FIELD(cv.id, $idList)";
+
+    $rows = [];
+    $res = mysqli_query($conn, $sql);
+    if ($res) { while ($r = mysqli_fetch_assoc($res)) { $rows[] = $r; } }
+
+    return ['rows' => $rows, 'total_returned' => count($rows), 'has_more' => $hasMore];
+}
+
+/**
+ * The eight chip counts, in ONE query over the whole scope.
+ *
+ * Deliberately ignores the filter tab, the course, the handler and the search
+ * box: a chip has to say how many conversations that tab holds, not how many
+ * survive the filter already applied. It is the one thing here that still
+ * evaluates its predicates across every conversation — but it returns a single
+ * row, skips the last-message and call-permission lookups entirely, and the
+ * inbox refreshes it far less often than it refreshes the rows.
+ */
+function wa_inbox_counts($conn, $staffId, $isSupervisor) {
+    $where = wa_inbox_where($conn, $staffId, $isSupervisor, [], false);
+    $secs  = (int)WA_CLOSING_SECS;
+    $win   = wa_window_left_sql('c');
+
+    $sql = "
+        SELECT COUNT(*) AS all_ct,
+               SUM(" . wa_inbox_filter_sql('unread', $staffId) . ")    AS unread_ct,
+               SUM(cv.escalated = 1)                                    AS escalated_ct,
+               SUM(" . wa_inbox_filter_sql('reengaged', $staffId) . ") AS reengaged_ct,
+               SUM(" . wa_triage_sql('cv') . ")                         AS triage_ct,
+               SUM(" . wa_mine_sql($staffId, 'cv') . ")                 AS mine_ct,
+               SUM($win > 0 AND $win <= $secs)                          AS closing_ct,
+               SUM(" . wa_ready_to_call_sql('cv') . ")                  AS ready_ct
+          FROM wa_conversations cv
+          JOIN wa_contacts c        ON c.id  = cv.contact_id
+     LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
+     LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
+        {$where}";
+
+    $res = mysqli_query($conn, $sql);
+    $r = $res ? mysqli_fetch_assoc($res) : null;
+    return [
+        'all'       => (int)($r['all_ct'] ?? 0),
+        'unread'    => (int)($r['unread_ct'] ?? 0),
+        'escalated' => (int)($r['escalated_ct'] ?? 0),
+        'reengaged' => (int)($r['reengaged_ct'] ?? 0),
+        'triage'    => (int)($r['triage_ct'] ?? 0),
+        'mine'      => (int)($r['mine_ct'] ?? 0),
+        'closing'   => (int)($r['closing_ct'] ?? 0),
+        'ready'     => (int)($r['ready_ct'] ?? 0),
+    ];
+}
+
+/**
+ * Course and event names present in this rep's inbox, for the dropdown.
+ *
+ * Previously built from whichever rows happened to be loaded, which was fine
+ * when that was all of them and would have become a lie the moment it was a
+ * page. Read once when the page opens; a course does not appear mid-session.
+ */
+function wa_inbox_courses($conn, $staffId, $isSupervisor) {
+    $where = wa_inbox_where($conn, $staffId, $isSupervisor, [], false);
+    $sql = "
+        SELECT DISTINCT (CASE cv.ref_type
+                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
+                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
+                 END) AS ref_name
+          FROM wa_conversations cv
+          JOIN wa_contacts c        ON c.id  = cv.contact_id
+     LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
+     LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
+        {$where}
+      ORDER BY ref_name ASC";
+    $out = [];
+    $res = mysqli_query($conn, $sql);
+    if ($res) {
+        while ($r = mysqli_fetch_assoc($res)) {
+            $n = trim((string)($r['ref_name'] ?? ''));
+            if ($n !== '') { $out[] = $n; }
+        }
+    }
+    return $out;
+}
+
+/**
+ * One database row as the browser consumes it.
+ *
+ * The inbox page and the polling endpoint used to build this shape separately,
+ * from two copies of the same enormous query that had already drifted apart in
+ * their comments. One function, one shape, one place to change it.
+ */
+function wa_inbox_row_shape(array $r) {
+    return [
+        'id'        => (int)$r['id'],
+        'wa_id'     => $r['wa_id'],
+        'name'      => $r['profile_name'] ?: '',
+        'ref_name'  => $r['ref_name'] ?: '',
+        'owner'     => $r['owner_name'] ?: '',
+        'handler'   => $r['handler'],
+        'escalated' => (int)$r['escalated'],
+        'last_body' => mb_strimwidth((string)$r['last_body'], 0, 60, '…'),
+        'last_kind' => $r['last_kind'] ?: 'in',
+        'unread'    => (int)$r['unread'],
+        'reengaged' => (int)$r['reengaged_responded'],
+        'triage'    => (int)$r['is_triage'],
+        'mine'      => (int)$r['is_mine'],
+        // Seconds left on the 24h window; null when they have never written.
+        // The inbox counts down from this, so it must come from the server.
+        'win_left'  => $r['win_left'] === null ? null : (int)$r['win_left'],
+        'closing'   => ($r['win_left'] !== null && (int)$r['win_left'] > 0
+                        && (int)$r['win_left'] <= WA_CLOSING_SECS) ? 1 : 0,
+        // Which of our numbers this chat is on. Empty/messaging is the norm,
+        // so the inbox only badges the exception.
+        'channel'      => (string)($r['last_channel'] ?? ''),
+        // Phase 1.2 Ready to Call — derived from Phase 1.1 permission state, so a
+        // grant obtained through the manual button qualifies too.
+        'ready_call'   => (int)$r['is_ready_call'],
+        'call_left'    => $r['call_win_left'] === null ? null : (int)$r['call_win_left'],
+        'call_granted' => $r['call_granted_at'] !== null
+                          ? date('j M, H:i', strtotime((string)$r['call_granted_at'])) : '',
+    ];
+}
+
 /** Manually-assigned rep for a course/event (fallback), or null. */
 function wa_owner_override($conn, $kind, $refId) {
     $k = "'" . mysqli_real_escape_string($conn, $kind) . "'";

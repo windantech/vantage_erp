@@ -355,85 +355,59 @@ if ($action === 'resend') {
     wa_json_out(wa_resend_message($conn, $msgId));
 }
 
-// ---- Inbox list (with per-conversation unread count) ----
+// ---- Inbox list: one PAGE of conversations, filtered and counted server-side ----
+//
+// Used both for the first paint and for the six-second live poll. It replaces a
+// query that selected every conversation a rep could see, with fourteen
+// correlated subqueries per row, every time — see wa_inbox_rows() for what
+// changed and why.
+//
+//   GET includes/wa_api.php?action=inbox
+//       &limit=50            rows to return, capped at WA_INBOX_MAX_ROWS
+//       &filter=all|unread|escalated|reengaged|triage|mine|closing|ready
+//       &course=<name>       course/event name from the dropdown
+//       &handler=ai|human
+//       &q=<search>          name, phone, course or owner
+//       &counts=1            also return the chip totals (they cost more, so the
+//                            page asks for them less often than it asks for rows)
 if ($action === 'inbox') {
-    wa_message_flags_ensure($conn);   // ensure sent_by_staff exists before we read it
+    wa_message_flags_ensure($conn);          // ensure sent_by_staff exists before we read it
     wa_conv_reengage_schema_ensure($conn);   // ensure reengaged_at exists before we read it
     wa_conv_mode_schema_ensure($conn);       // ensure program_id exists before the scope/triage SQL reads it
-wa_channel_schema_ensure($conn);         // ensure last_channel exists before the query below reads it
-wa_call_permission_schema_ensure($conn); // ensure wa_call_permissions exists for the Ready-to-Call predicate
-    $where = wa_inbox_scope_where($staff_id, $is_supervisor);   // reps see their own courses' chats
-    $sql = "
-        SELECT cv.id, cv.handler, cv.escalated, cv.last_message_at,
-               c.wa_id, c.profile_name,
-               (CASE WHEN cv.reengaged_at IS NOT NULL AND EXISTS(
-                    SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
-                      AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
-                 THEN 1 ELSE 0 END) AS reengaged_responded,
-               cv.last_channel,
-               " . wa_ready_to_call_sql('cv') . " AS is_ready_call,
-               " . wa_ready_to_call_left_sql('cv') . " AS call_win_left,
-               " . wa_ready_to_call_granted_sql('cv') . " AS call_granted_at,
-               " . wa_window_left_sql('c') . " AS win_left,
-               " . wa_triage_sql('cv') . " AS is_triage,
-               " . wa_mine_sql($staff_id, 'cv') . " AS is_mine,
-               CASE cv.ref_type
-                    WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
-                    WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
-               END AS ref_name,
-               COALESCE(NULLIF(s.full_name,''), ru.fullname) AS owner_name,
-               (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
-               (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
-                  FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-               -- Unread means it needs a human. AI-handled chats are not unread until
-               -- escalated or a human owns them (mirrors wa_inbox.php).
-               (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
-                  (SELECT COUNT(*) FROM wa_messages m
-                     WHERE m.contact_id = c.id AND m.direction = 'inbound'
-                       AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at))
-                ELSE 0 END) AS unread
-          FROM wa_conversations cv
-          JOIN wa_contacts c        ON c.id  = cv.contact_id
-     LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
-     LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
-        {$where}
-      ORDER BY cv.last_message_at DESC, cv.id DESC";
-    $res = mysqli_query($conn, $sql);
+    wa_channel_schema_ensure($conn);         // ensure last_channel exists before the query below reads it
+    wa_call_permission_schema_ensure($conn); // ensure wa_call_permissions exists for the Ready-to-Call predicate
+
+    $opts = [
+        'filter'  => (string)($_GET['filter']  ?? 'all'),
+        'course'  => (string)($_GET['course']  ?? ''),
+        'handler' => (string)($_GET['handler'] ?? ''),
+        'q'       => (string)($_GET['q']       ?? ''),
+        'limit'   => (int)($_GET['limit'] ?? WA_INBOX_PAGE),
+    ];
+
+    $page = wa_inbox_rows($conn, $staff_id, $is_supervisor, $opts);
     $rows = [];
-    if ($res) {
-        while ($r = mysqli_fetch_assoc($res)) {
-            $rows[] = [
-                'id'        => (int)$r['id'],
-                'wa_id'     => $r['wa_id'],
-                'name'      => $r['profile_name'] ?: '',
-                'ref_name'  => $r['ref_name'] ?: '',
-                'owner'     => $r['owner_name'] ?: '',
-                'handler'   => $r['handler'],
-                'escalated' => (int)$r['escalated'],
-                'last_body' => mb_strimwidth((string)$r['last_body'], 0, 60, '…'),
-                'last_kind' => $r['last_kind'] ?: 'in',
-                'unread'    => (int)$r['unread'],
-                'reengaged' => (int)$r['reengaged_responded'],
-                'triage'    => (int)$r['is_triage'],
-                'mine'      => (int)$r['is_mine'],
-                // Seconds left on the 24h window; null when they have never written.
-                // The inbox counts down from this, so it must come from the server.
-                'win_left'  => $r['win_left'] === null ? null : (int)$r['win_left'],
-                'closing'   => ($r['win_left'] !== null && (int)$r['win_left'] > 0
-                                && (int)$r['win_left'] <= WA_CLOSING_SECS) ? 1 : 0,
-                // Phase 1.2 Ready to Call — derived from Phase 1.1 permission state,
-                // so a grant obtained through the manual button qualifies too.
-                // Which of our numbers this chat is on. Empty/messaging is the norm,
-                // so the inbox only badges the exception.
-                'channel'       => (string)($r['last_channel'] ?? ''),
-                'ready_call'    => (int)$r['is_ready_call'],
-                'call_left'     => $r['call_win_left'] === null ? null : (int)$r['call_win_left'],
-                'call_granted'  => $r['call_granted_at'] !== null
-                                   ? date('j M, H:i', strtotime((string)$r['call_granted_at'])) : '',
-            ];
-        }
+    foreach ($page['rows'] as $r) { $rows[] = wa_inbox_row_shape($r); }
+
+    $out = [
+        'conversations' => $rows,
+        'has_more'      => (bool)$page['has_more'],
+        'returned'      => (int)$page['total_returned'],
+    ];
+    // The counts sweep the whole scope, so they are refreshed on their own slower
+    // cadence rather than on every poll. Asking for rows must stay cheap.
+    if (!empty($_GET['counts'])) {
+        $out['counts'] = wa_inbox_counts($conn, $staff_id, $is_supervisor);
     }
-    wa_json_out(['conversations' => $rows]);
+    wa_json_out($out);
+}
+
+// ---- Course / event names present in this inbox, for the filter dropdown ----
+// Read once when the page opens: with a page of rows the dropdown can no longer
+// be built from whatever happened to be loaded.
+if ($action === 'inbox_courses') {
+    wa_conv_mode_schema_ensure($conn);
+    wa_json_out(['courses' => wa_inbox_courses($conn, $staff_id, $is_supervisor)]);
 }
 
 // ---- New messages in a thread (and mark it read) ----

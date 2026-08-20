@@ -209,19 +209,63 @@ echo "\n-- every page that READS a channel column creates it first --\n";
 // an uncaught fatal — the page renders its sidebar and then simply stops, with
 // nothing in the log to say why. Each entry point must run the schema ensure
 // BEFORE its query, not rely on some other request having done it.
+// The inbox query itself now lives in wa_functions.php — wa_inbox.php and
+// wa_api.php used to carry near-identical copies of it, which had already drifted
+// apart. So the property being checked moved with it: the query names the column
+// in ONE place, and every entry point must run the ensure before it CALLS that
+// query, not merely before some SQL it happens to contain itself.
+$fns = file_get_contents(__DIR__ . '/wa_functions.php');
+check('the shared inbox query reads last_channel', true,
+    strpos($fns, 'cv.last_channel') !== false);
+check('the shared inbox query uses the Ready-to-Call predicate', true,
+    strpos($fns, 'wa_ready_to_call_sql') !== false);
+
+/**
+ * The same source with every comment removed.
+ *
+ * These assertions are about the ORDER OF CODE, so they have to read code. A
+ * docblock above the ensures that merely mentions wa_inbox_rows() would
+ * otherwise register as the first call and fail a file that is perfectly
+ * correct — which is exactly what happened the first time this ran.
+ */
+function wa_code_only($src) {
+    $out = '';
+    foreach (token_get_all($src) as $t) {
+        if (is_array($t)) {
+            if ($t[0] === T_COMMENT || $t[0] === T_DOC_COMMENT) { continue; }
+            $out .= $t[1];
+        } else {
+            $out .= $t;
+        }
+    }
+    return $out;
+}
+
+/** Offset of the first call to any inbox query function, or false. */
+function wa_first_inbox_call($src) {
+    $found = false;
+    foreach (['wa_inbox_rows(', 'wa_inbox_counts(', 'wa_inbox_courses('] as $fn) {
+        $at = strpos($src, $fn);
+        if ($at !== false && ($found === false || $at < $found)) { $found = $at; }
+    }
+    return $found;
+}
+
 foreach (['wa_inbox.php' => __DIR__ . '/../wa_inbox.php',
           'wa_api.php'   => __DIR__ . '/wa_api.php'] as $label => $path) {
-    $src = file_get_contents($path);
-    $reads  = strpos($src, 'cv.last_channel');
-    $ensure = strpos($src, 'wa_channel_schema_ensure($conn)');
-    check($label . ': reads last_channel', true, $reads !== false);
-    check($label . ': ensures the column first', true, $ensure !== false && $ensure < $reads);
+    $src  = wa_code_only(file_get_contents($path));
+    $uses = wa_first_inbox_call($src);
+    check($label . ': runs an inbox query', true, $uses !== false);
 
-    // Same for the Ready-to-Call predicate's table.
-    $rtc  = strpos($src, 'wa_ready_to_call_sql');
+    $ensure = strpos($src, 'wa_channel_schema_ensure($conn)');
+    check($label . ': ensures the channel column first', true,
+        $ensure !== false && $uses !== false && $ensure < $uses);
+
+    // Same for the Ready-to-Call predicate's table, which both the row query and
+    // the chip counts reach through wa_ready_to_call_sql().
     $perm = strpos($src, 'wa_call_permission_schema_ensure($conn)');
     check($label . ': ensures wa_call_permissions first', true,
-        $perm !== false && $rtc !== false && $perm < $rtc);
+        $perm !== false && $uses !== false && $perm < $uses);
 }
 
 printf("\n%d check(s), %d failure(s)\n", $checks, $failures);

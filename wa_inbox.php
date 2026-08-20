@@ -22,56 +22,17 @@ wa_call_permission_schema_ensure($conn); // ensure wa_call_permissions exists fo
 $flash = isset($_SESSION['wa_flash']) ? $_SESSION['wa_flash'] : null;
 unset($_SESSION['wa_flash']);
 
-// Scope: supervisors see all; every other rep sees chats for courses/events they're a
-// rep of (primary or contributor), plus any assigned to them — not every course's.
-$where = wa_inbox_scope_where($staff_id, $is_supervisor);
-
-$sql = "
-    SELECT cv.id, cv.ref_type, cv.ref_id, cv.handler, cv.escalated, cv.last_message_at,
-           c.wa_id, c.profile_name,
-           (CASE WHEN cv.reengaged_at IS NOT NULL AND EXISTS(
-                SELECT 1 FROM wa_messages m2 WHERE m2.contact_id = c.id
-                  AND m2.direction = 'inbound' AND m2.created_at >= cv.reengaged_at)
-             THEN 1 ELSE 0 END) AS reengaged_responded,
-           cv.last_channel,
-           " . wa_ready_to_call_sql('cv') . " AS is_ready_call,
-           " . wa_ready_to_call_left_sql('cv') . " AS call_win_left,
-           " . wa_ready_to_call_granted_sql('cv') . " AS call_granted_at,
-           " . wa_window_left_sql('c') . " AS win_left,
-           " . wa_triage_sql('cv') . " AS is_triage,
-           " . wa_mine_sql($staff_id, 'cv') . " AS is_mine,
-           CASE cv.ref_type
-                WHEN 'course' THEN (SELECT course FROM course WHERE course_id = cv.ref_id)
-                WHEN 'event'  THEN (SELECT event_title FROM `Event` WHERE event_id = cv.ref_id)
-           END AS ref_name,
-           COALESCE(NULLIF(s.full_name,''), ru.fullname) AS owner_name,
-           (SELECT body FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_body,
-           (SELECT CASE WHEN m.direction='inbound' THEN 'in' WHEN m.sent_by_staff IS NULL THEN 'ai' ELSE 'human' END
-              FROM wa_messages m WHERE m.contact_id = c.id AND m.type <> 'note' ORDER BY m.id DESC LIMIT 1) AS last_kind,
-           -- Unread means it needs a HUMAN. While the AI is handling a chat it is not unread;
-           -- it only counts once the chat is escalated or a human owns it, so an AI
-           -- conversing normally never clutters the unread badge.
-           (CASE WHEN cv.escalated = 1 OR cv.handler = 'human' THEN
-              (SELECT COUNT(*) FROM wa_messages m
-                 WHERE m.contact_id = c.id AND m.direction = 'inbound'
-                   AND (cv.last_read_at IS NULL OR m.created_at > cv.last_read_at))
-            ELSE 0 END) AS unread
-      FROM wa_conversations cv
-      JOIN wa_contacts c        ON c.id  = cv.contact_id
- LEFT JOIN registered_users ru  ON ru.id = cv.assigned_user_id
- LEFT JOIN staff s              ON s.system_user_id = cv.assigned_user_id
-    {$where}
-  ORDER BY cv.last_message_at DESC, cv.id DESC";
-$result = mysqli_query($conn, $sql);
-
-$conversations = [];
-$unreadTotal = 0;
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $unreadTotal += (int)$row['unread'];
-        $conversations[] = $row;
-    }
-}
+// The rows are no longer fetched here. This page used to select EVERY conversation
+// a rep could see — fourteen correlated subqueries per row — and render them, only
+// for the live poll to replace the whole table a moment later. The poll is now the
+// single source of rows, one page at a time, so the markup exists once instead of
+// twice and the query cost stops scaling with the size of the inbox.
+//
+// Two things are still read here, because they are cheap and the page needs them
+// before first paint: the chip counts, and the course/event names for the filter.
+$counts     = wa_inbox_counts($conn, $staff_id, $is_supervisor);
+$courseOpts = wa_inbox_courses($conn, $staff_id, $is_supervisor);
+$unreadTotal = (int)$counts['unread'];
 ?>
 
 <section id="content-wrapper" class="d-flex flex-column">
@@ -111,35 +72,27 @@ if ($result) {
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div class="d-flex align-items-center gap-2">
                             <h6 class="m-0 fw-bold text-uppercase d-inline">Conversations</h6>
-                            <small class="text-muted">(<span id="waCount"><?php echo count($conversations); ?></span>)</small>
+                            <small class="text-muted">(<span id="waCount">…</span><span id="waOf"></span>)</small>
                             <span id="waLive" class="badge bg-success-subtle text-success border border-success-subtle">
                                 <i class="bi bi-broadcast"></i> live
                             </span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <div class="btn-group btn-group-sm" role="group" id="waFilters">
-                                <button type="button" class="btn btn-outline-danger" data-filter="closing" title="The customer's 24-hour service window shuts within the hour. After that you can only reach them with an approved template, so reply now.">Closing soon <span class="badge bg-danger ms-1" id="cntClosing">0</span></button>
-                                <button type="button" class="btn btn-outline-success" data-filter="ready" title="The customer granted permission to be called and is still inside the 24-hour calling window. Open the chat and use Call now.">Ready to call <span class="badge bg-success ms-1" id="cntReady">0</span></button>
-                                <button type="button" class="btn btn-outline-secondary active" data-filter="all">All <span class="badge bg-secondary ms-1" id="cntAll">0</span></button>
-                                <button type="button" class="btn btn-outline-primary" data-filter="mine" title="Chats for courses, events and programmes you are a rep of, plus anything assigned to you — excludes the shared Triage pool.">My courses <span class="badge bg-primary ms-1" id="cntMine">0</span></button>
-                                <button type="button" class="btn btn-outline-danger" data-filter="unread">Unread <span class="badge bg-danger ms-1" id="cntUnread">0</span></button>
-                                <button type="button" class="btn btn-outline-warning" data-filter="escalated">Escalated <span class="badge bg-warning text-dark ms-1" id="cntEsc">0</span></button>
-                                <button type="button" class="btn btn-outline-success" data-filter="reengaged" title="Clients who replied after a re-engagement template">Re-engaged <span class="badge bg-success ms-1" id="cntReeng">0</span></button>
-                                <button type="button" class="btn btn-outline-info" data-filter="triage" title="Nobody owns these and the bot could not work out what they want — they are invisible to every other view. Pick one up and reply.">Triage <span class="badge bg-info text-dark ms-1" id="cntTriage">0</span></button>
+                                <button type="button" class="btn btn-outline-danger" data-filter="closing" title="The customer's 24-hour service window shuts within the hour. After that you can only reach them with an approved template, so reply now.">Closing soon <span class="badge bg-danger ms-1" id="cntClosing"><?php echo (int)$counts['closing']; ?></span></button>
+                                <button type="button" class="btn btn-outline-success" data-filter="ready" title="The customer granted permission to be called and is still inside the 24-hour calling window. Open the chat and use Call now.">Ready to call <span class="badge bg-success ms-1" id="cntReady"><?php echo (int)$counts['ready']; ?></span></button>
+                                <button type="button" class="btn btn-outline-secondary active" data-filter="all">All <span class="badge bg-secondary ms-1" id="cntAll"><?php echo (int)$counts['all']; ?></span></button>
+                                <button type="button" class="btn btn-outline-primary" data-filter="mine" title="Chats for courses, events and programmes you are a rep of, plus anything assigned to you — excludes the shared Triage pool.">My courses <span class="badge bg-primary ms-1" id="cntMine"><?php echo (int)$counts['mine']; ?></span></button>
+                                <button type="button" class="btn btn-outline-danger" data-filter="unread">Unread <span class="badge bg-danger ms-1" id="cntUnread"><?php echo (int)$counts['unread']; ?></span></button>
+                                <button type="button" class="btn btn-outline-warning" data-filter="escalated">Escalated <span class="badge bg-warning text-dark ms-1" id="cntEsc"><?php echo (int)$counts['escalated']; ?></span></button>
+                                <button type="button" class="btn btn-outline-success" data-filter="reengaged" title="Clients who replied after a re-engagement template">Re-engaged <span class="badge bg-success ms-1" id="cntReeng"><?php echo (int)$counts['reengaged']; ?></span></button>
+                                <button type="button" class="btn btn-outline-info" data-filter="triage" title="Nobody owns these and the bot could not work out what they want — they are invisible to every other view. Pick one up and reply.">Triage <span class="badge bg-info text-dark ms-1" id="cntTriage"><?php echo (int)$counts['triage']; ?></span></button>
                             </div>
                             <select id="waCourse" class="form-select form-select-sm" style="width:170px" title="Filter by course / event">
                                 <option value="">All courses</option>
-                                <?php
-                                $courseOpts = [];
-                                foreach ($conversations as $cRow) {
-                                    $rn = trim((string)($cRow['ref_name'] ?? ''));
-                                    if ($rn !== '') { $courseOpts[$rn] = true; }
-                                }
-                                ksort($courseOpts);
-                                foreach (array_keys($courseOpts) as $rn) {
+                                <?php foreach ($courseOpts as $rn) {
                                     echo '<option value="' . wa_e($rn) . '">' . wa_e($rn) . '</option>';
-                                }
-                                ?>
+                                } ?>
                             </select>
                             <select id="waHandler" class="form-select form-select-sm" style="width:120px" title="Filter by handler">
                                 <option value="">AI &amp; Human</option>
@@ -168,126 +121,30 @@ if ($result) {
                                 </tr>
                             </thead>
                             <tbody id="waRows">
-                                <?php if (count($conversations) > 0): ?>
-                                    <?php foreach ($conversations as $row): $u = (int)$row['unread'];
-                                        $wl = $row['win_left'] === null ? null : (int)$row['win_left'];
-                                        $closing = ($wl !== null && $wl > 0 && $wl <= WA_CLOSING_SECS); ?>
-                                    <tr style="cursor:pointer;<?php echo (int)$row['escalated'] === 1 ? 'border-left:4px solid #ffc107;' : ''; ?>" class="<?php echo $u ? 'table-active' : ''; ?>"
-                                        data-reengaged="<?php echo (int)$row['reengaged_responded']; ?>"
-                                        data-ready="<?php echo (int)$row['is_ready_call']; ?>"
-                                        data-closing="<?php echo $closing ? 1 : 0; ?>"
-                                        data-triage="<?php echo (int)$row['is_triage']; ?>"
-                                        data-mine="<?php echo (int)$row['is_mine']; ?>"
-                                        onclick="location.href='wa_thread.php?id=<?php echo (int)$row['id']; ?>'">
-                                        <td class="ps-3">
-                                            <strong class="<?php echo $u ? 'fw-bold' : ''; ?>"><?php echo wa_e($row['profile_name'] ?: '—'); ?></strong>
-                                            <?php if ((int)$row['escalated'] === 1): ?>
-                                                <span class="badge bg-warning text-dark ms-1">escalated</span>
-                                            <?php endif; ?>
-                                            <?php if ($u): ?>
-                                                <span class="badge bg-danger rounded-pill ms-1"><?php echo $u; ?></span>
-                                            <?php endif; ?>
-                                            <?php if (!empty($row['last_channel']) && $row['last_channel'] !== WA_CHANNEL_DEFAULT): ?>
-                                                <span class="badge bg-dark ms-1" title="This customer wrote to the calling line — replies go back on that number">
-                                                    <i class="bi bi-telephone"></i> <?php echo wa_e(wa_channel($row['last_channel'])['phone']); ?>
-                                                </span>
-                                            <?php endif; ?>
-                                            <?php if ((int)$row['is_ready_call'] === 1): ?>
-                                                <span class="badge bg-success ms-1"
-                                                      title="Permission granted <?php echo wa_e($row['call_granted_at'] ? date('j M, H:i', strtotime((string)$row['call_granted_at'])) : ''); ?> — open the chat to call">
-                                                    <i class="bi bi-telephone-outbound"></i>
-                                                    <span class="wa-cd" data-left="<?php echo (int)$row['call_win_left']; ?>"></span>
-                                                </span>
-                                            <?php endif; ?>
-                                            <?php if ($closing): ?>
-                                                <span class="wa-cd badge bg-warning text-dark ms-1" data-left="<?php echo $wl; ?>" title="Time left to reply without a template"></span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td><?php echo wa_e($row['wa_id']); ?></td>
-                                        <td><?php echo wa_e($row['ref_name'] ?: 'Unassigned'); ?></td>
-                                        <td><?php echo wa_e($row['owner_name'] ?: '—'); ?></td>
-                                        <td>
-                                            <?php $hc = $row['handler'] === 'human' ? 'bg-success' : 'bg-primary'; ?>
-                                            <span class="badge <?php echo $hc; ?>"><?php echo wa_e($row['handler']); ?></span>
-                                        </td>
-                                        <td class="<?php echo $u ? 'fw-semibold' : ''; ?>">
-                                            <?php $lk = $row['last_kind'] ?? 'in';
-                                                if ($lk === 'ai')    echo '<span title="Last reply: AI">🤖</span> ';
-                                                elseif ($lk === 'human') echo '<span title="Last reply: agent">👤</span> '; ?>
-                                            <?php echo wa_e(mb_strimwidth((string)$row['last_body'], 0, 60, '…')); ?>
-                                        </td>
-                                        <td class="text-end pe-3" onclick="event.stopPropagation();">
-                                            <div class="dropdown">
-                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">Actions</button>
-                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                                    <li><a class="dropdown-item" href="wa_thread.php?id=<?php echo (int)$row['id']; ?>"><i class="bi bi-chat-dots me-2"></i>Open chat</a></li>
-                                                    <li><hr class="dropdown-divider"></li>
-                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_assign_me"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-person-check me-2"></i>Assign to me</button></form></li>
-                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_handler"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="handler" value="<?php echo $row['handler'] === 'human' ? 'ai' : 'human'; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-robot me-2"></i><?php echo $row['handler'] === 'human' ? 'Switch to AI' : 'Switch to Human'; ?></button></form></li>
-                                                    <?php if ((int)$row['escalated'] === 1): ?>
-                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_resolve"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item text-success"><i class="bi bi-check2-circle me-2"></i>Resolve escalation</button></form></li>
-                                                    <?php else: ?>
-                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_escalate"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item text-warning"><i class="bi bi-exclamation-triangle me-2"></i>Escalate</button></form></li>
-                                                    <?php endif; ?>
-                                                    <?php if ($u): ?>
-                                                    <li><form method="post" action="includes/wa_process.php" class="m-0"><input type="hidden" name="action" value="inbox_mark_read"><input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>"><button type="submit" class="dropdown-item"><i class="bi bi-envelope-open me-2"></i>Mark as read</button></form></li>
-                                                    <?php endif; ?>
-                                                </ul>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="7" class="text-center py-5">
-                                            <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
-                                            <p class="text-muted">No conversations yet</p>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
+                                <!-- Rows are rendered by the poll below, which is also
+                                     what keeps them live. They used to be written here in
+                                     PHP as well, which meant the same row existed twice in
+                                     two languages and had to be kept in step by hand. -->
+                                <tr id="waLoading">
+                                    <td colspan="7" class="text-center py-5 text-muted">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                        Loading conversations…
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
-                    <script>
-                    /* Pre-apply the saved filters to the server-rendered rows BEFORE first
-                       paint, so returning from a chat shows the filtered list straight away
-                       instead of flashing the full "All courses" list, then the live poll
-                       (below) refreshes as normal. */
-                    (function () {
-                        var s; try { s = JSON.parse(sessionStorage.getItem('waInboxFilters') || '{}'); } catch (e) { return; }
-                        if (!s) return;
-                        var cEl = document.getElementById('waCourse'),
-                            hEl = document.getElementById('waHandler'),
-                            sEl = document.getElementById('waSearch');
-                        if (cEl && s.course  != null) cEl.value = s.course;
-                        if (hEl && s.handler != null) hEl.value = s.handler;
-                        if (sEl && s.q       != null) sEl.value = s.q;
-                        if (s.tab) document.querySelectorAll('#waFilters button').forEach(function (x) {
-                            x.classList.toggle('active', x.getAttribute('data-filter') === s.tab);
-                        });
-                        if (!(s.course || (s.tab && s.tab !== 'all') || s.handler || s.q)) return;
-                        var q = (s.q || '').toLowerCase();
-                        document.querySelectorAll('#waRows tr').forEach(function (tr) {
-                            var tds = tr.children; if (tds.length < 6) return;   // skip empty-state row
-                            var course    = (tds[2].textContent || '').trim();
-                            var handler   = (tds[4].textContent || '').trim().toLowerCase();
-                            var unread    = tr.classList.contains('table-active');
-                            var escalated = (tr.getAttribute('style') || '').indexOf('#ffc107') !== -1;
-                            var ok = true;
-                            if (s.tab === 'unread'    && !unread)             ok = false;
-                            if (s.tab === 'escalated' && !escalated)          ok = false;
-                            if (s.tab === 'reengaged' && tr.getAttribute('data-reengaged') !== '1') ok = false;
-                            if (s.tab === 'triage'    && tr.getAttribute('data-triage')    !== '1') ok = false;
-                            if (s.tab === 'closing'   && tr.getAttribute('data-closing')   !== '1') ok = false;
-                            if (s.tab === 'ready'     && tr.getAttribute('data-ready')     !== '1') ok = false;
-                            if (s.tab === 'mine'      && tr.getAttribute('data-mine')      !== '1') ok = false;
-                            if (s.course  && course  !== s.course)            ok = false;
-                            if (s.handler && handler !== s.handler)           ok = false;
-                            if (q && (tr.textContent || '').toLowerCase().indexOf(q) === -1) ok = false;
-                            if (!ok) tr.style.display = 'none';
-                        });
-                    })();
-                    </script>
+
+                    <!-- Load more. Hidden until the server says there is another page. -->
+                    <div id="waMoreWrap" class="text-center pt-3" style="display:none">
+                        <button type="button" id="waMore" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-arrow-down-circle me-1"></i>Load more
+                        </button>
+                        <div id="waCap" class="small text-muted mt-2" style="display:none">
+                            Showing the most recent <?php echo (int)WA_INBOX_MAX_ROWS; ?>.
+                            Use a filter or the search box to narrow it down.
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -299,7 +156,15 @@ if ($result) {
 (function () {
     var current = [];
     var currentFilter = 'all';
+    var PAGE     = <?php echo (int)WA_INBOX_PAGE; ?>;
+    var MAX_ROWS = <?php echo (int)WA_INBOX_MAX_ROWS; ?>;
+    var limit    = PAGE;      // size of the window currently loaded
+    var hasMore  = false;     // the server told us there is another page
     var rowsEl   = document.getElementById('waRows');
+    var moreWrap = document.getElementById('waMoreWrap');
+    var moreBtn  = document.getElementById('waMore');
+    var capEl    = document.getElementById('waCap');
+    var ofEl     = document.getElementById('waOf');
     var searchEl = document.getElementById('waSearch');
     var courseEl = document.getElementById('waCourse');
     var handlerEl = document.getElementById('waHandler');
@@ -388,6 +253,15 @@ if ($result) {
             try { var n = new Notification(title, { body: body }); n.onclick = function () { window.focus(); }; } catch (e) {}
         }
     }
+    /* Alerts compare this poll against the last one, so the comparison is only
+       meaningful while the two cover the same set of chats. Changing a tab or
+       widening the window pulls in conversations that were never on screen — each
+       with whatever unread count it has always had — and every one of them would
+       read as a brand-new message and set off the alarm. So the baseline is
+       dropped whenever the window changes, and the next poll re-establishes it
+       silently. */
+    function resetAlertBaseline() { prevMap = null; }
+
     function detectAndAlert(list) {
         var map = {};
         list.forEach(function (c) { map[c.id] = { u: c.unread, e: c.escalated }; });
@@ -419,46 +293,14 @@ if ($result) {
         });
     }
 
+    /* Render the page of rows the server sent.
+       Filtering, sorting and counting all happen in SQL now. This used to do the
+       lot in the browser, which is precisely why the browser needed every single
+       conversation — and why the page got slower with every chat the business
+       ever had. */
     function render(list) {
-        var q = (searchEl.value || '').toLowerCase();
-        var courseVal  = courseEl  ? courseEl.value  : '';
-        var handlerVal = handlerEl ? handlerEl.value : '';
-        var counts = { all: list.length, unread: 0, escalated: 0, reengaged: 0, triage: 0, mine: 0, closing: 0, ready: 0 };
-        var shown = 0, html = '';
-        // On the Closing-soon tab the order that matters is "who runs out first",
-        // not "who spoke last" — otherwise the most urgent chat can sit at the bottom.
-        if (currentFilter === 'closing') {
-            list = list.slice().sort(function (a, b) {
-                return (a.win_left === null ? 1e9 : a.win_left) - (b.win_left === null ? 1e9 : b.win_left);
-            });
-        }
-        // Ready to call is ordered by who runs out of calling window first, for the
-        // same reason: recency is close to the opposite of urgency here.
-        if (currentFilter === 'ready') {
-            list = list.slice().sort(function (a, b) {
-                return (a.call_left === null ? 1e9 : a.call_left) - (b.call_left === null ? 1e9 : b.call_left);
-            });
-        }
+        var html = '';
         list.forEach(function (c) {
-            if (c.unread)    counts.unread++;
-            if (c.escalated) counts.escalated++;
-            if (c.reengaged) counts.reengaged++;
-            if (c.triage) counts.triage++;
-            if (c.mine) counts.mine++;
-            if (c.closing) counts.closing++;
-            if (c.ready_call) counts.ready++;
-            if (currentFilter === 'unread'    && !c.unread)    return;
-            if (currentFilter === 'escalated' && !c.escalated) return;
-            if (currentFilter === 'reengaged' && !c.reengaged) return;
-            if (currentFilter === 'triage'    && !c.triage)    return;
-            if (currentFilter === 'mine'      && !c.mine)      return;
-            if (currentFilter === 'closing'   && !c.closing)   return;
-            if (currentFilter === 'ready'      && !c.ready_call) return;
-            if (courseVal  && (c.ref_name || '') !== courseVal) return;   // filter by course/event
-            if (handlerVal && c.handler !== handlerVal) return;           // filter by AI/Human
-            var hay = (c.name + ' ' + c.wa_id + ' ' + c.ref_name + ' ' + c.owner + ' ' + c.last_body).toLowerCase();
-            if (q && hay.indexOf(q) === -1) return;
-            shown++;
             var hc = c.handler === 'human' ? 'bg-success' : 'bg-primary';
             var rowStyle = 'cursor:pointer' + (c.escalated ? ';border-left:4px solid #ffc107' : '');
             var name = '<strong class="' + (c.unread ? 'fw-bold' : '') + '">' + esc(c.name || '—') + '</strong>'
@@ -468,11 +310,6 @@ if ($result) {
                 + (c.channel && c.channel !== 'messaging' ? ' <span class="badge bg-dark ms-1" title="Wrote to the calling line — replies go back on that number"><i class="bi bi-telephone"></i></span>' : '')
                 + (c.ready_call ? ' <span class="badge bg-success ms-1" title="Permission granted ' + esc(c.call_granted) + ' — open the chat to call"><i class="bi bi-telephone-outbound"></i> <span class="wa-cd" data-left="' + c.call_left + '"></span></span>' : '');
             html += '<tr style="' + rowStyle + '" class="' + (c.unread ? 'table-active' : '') + '"'
-                 + ' data-reengaged="' + (c.reengaged ? '1' : '0') + '"'
-                 + ' data-ready="' + (c.ready_call ? '1' : '0') + '"'
-                 + ' data-closing="' + (c.closing ? '1' : '0') + '"'
-                 + ' data-triage="' + (c.triage ? '1' : '0') + '"'
-                 + ' data-mine="' + (c.mine ? '1' : '0') + '"'
                  + ' onclick="location.href=\'wa_thread.php?id=' + c.id + '\'">'
                  + '<td class="ps-3">' + name + '</td>'
                  + '<td>' + esc(c.wa_id) + '</td>'
@@ -483,42 +320,108 @@ if ($result) {
                  + actionsCell(c)
                  + '</tr>';
         });
-        rowsEl.innerHTML = html || '<tr><td colspan="7" class="text-center py-4 text-muted">No matches</td></tr>';
-        countEl.textContent = shown;
-        document.getElementById('cntAll').textContent    = counts.all;
-        document.getElementById('cntUnread').textContent = counts.unread;
-        document.getElementById('cntEsc').textContent    = counts.escalated;
-        document.getElementById('cntReeng').textContent  = counts.reengaged;
-        document.getElementById('cntTriage').textContent = counts.triage;
-        document.getElementById('cntMine').textContent   = counts.mine;
-        document.getElementById('cntClosing').textContent = counts.closing;
-        document.getElementById('cntReady').textContent   = counts.ready;
-        if (counts.unread) { unreadEl.textContent = counts.unread + ' unread'; unreadEl.style.display = ''; }
-        else { unreadEl.style.display = 'none'; }
-        document.title = (counts.unread ? '(' + counts.unread + ') ' : '') + 'WhatsApp Inbox';
-        // The rows were just replaced, so the new badges are empty until the next tick.
-        // Paint them now, or every poll flashes a blank badge for up to a second.
+        rowsEl.innerHTML = html || '<tr><td colspan="7" class="text-center py-5 text-muted">'
+            + '<i class="bi bi-inbox fs-1 d-block mb-3"></i>No matching conversations</tr>';
+        countEl.textContent = list.length;
+        ofEl.textContent = hasMore ? ' of many' : '';
+        moreWrap.style.display = hasMore ? '' : 'none';
+        capEl.style.display = (limit >= MAX_ROWS) ? '' : 'none';
+        moreBtn.disabled = (limit >= MAX_ROWS);
+        // The rows were just replaced, so the new badges are empty until the next
+        // tick. Paint them now, or every poll flashes a blank badge for a second.
         tickCountdowns();
     }
 
-    function poll() {
-        fetch('includes/wa_api.php?action=inbox')
-            .then(function (r) { return r.json(); })
-            .then(function (d) { if (d && d.conversations) { current = d.conversations; detectAndAlert(current); render(current); } })
-            .catch(function () {});
+    /* The chip totals cover the WHOLE inbox, not the loaded page — a chip that
+       counted only what happened to be on screen would read like a fact and be
+       wrong. They cost more than a page of rows, so they refresh on their own
+       slower cadence. */
+    function applyCounts(counts) {
+        if (!counts) { return; }
+        document.getElementById('cntAll').textContent      = counts.all;
+        document.getElementById('cntUnread').textContent   = counts.unread;
+        document.getElementById('cntEsc').textContent      = counts.escalated;
+        document.getElementById('cntReeng').textContent    = counts.reengaged;
+        document.getElementById('cntTriage').textContent   = counts.triage;
+        document.getElementById('cntMine').textContent     = counts.mine;
+        document.getElementById('cntClosing').textContent  = counts.closing;
+        document.getElementById('cntReady').textContent    = counts.ready;
+        if (counts.unread) { unreadEl.textContent = counts.unread + ' unread'; unreadEl.style.display = ''; }
+        else { unreadEl.style.display = 'none'; }
+        document.title = (counts.unread ? '(' + counts.unread + ') ' : '') + 'WhatsApp Inbox';
     }
 
-    searchEl.addEventListener('input', function () { saveFilters(); render(current); });
-    if (courseEl)  courseEl.addEventListener('change', function () { saveFilters(); render(current); });
-    if (handlerEl) handlerEl.addEventListener('change', function () { saveFilters(); render(current); });
+    /* One fetch, always for the top `limit` rows of the current filter.
+
+       There is deliberately no cursor. The live poll re-reads the whole loaded
+       window from the top, so rows arriving while somebody is reading cannot
+       cause the duplicates and skips that offset paging produces on a list that
+       reorders itself every time a customer writes. "Load more" simply widens
+       the window, and MAX_ROWS bounds what a poll can ever cost. */
+    function query(extra) {
+        var p = new URLSearchParams();
+        p.set('action', 'inbox');
+        p.set('limit', String(limit));
+        p.set('filter', currentFilter);
+        if (courseEl  && courseEl.value)  p.set('course',  courseEl.value);
+        if (handlerEl && handlerEl.value) p.set('handler', handlerEl.value);
+        if (searchEl  && searchEl.value)  p.set('q',       searchEl.value);
+        if (extra) { p.set(extra, '1'); }
+        return 'includes/wa_api.php?' + p.toString();
+    }
+
+    var inFlight = false;
+    function load(withCounts) {
+        if (inFlight) { return; }          // never stack requests on a slow link
+        inFlight = true;
+        fetch(query(withCounts ? 'counts' : ''))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d || !d.conversations) { return; }
+                current = d.conversations;
+                hasMore = !!d.has_more;
+                detectAndAlert(current);
+                render(current);
+                applyCounts(d.counts);
+            })
+            .catch(function () {})
+            .then(function () { inFlight = false; });
+    }
+
+    /* Changing a filter resets the window: page four of "All" has nothing to do
+       with page four of "Unread". */
+    function refilter() {
+        limit = PAGE;
+        resetAlertBaseline();
+        saveFilters();
+        load(true);                        // the tab changed, so the totals may have too
+    }
+
+    /* Typing now costs a query, so wait for a pause rather than firing on every
+       keystroke. 300ms is below the threshold where a search feels laggy and well
+       above the gap between two keys. */
+    var searchTimer = null;
+    searchEl.addEventListener('input', function () {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(refilter, 300);
+    });
+    if (courseEl)  courseEl.addEventListener('change', refilter);
+    if (handlerEl) handlerEl.addEventListener('change', refilter);
     document.querySelectorAll('#waFilters button').forEach(function (b) {
         b.addEventListener('click', function () {
             document.querySelectorAll('#waFilters button').forEach(function (x) { x.classList.remove('active'); });
             b.classList.add('active');
             currentFilter = b.getAttribute('data-filter');
-            saveFilters();
-            render(current);
+            refilter();
         });
+    });
+
+    moreBtn.addEventListener('click', function () {
+        if (limit >= MAX_ROWS) { return; }
+        limit = Math.min(MAX_ROWS, limit + PAGE);
+        moreBtn.disabled = true;
+        resetAlertBaseline();
+        load(false);
     });
 
     /* Countdown to the 24-hour window shutting.
@@ -552,8 +455,16 @@ if ($result) {
     setInterval(tickCountdowns, 1000);
 
     restoreFilters();               // re-apply the filters you had this session
-    poll();                         // hydrate immediately
-    setInterval(poll, 6000);        // then live every 6s
+    load(true);                     // first page + chip totals
+
+    /* Rows stay live at six seconds. The totals sweep the whole inbox rather than
+       one page, so they refresh every fifth poll instead — half a minute out of
+       date on a badge is not worth five times the database work. */
+    var ticks = 0;
+    setInterval(function () {
+        ticks++;
+        load(ticks % 5 === 0);
+    }, 6000);
 })();
 </script>
 
