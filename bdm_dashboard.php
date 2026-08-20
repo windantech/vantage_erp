@@ -461,28 +461,30 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         const sbusGreen=live.filter(d=>d.actual>=d.target*(p.elapsed/p.working)).length;
         // [label, type, value, _, placeholder] — guidance goes in the placeholder (grey), not the value.
         const fields=[
-          ["Organization daily revenue target (KES SBUs)","number",Math.round(B.target/p.working)],
-          ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
+          ["Daily revenue target — revenue SBUs (KES)","number",Math.round(B.target/p.working)],
+          ["Cleared revenue today (KES)","number",Math.round(B.actual/p.elapsed)],
           ["SBUs at pace (of "+live.length+")","number",sbusGreen],
-          ["International clients MTD","number",B.intl?Math.round(B.intl.actual):0],
-          ["BDM personal revenue MTD","number",Math.round(B.personalActual)],
-          ["Consolidated qualified pipeline","number",Math.round(B.pipeline)],
-          ["SBU performance summary","textarea",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n"),false,""],
+          ["International clients this month","number",B.intl?Math.round(B.intl.actual):0],
+          ["BDM personal revenue this month (KES)","number",Math.round(B.personalActual)],
+          ["Open pipeline — expected, not yet collected (KES)","number",Math.round(B.pipeline)],
+          ["SBU performance summary","auto",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n")],
           ["Strategic accounts and blocked deals","textarea","",false,"Account, value, stage, owner, blocker, executive action and next date."],
           ["HOD coaching / recovery decisions","textarea","",false,"Named HOD, issue, action, deadline and review point."],
           ["CEO decisions required","textarea","",false,"Budget, pricing, executive access, technology, legal, payment or capacity decision."]
         ];
-        const fieldHTML=f=>f[1]==="textarea"
+        const fieldHTML=f=>(f[1]==="textarea"||f[1]==="auto")
           ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="${esc(f[4]||"")}">${esc(f[2])}</textarea></div>`
           :`<div class="field"><label>${esc(f[0])}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
+        const auto=fields.filter(f=>f[1]==="auto").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
         const dlSvg='<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg>';
         return `
           <div class="card"><div class="chead"><h4>BDM consolidated commercial report</h4><span class="chip jade">Auto-prefilled</span></div>
             <div id="reportForm">
-              <div class="form-sub">Today's numbers <i>· auto-prefilled</i></div>
+              <div class="form-sub">Today's numbers <i>· auto-prefilled, edit if needed</i></div>
               <div class="form-grid">${nums}</div>
+              <div class="form-grid" style="margin-top:12px">${auto}</div>
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
             </div>
