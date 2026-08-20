@@ -459,21 +459,25 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         const p=period();
         const live=liveSbus();
         const sbusGreen=live.filter(d=>d.actual>=d.target*(p.elapsed/p.working)).length;
+        // [label, type, value, _, placeholder] — guidance goes in the placeholder (grey), not the value.
         const fields=[
           ["Organization daily revenue target (KES SBUs)","number",Math.round(B.target/p.working)],
           ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
           ["SBUs at pace (of "+live.length+")","number",sbusGreen],
           ["International clients MTD","number",B.intl?Math.round(B.intl.actual):0],
-          ["BDM personal revenue MTD","number",B.personalActual],
-          ["Consolidated qualified pipeline","number",B.pipeline],
-          ["SBU performance summary","textarea",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n")],
-          ["Strategic accounts and blocked deals","textarea","Account, value, stage, owner, blocker, executive action and next date."],
-          ["HOD coaching / recovery decisions","textarea","Named HOD, issue, action, deadline and review point."],
-          ["CEO decisions required","textarea","Budget, pricing, executive access, technology, legal, payment or capacity decision."]
+          ["BDM personal revenue MTD","number",Math.round(B.personalActual)],
+          ["Consolidated qualified pipeline","number",Math.round(B.pipeline)],
+          ["SBU performance summary","textarea",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n"),false,""],
+          ["Strategic accounts and blocked deals","textarea","",false,"Account, value, stage, owner, blocker, executive action and next date."],
+          ["HOD coaching / recovery decisions","textarea","",false,"Named HOD, issue, action, deadline and review point."],
+          ["CEO decisions required","textarea","",false,"Budget, pricing, executive access, technology, legal, payment or capacity decision."]
         ];
-        const fieldHTML=f=>`<div class="field ${f[1]==="textarea"?"span2":""}"><label>${esc(f[0])}</label>${f[1]==="textarea"?`<textarea data-label="${esc(f[0])}">${esc(f[2])}</textarea>`:`<input data-label="${esc(f[0])}" type="number" value="${esc(f[2])}">`}</div>`;
+        const fieldHTML=f=>f[1]==="textarea"
+          ?`<div class="field span2"><label>${esc(f[0])}</label><textarea data-label="${esc(f[0])}" placeholder="${esc(f[4]||"")}">${esc(f[2])}</textarea></div>`
+          :`<div class="field"><label>${esc(f[0])}</label><input data-label="${esc(f[0])}" type="text" inputmode="numeric" value="${f[2]===""?"":nf.format(f[2])}"></div>`;
         const nums=fields.filter(f=>f[1]==="number").map(fieldHTML).join("");
         const texts=fields.filter(f=>f[1]==="textarea").map(fieldHTML).join("");
+        const dlSvg='<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg>';
         return `
           <div class="card"><div class="chead"><h4>BDM consolidated commercial report</h4><span class="chip jade">Auto-prefilled</span></div>
             <div id="reportForm">
@@ -482,9 +486,9 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
               <div class="form-sub" style="margin-top:18px">Your narrative <i>· the human judgement</i></div>
               <div class="form-grid">${texts}</div>
             </div>
-            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">Download</button><button class="tbtn" id="clrReport" type="button">Clear narrative</button></div>
+            <div class="report-actions"><button class="tbtn solid" id="genReport" type="button">Generate report summary</button><button class="tbtn" id="dlReport" type="button">${dlSvg} Download</button></div>
           </div>
-          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Select "Generate report summary" to compile the dashboard data and your explanations.</div></div>
+          <div class="card"><div class="chead"><h4>Generated management summary</h4><span class="chip jade">Evidence-linked</span></div><div id="reportPreview" class="report-preview">Fill in the fields above, then hit <b>Generate report summary</b> to compile your numbers and narrative into a shareable report. Use <b>Download</b> to save it.</div></div>
           <section class="grid-3">
             ${[["Automatic evidence","Revenue, payments, activity logs, opportunities, meetings, proposals and CRM completeness are system-calculated."],["Required human judgement","You explain why performance moved, what is blocked, what was learned and which support or decision is required."],["Manager workflow","Your supervisor reviews, comments, approves or returns the report and converts commitments into tracked actions."]].map(([a,b])=>`<div class="card"><h4>${esc(a)}</h4><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5">${esc(b)}</p></div>`).join("")}
           </section>`;
@@ -508,18 +512,75 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         if(v==="report")bindReport();
       }
       function bindReport(){
-        el("genReport").addEventListener("click",genReport);
-        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDM_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
-        el("clrReport").addEventListener("click",()=>root.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
+        var g=el("genReport"); if(g) g.addEventListener("click",genReport);
+        var d=el("dlReport"); if(d) d.addEventListener("click",downloadReport);
+      }
+      function downloadReport(){
+        if(!window.__reportBlob)genReport();
+        const a=document.createElement("a");a.href=URL.createObjectURL(window.__reportBlob);a.download="Vantage_BDM_"+(period().label||"report").replace(/\s+/g,"_")+"_Consolidated_Report.html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+        window.__reportBlob=null;
+      }
+      function buildReportHTML(){
+        const today=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+        const att=B.target>0?B.actual/B.target:0;const attW=Math.min(100,Math.max(0,Math.round(att*100)));
+        const numRows=[...root.querySelectorAll("#reportForm input")].map(x=>`<tr><td class="k">${esc(x.dataset.label)}</td><td class="v">${esc(x.value.trim()||"—")}</td></tr>`).join("");
+        const narr=[...root.querySelectorAll("#reportForm textarea")].map(x=>`<div class="nblock"><div class="nlabel">${esc(x.dataset.label)}</div><div class="ntext">${esc(x.value.trim()||"—")}</div></div>`).join("");
+        const live=liveSbus();const on=live.filter(d=>(+d.attn)>=(period().elapsed/period().working)).length;const intl=B.intl;
+        const dash=[["Remaining to target",kMoney(Math.max(0,B.target-B.actual))],["Month-end forecast",kMoney(B.forecast)],["Collection rate",pct(B.collection,0)],["SBUs on pace",on+" / "+live.length],["International clients",intl?(nf.format(Math.round(intl.actual))+" / "+nf.format(Math.round(intl.target))):"—"],["BDM personal sales",kMoney(B.personalActual)],["Commission estimate",kMoney(commission().current)]]
+          .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BDM Consolidated Report — ${esc(B.name)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#eeeeec;padding:30px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;background:#fffdfa;border-radius:16px;overflow:hidden;box-shadow:0 20px 54px rgba(45,28,12,.17);border:1px solid #eee4d4}
+.rhead{background:linear-gradient(125deg,#4a2c18,#291409);color:#fff;padding:32px 44px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+.rhead h1{font-family:Georgia,"Times New Roman",serif;font-size:29px;font-weight:700;letter-spacing:-.01em;line-height:1.06}
+.rhead p{opacity:.68;font-size:11px;margin-top:9px;letter-spacing:.16em;text-transform:uppercase}
+.rlogo{flex:none;background:#fff;border-radius:12px;padding:10px 13px;display:flex;align-items:center}
+.rlogo img{height:44px;width:auto;display:block}
+.metastrip{display:flex;flex-wrap:wrap;gap:20px 52px;padding:22px 44px;background:#faf3e8;border-bottom:1px solid #eee4d4}
+.mk{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:700;margin-bottom:5px}
+.metastrip .mv{font-size:15px;font-weight:600;color:#2a2018}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px 44px 20px}
+.hbig{font-family:Georgia,"Times New Roman",serif;font-size:37px;font-weight:700;color:#2a2018;line-height:1;font-variant-numeric:tabular-nums}
+.hsub{display:block;font-size:12.5px;color:#7a6c5c;margin-top:9px}
+.hpct{font-family:Georgia,"Times New Roman",serif;font-size:35px;font-weight:700;color:#bd8a30;line-height:1;font-variant-numeric:tabular-nums}
+.pbar{height:6px;border-radius:20px;background:#efe6d6;margin:0 44px 28px;overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#c99a3c,#a86f22)}
+.sec{display:flex;align-items:center;gap:12px;padding:28px 44px 13px}
+.sec .dot{flex:none;width:7px;height:7px;background:#bd8a30;border-radius:2px;transform:rotate(45deg)}
+.sec .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:#3d2416;white-space:nowrap}
+.sec .ln{flex:1;height:1px;background:#ebe6dd}
+table.nums{width:100%;border-collapse:collapse}
+table.nums td{padding:11px 44px;border-bottom:1px solid #f3ebdc;font-size:13.5px}
+table.nums tr:last-child td{border-bottom:none}
+table.nums td.k{color:#7a6c5c}
+table.nums td.v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:#2a2018}
+.narrwrap{margin:2px 44px 4px;background:#faf6ec;border:1px solid #efe6d3;border-radius:12px}
+.nblock{padding:15px 22px}
+.nblock+.nblock{border-top:1px solid #f0e7d5}
+.nlabel{font-size:9.5px;text-transform:uppercase;letter-spacing:.13em;color:#9a9488;font-weight:800;margin-bottom:6px}
+.ntext{font-size:13.5px;color:#2a2018;line-height:1.6;white-space:pre-wrap}
+footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;border-top:1px solid #eee4d4;letter-spacing:.02em}
+@media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
+</style></head><body>
+<div class="wrap">
+  <div class="rhead"><div><h1>Consolidated Commercial Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
+  <div class="metastrip"><div><span class="mk">Business Development Manager</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Scope</span><span class="mv">All SBUs</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
+  <div class="hero"><div><span class="mk">Cleared so far (KES SBUs)</span><div class="hbig">${kMoney(B.actual)}</div><span class="hsub">of ${kMoney(B.target)} organization target</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
+  <div class="pbar"><i style="width:${attW}%"></i></div>
+  <div class="sec"><span class="dot"></span><span class="lbl">Today's numbers</span><span class="ln"></span></div><table class="nums">${numRows}</table>
+  <div class="sec"><span class="dot"></span><span class="lbl">Narrative</span><span class="ln"></span></div><div class="narrwrap">${narr}</div>
+  <div class="sec"><span class="dot"></span><span class="lbl">Organization position</span><span class="ln"></span></div><table class="nums">${dash}</table>
+  <footer>All figures are subject to CRM evidence and Finance verification. &middot; Generated ${today}.</footer>
+</div></body></html>`;
       }
       function genReport(){
-        const lines=["VANTAGE AFRICA — BDM CONSOLIDATED REPORT","Period: "+period().label,"Manager: "+B.name+" | "+B.title+" · "+B.dept,""];
-        root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
-        const att=B.actual/B.target;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
-        lines.push("Qualified pipeline: "+kMoney(B.pipeline)+". Collection: "+pct(B.collection,0)+".");
-        lines.push("Commission estimate: "+kMoney(commission().current)+".");
-        lines.push("All figures subject to CRM evidence and Finance verification.");
-        el("reportPreview").textContent=lines.join("\n");
+        const html=buildReportHTML();
+        window.__reportBlob=new Blob([html],{type:"text/html;charset=utf-8"});
+        const pv=el("reportPreview");
+        pv.innerHTML=`<iframe title="Report preview" style="width:100%;height:600px;border:1px solid #dce4eb;border-radius:10px;background:#fff" src="${URL.createObjectURL(window.__reportBlob)}"></iframe><div class="report-actions" style="margin-top:14px;justify-content:flex-end"><button class="tbtn solid" id="dlReportBottom" type="button"><svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></svg> Download report</button></div>`;
+        var db=el("dlReportBottom"); if(db) db.addEventListener("click",downloadReport);
       }
 
       el("periodSelect").innerHTML=periods.map((p,i)=>`<option value="${i}" ${i===state.p?"selected":""}>${p.label}</option>`).join("");
