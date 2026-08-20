@@ -17,6 +17,24 @@ $ceo_from = date('Y-m-01');
 $ceo_to   = date('Y-m-d');
 $ceo = bdm_rollup($conn, $ceo_from, $ceo_to);
 
+// ---- Learner journey: real counts from the Moodle LMS (separate DB vantage_elearning, mdl_ tables). ----
+$lms = null;
+$mconn = @mysqli_connect('localhost', 'vantage_elearning', 'Y)A)ilAZ!VYLPds1', 'vantage_elearning');
+if ($mconn) {
+    $mq = function ($sql) use ($mconn) { $r = @mysqli_query($mconn, $sql); if ($r && ($row = mysqli_fetch_row($r))) { return (int) $row[0]; } return null; };
+    $enrolled  = $mq("SELECT COUNT(DISTINCT ue.userid) FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0");
+    $active    = $mq("SELECT COUNT(DISTINCT ue.userid) FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0 AND u.lastaccess > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 30 DAY))");
+    $completed = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_course_completions WHERE timecompleted IS NOT NULL AND timecompleted > 0");
+    $certified = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_customcert_issues");
+    $stages = [];
+    if ($enrolled  !== null) { $stages[] = ['Enrolled', $enrolled]; }
+    if ($active    !== null) { $stages[] = ['Active (30d)', $active]; }
+    if ($completed !== null) { $stages[] = ['Completed', $completed]; }
+    if ($certified !== null && $certified > 0) { $stages[] = ['Certified', $certified]; }
+    if (!empty($stages)) { $lms = ['stages' => $stages]; }
+    @mysqli_close($mconn);
+}
+
 // ---- HR tab: render the real HR content natively (no iframe). Defensive against PHP 8.1 mysqli. ----
 $hr = ['stats' => ['total'=>0,'active'=>0,'pending'=>0,'under_review'=>0,'approved'=>0,'suspended'=>0,'terminated'=>0,'rejected'=>0], 'by_dept' => [], 'staff' => [], 'payroll_pending' => 0, 'att_present' => 0, 'att_punches' => 0, 'payroll' => null, 'payslips' => [], 'clockins' => []];
 try {
@@ -522,6 +540,7 @@ try {
         sources:<?php echo json_encode($ceo['sources'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         alerts:<?php echo json_encode($ceo['alerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         crossSbu:<?php echo json_encode($ceo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        lms:<?php echo json_encode($lms, JSON_INVALID_UTF8_SUBSTITUTE) ?: 'null'; ?>,
         dailyRhythm:[
           ["8:00–8:30","Review consolidated revenue, the weakest SBU, strategic accounts, RFPs, collections and overdue actions."],
           ["8:30–9:00","Set the day's SBU recovery, strategic-account and personal-revenue outcomes."],
@@ -737,8 +756,9 @@ try {
         return `<div class="card"><div class="chead"><h4>Revenue mix by SBU</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Cleared revenue share by SBU this period (International in its own metric excluded from the KES split).</div></div>`;
       }
       function learnerJourney(){
-        const stages=[["Enrolled",4200],["Active",3140],["Completed",1980],["Certified / paid-up",1520]];
-        const dropped=stages[0][1]-stages[stages.length-1][1];const max=stages[0][1];
+        const stages=(B.lms&&B.lms.stages)||[];
+        if(!stages.length) return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip slate">LMS</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Live learner-journey data from the eLearning platform isn't reachable right now.</p></div>`;
+        const dropped=Math.max(0,stages[0][1]-stages[stages.length-1][1]);const max=Math.max(1,stages[0][1]);
         return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip coral">${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/stages[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>`;
       }
 
@@ -766,8 +786,11 @@ try {
           </section>
           ${execTopDeals()}
 
-          <div class="section-tag"><h3>Revenue mix</h3><span>Cleared revenue share across the SBUs this period</span><div class="rule"></div></div>
-          ${productMix()}
+          <div class="section-tag"><h3>Revenue mix &amp; learner journey</h3><span>Cleared revenue share by SBU, and how learners move through the LMS</span><div class="rule"></div></div>
+          <section class="grid-2">
+            ${productMix()}
+            ${learnerJourney()}
+          </section>
 
           <div class="section-tag"><h3>Where to intervene</h3><span>The few things that need leadership, resources or a decision — now</span><div class="rule"></div></div>
           <section class="grid-2">
@@ -922,7 +945,9 @@ try {
           +`<div class="section-tag"><h3>Revenue pace &amp; today's execution</h3><span>Month-end trajectory and the interventions in play</span><div class="rule"></div></div><section class="grid-2"><div class="card"><div class="chead"><h4>Revenue pace &amp; forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}</div>${actionsCard()}</section>`;
       }
       function viewBDO(){
-        const si=state.dept;const d=B.sbus[si]||B.sbus[0];const pc=paceOf(d);const att=(+d.attn)||0;
+        const si=state.dept;const d=B.sbus[si]||B.sbus[0];
+        if(d.placeholder){return roleBanner(pInitials(d.name),d.name,"SBU not yet configured",{st:"amber",label:"Placeholder",ratio:0})+`<div class="card"><p style="color:var(--muted);font-size:12.5px;margin:0">${esc(d.name)} isn't set up in the CRM yet — no BDO, targets or reps to show.</p></div>`;}
+        const pc=paceOf(d);const att=(+d.attn)||0;
         const reps=d.reps||[];const team80=reps.filter(r=>rAttn(r)>=.8).length;
         const kpis=[
           ["Department target",sbuTarget(d),"Approved SBU target","var(--slate)"],
@@ -938,7 +963,9 @@ try {
           +`<div class="section-tag"><h3>Where to focus today</h3><span>Department interventions</span><div class="rule"></div></div>${actionsCard()}`;
       }
       function viewBDE(){
-        const d=B.sbus[state.dept]||B.sbus[0];const r=(d.reps||[])[state.emp]||(d.reps||[])[0];const pc=paceOf(r);const att=rAttn(r);const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
+        const d=B.sbus[state.dept]||B.sbus[0];const reps=d.reps||[];
+        if(!reps.length){return roleBanner("—",d.leader||d.name,"No individuals in "+d.name,{st:"amber",label:"None",ratio:0})+`<div class="card"><p style="color:var(--muted);font-size:12.5px;margin:0">No individual executives are resolved for ${esc(d.name)} yet — pick another department, or view the BDO.</p></div>`;}
+        const r=reps[state.emp]||reps[0];const pc=paceOf(r);const att=rAttn(r);const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
         const kpis=[
           ["Monthly target",repTarget(r),"Approved personal target","var(--slate)"],
           ["Cleared revenue",repActual(r),pct(att)+" of target","var(--jade)"],
@@ -954,8 +981,8 @@ try {
       }
       function roleView(){return state.role==="bdm"?viewBDM():state.role==="bdo"?viewBDO():viewBDE();}
 
-      function populateDept(){el("deptSelect").innerHTML=B.sbus.map((d,i)=>`<option value="${i}" ${i===state.dept?"selected":""}>${esc(d.name)}</option>`).join("");}
-      function populateEmp(){const reps=(B.sbus[state.dept]||B.sbus[0]).reps||[];if(state.emp>=reps.length)state.emp=0;el("empSelect").innerHTML=reps.map((r,i)=>`<option value="${i}" ${i===state.emp?"selected":""}>${esc(r.name)}</option>`).join("");}
+      function populateDept(){if((B.sbus[state.dept]||{}).placeholder){const f=B.sbus.findIndex(d=>!d.placeholder);state.dept=f<0?0:f;}el("deptSelect").innerHTML=B.sbus.map((d,i)=>d.placeholder?"":`<option value="${i}" ${i===state.dept?"selected":""}>${esc(d.name)}</option>`).join("");}
+      function populateEmp(){const reps=(B.sbus[state.dept]||B.sbus[0]||{}).reps||[];if(state.emp>=reps.length)state.emp=0;el("empSelect").innerHTML=reps.length?reps.map((r,i)=>`<option value="${i}" ${i===state.emp?"selected":""}>${esc(r.name)}</option>`).join(""):'<option value="0">— no individuals —</option>';}
       function syncControls(){
         el("roleSelect").value=state.role;
         el("deptControl").style.display=(state.role==="bdo"||state.role==="bde")?"":"none";
