@@ -779,13 +779,16 @@ if (!function_exists('bdo_rollup')) {
             }
         }
 
-        // each BDE's own revenue target (for the team table's vs-target column)
-        $memTarget = [];
+        // each BDE's own revenue target (for the team table's vs-target column) + client target (International)
+        $memTarget = []; $memClientsTarget = [];
         if (!empty($bdeIds)) {
             $in = implode(',', array_map('intval', $bdeIds));
             $mtq = @mysqli_query($conn, "SELECT scope_ref, SUM(target_value) t FROM bde_targets
                 WHERE scope_type='user' AND metric='revenue' AND scope_ref IN ($in) GROUP BY scope_ref");
             while ($mtq && ($mr = mysqli_fetch_assoc($mtq))) { $memTarget[(int) $mr['scope_ref']] = (float) $mr['t']; }
+            $ctq = @mysqli_query($conn, "SELECT scope_ref, MAX(target_value) t FROM bde_targets
+                WHERE scope_type='user' AND metric='clients_per_country' AND scope_ref IN ($in) GROUP BY scope_ref");
+            while ($ctq && ($cr = mysqli_fetch_assoc($ctq))) { $memClientsTarget[(int) $cr['scope_ref']] = (float) $cr['t']; }
         }
         // Digital targets are department-scoped (Eval360 / 360 Appraisal) — resolve each member's by product.
         $evalT = 0.0; $apprT = 0.0;
@@ -800,7 +803,7 @@ if (!function_exists('bdo_rollup')) {
             $m = bde_fetch_metrics($conn, $bid, $from, $to);
             $key = strtolower(preg_replace('/\s+/', ' ', trim((string) $m['name'])));
             if ($key === '' || $key === 'bde') { $key = 'id' . $bid; }
-            if (!isset($byName[$key])) { $byName[$key] = ['id' => $bid, 'name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0, 'leads' => 0, 'srcRow' => [], 'unread' => 0]; }
+            if (!isset($byName[$key])) { $byName[$key] = ['id' => $bid, 'name' => ($m['name'] ?: ('#' . $bid)), 'title' => ($m['title'] ?: 'BDE'), 'target' => 0.0, 'clientsTarget' => 0.0, 'actual' => 0.0, 'clients' => 0, 'pipeline' => 0.0, 'collN' => 0.0, 'collD' => 0.0, 'leads' => 0, 'srcRow' => [], 'unread' => 0]; }
             $byName[$key]['unread'] = max((int) $byName[$key]['unread'], (int) ($m['wa_unread'] ?? 0));
             // leads/sources: a duplicate login is the SAME person — take their richest login ONCE, never
             // sum, or Josiah #69+#98 would double the department's lead count.
@@ -811,6 +814,8 @@ if (!function_exists('bdo_rollup')) {
             $mt = $memTarget[$bid] ?? 0.0;
             if ($isDigital) { $nm = strtolower((string) $m['name']); if (strpos($nm, 'austin') !== false) { $mt = $evalT; } elseif (strpos($nm, 'ruth') !== false) { $mt = $apprT; } }
             $byName[$key]['target']  = max($byName[$key]['target'], $mt);
+            // client target (International): counts, not KES — taken once (max) across duplicate logins
+            $byName[$key]['clientsTarget'] = max($byName[$key]['clientsTarget'], (float) ($memClientsTarget[$bid] ?? 0));
             $byName[$key]['actual']  += (float) $m['revenue_kes'];
             $byName[$key]['clients'] += (int) $m['paid_clients'];
             $byName[$key]['pipeline'] += max(0.0, ((float) $m['expected_usd'] - (float) $m['revenue_usd'])) * $rate;
@@ -821,7 +826,7 @@ if (!function_exists('bdo_rollup')) {
         $deptRevenue = 0.0; $deptClients = 0; $deptPipe = 0.0; $collN = 0.0; $collD = 0.0; $team = []; $deptLeadsTotal = 0; $srcAgg = [];
         foreach ($byName as $t) {
             $coll = $t['collD'] > 0 ? $t['collN'] / $t['collD'] : 0.0;
-            $team[] = ['id' => ($t['id'] ?? 0), 'name' => $t['name'], 'title' => $t['title'], 'target' => $t['target'], 'actual' => $t['actual'], 'clients' => $t['clients'], 'pipeline' => $t['pipeline'], 'collection' => $coll, 'notes' => ''];
+            $team[] = ['id' => ($t['id'] ?? 0), 'name' => $t['name'], 'title' => $t['title'], 'target' => $t['target'], 'clientsTarget' => $t['clientsTarget'], 'actual' => $t['actual'], 'clients' => $t['clients'], 'pipeline' => $t['pipeline'], 'collection' => $coll, 'notes' => ''];
             $deptRevenue += $t['actual']; $deptClients += $t['clients']; $deptPipe += $t['pipeline']; $collN += $t['collN']; $collD += $t['collD'];
             $deptLeadsTotal += (int) ($t['leads'] ?? 0);
             foreach (($t['srcRow'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
@@ -854,10 +859,13 @@ if (!function_exists('bdo_rollup')) {
         $ownFloor = 0.0;
         $fq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets WHERE scope_type='user' AND scope_ref='$bdoId' AND metric='revenue'");
         if ($fq && ($fr = mysqli_fetch_assoc($fq))) { $ownFloor = (float) $fr['t']; }
+        $bdoClientsTarget = 0.0;
+        $bcq = @mysqli_query($conn, "SELECT COALESCE(MAX(target_value),0) t FROM bde_targets WHERE scope_type='user' AND scope_ref='$bdoId' AND metric='clients_per_country'");
+        if ($bcq && ($bcr = mysqli_fetch_assoc($bcq))) { $bdoClientsTarget = (float) $bcr['t']; }
         if ($bdoTarget > 0 || (float) $bm['revenue_kes'] > 0) {
             $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
             $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
-            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'clientsTarget' => $bdoClientsTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
         }
 
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
