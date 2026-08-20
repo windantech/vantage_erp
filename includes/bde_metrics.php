@@ -893,6 +893,7 @@ if (!function_exists('bdo_rollup')) {
         usort($team, function ($a, $b) { return $b['actual'] <=> $a['actual']; });
         $out['team'] = $team; $out['members'] = count($team);
         $out['actual'] = $out['metric'] === 'participants' ? (float) $deptClients : $deptRevenue;
+        $out['clearedKes'] = $deptRevenue;   // dept cleared revenue in KES, always (even for client-based depts)
         $out['clients'] = $deptClients;
         $out['pipeline'] = $deptPipe;
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
