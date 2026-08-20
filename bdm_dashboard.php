@@ -17,7 +17,9 @@ require_once 'includes/bde_metrics.php';
 $bdm_is_admin = isset($role) && is_array($role) && in_array(777, $role);
 $bdm_id = (int) ($_SESSION['login_id'] ?? 0);
 if ($bdm_id <= 0) { $bdm_id = 127; }
-if (isset($_GET['as']) && $bdm_is_admin) { $bdm_id = (int) $_GET['as']; }
+// An admin/super-user previews the BDM (Michael #127) by DEFAULT — not their own account, which would
+// read "Super User" on the report — unless they explicitly pick someone with ?as.
+if ($bdm_is_admin) { $bdm_id = isset($_GET['as']) ? (int) $_GET['as'] : 127; }
 
 $bdm_from = date('Y-m-01');
 $bdm_to   = date('Y-m-d');
@@ -531,7 +533,7 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         const live=liveSbus();const on=live.filter(d=>(+d.attn)>=(period().elapsed/period().working)).length;const intl=B.intl;
         const dash=[["Remaining to target",kMoney(Math.max(0,B.target-B.actual))],["Month-end forecast",kMoney(B.forecast)],["Collection rate",pct(B.collection,0)],["SBUs on pace",on+" / "+live.length],["International clients",intl?(nf.format(Math.round(intl.actual))+" / "+nf.format(Math.round(intl.target))):"—"],["BDM personal sales",kMoney(B.personalActual)],["Commission estimate",kMoney(commission().current)]]
           .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
-        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BDM Consolidated Report — ${esc(B.name)}</title>
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Execution Report — ${esc(B.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#eeeeec;padding:30px;-webkit-font-smoothing:antialiased}
@@ -568,7 +570,7 @@ footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;borde
 @media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
 </style></head><body>
 <div class="wrap">
-  <div class="rhead"><div><h1>Consolidated Commercial Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
+  <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
   <div class="metastrip"><div><span class="mk">Business Development Manager</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Scope</span><span class="mv">All SBUs</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
   <div class="hero"><div><span class="mk">Cleared so far (KES SBUs)</span><div class="hbig">${kMoney(B.actual)}</div><span class="hsub">of ${kMoney(B.target)} organization target</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
   <div class="pbar"><i style="width:${attW}%"></i></div>

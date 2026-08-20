@@ -838,7 +838,7 @@ if ($bdo) {
         const team80=(B.team||[]).filter(t=>t.target>0&&t.actual/t.target>=.8).length;
         const dash=[["Remaining to target",mfmt(Math.max(0,B.target-B.actual))],["Collection rate",pct(B.collection,0)],["Team at 80%+",team80+" / "+(B.team||[]).length]]
           .map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join("");
-        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Department Command Report — ${esc(B.dept||B.name)}</title>
+        return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Execution Report — ${esc(B.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#2a2018;background:#eeeeec;padding:30px;-webkit-font-smoothing:antialiased}
@@ -875,7 +875,7 @@ footer{padding:18px 44px;font-size:10.5px;color:#a2907b;background:#faf3e8;borde
 @media print{body{background:#fff;padding:0}.wrap{box-shadow:none;border-radius:0;max-width:none;border:none}}
 </style></head><body>
 <div class="wrap">
-  <div class="rhead"><div><h1>Department Command Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
+  <div class="rhead"><div><h1>Daily Execution Report</h1><p>Vantage Africa School of Leadership</p></div><div class="rlogo"><img src="https://vantageafricaleaders.com/admin/assets/img/logo.png" alt="Vantage Africa School of Leadership"></div></div>
   <div class="metastrip"><div><span class="mk">Head of department</span><span class="mv">${esc(B.name)}</span></div><div><span class="mk">Department</span><span class="mv">${esc(B.dept||"Department")}</span></div><div><span class="mk">Date</span><span class="mv">${today}</span></div></div>
   <div class="hero"><div><span class="mk">${isCount?"Paid clients so far":"Cleared so far"}</span><div class="hbig">${mfmt(B.actual)}</div><span class="hsub">of ${mfmt(B.target)} ${isCount?"combined target":"monthly target"}</span></div><div style="text-align:right"><span class="mk">Attainment</span><div class="hpct">${pct(att)}</div></div></div>
   <div class="pbar"><i style="width:${attW}%"></i></div>
