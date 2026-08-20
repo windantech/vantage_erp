@@ -915,8 +915,10 @@ if (!function_exists('bdo_rollup')) {
         $out['ownClients'] = (int) $bmOwn['paid_clients'];
         $out['ownLeads'] = (int) ($bmOwn['total_leads'] ?? 0);
         $out['ownSources'] = $bmOwn['sources'] ?? [];
-        // the BDO's own escalated chats count as an action alert too
-        if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' unread WhatsApp chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
+        // Only a SELLING BDO who actually fields chats gets a personal reply-backlog alert. A manager
+        // BDO (e.g. Francesca) oversees and should not appear in the team's chat queue — those chats
+        // belong with the BDEs; surfacing the BDO here just misreads WhatsApp routing as their workload.
+        if ($bdoIsSeller && (int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' unread WhatsApp chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
         // highest → lowest
         usort($out['deptAlerts'], function ($a, $b) { return ($b['n'] ?? 0) <=> ($a['n'] ?? 0); });
         usort($out['deptQuality'], function ($a, $b) { return ($b['leads'] ?? 0) <=> ($a['leads'] ?? 0); });
