@@ -894,6 +894,7 @@ if (!function_exists('bdo_rollup')) {
         $out['team'] = $team; $out['members'] = count($team);
         $out['actual'] = $out['metric'] === 'participants' ? (float) $deptClients : $deptRevenue;
         $out['clearedKes'] = $deptRevenue;   // dept cleared revenue in KES, always (even for client-based depts)
+        $out['collectedUsd'] = $collN; $out['expectedUsd'] = $collD;   // raw collected/expected, for a true org roll-up
         $out['clients'] = $deptClients;
         $out['pipeline'] = $deptPipe;
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
@@ -973,9 +974,11 @@ if (!function_exists('bdo_rollup')) {
             $kesAct = (float) ($r['clearedKes'] ?? 0);
             $act = $isClient ? (float) ($r['clients'] ?? 0) : $kesAct;   // client count for Int'l, else KES
             $fore = $act > 0 ? $act / $elapsed * $working : $act;
-            // each SBU's real reps (the BDO's team) — metric-aware target/actual for the CEO drill-down
+            // each SBU's real reps (the BDO's team) — metric-aware target/actual for the CEO drill-down.
+            // Skip the BDO's OWN row (me=true): a BDO isn't a BDE and has their own view.
             $reps = [];
             foreach (($r['team'] ?? []) as $t) {
+                if (!empty($t['me'])) { continue; }
                 $reps[] = [
                     'name' => (string) $t['name'], 'title' => (string) ($t['title'] ?? ''),
                     'target' => $isClient ? (float) ($t['clientsTarget'] ?? 0) : (float) ($t['target'] ?? 0),
@@ -998,8 +1001,9 @@ if (!function_exists('bdo_rollup')) {
                 $out['target'] += $tgt; $out['actual'] += $kesAct;
                 $out['forecast'] += $fore; $out['pipeline'] += (float) ($r['pipeline'] ?? 0);
             }
-            // collection rate spans EVERY SBU (International included), weighted by cleared KES
-            $collN += (float) ($r['collection'] ?? 0) * max(1.0, $kesAct); $collD += max(1.0, $kesAct);
+            // TRUE org collection = total collected / total expected across every SBU (not a weighted
+            // average of rates) — so SBUs with big expected pipelines but little collected pull it down.
+            $collN += (float) ($r['collectedUsd'] ?? 0); $collD += (float) ($r['expectedUsd'] ?? 0);
             // funnel + sources roll up across every SBU (Int'l included — it's still acquisition)
             $leads += (int) ($r['totalLeads'] ?? 0); $paid += (int) ($r['clients'] ?? 0);
             foreach (($r['sources'] ?? []) as $s) { if (is_array($s) && count($s) >= 2) { $srcAgg[(string) $s[0]] = ($srcAgg[(string) $s[0]] ?? 0) + (int) $s[1]; } }
