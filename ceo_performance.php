@@ -750,15 +750,19 @@ try {
           ["Daily revenue required",kMoney(s.dailyReq),s.daysLeft+" working days left","var(--slate)"],
           ["Org attainment",pct(B.target>0?B.actual/B.target:0,0),"of the KES target","var(--brand)"]
         ];
-        const rowCSS='display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)';
-        const sbuList=behind.length?behind.map(d=>`<div style="${rowCSS}"><span><b>${esc(d.name)}</b> <span style="color:var(--muted);font-size:11px">· ${esc(d.leader)}</span></span><b class="num" style="color:var(--coral)">${pct((+d.attn)||0,0)}</b></div>`).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:8px 0">Every SBU is at or above required pace.</div>`;
-        const pplList=lowPeople.length?lowPeople.map(p=>`<div style="${rowCSS}"><span><b>${esc(p.name)}</b> <span style="color:var(--muted);font-size:11px">· ${esc(p.sbu)}</span></span><b class="num" style="color:var(--coral)">${pct(rAttn(p),0)}</b></div>`).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:8px 0">No staff below 80% of target.</div>`;
-        const head='font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:2px';
+        const sev=a=>a>=.8?"var(--jade)":a>=.5?"var(--amber)":"var(--coral)";
+        const icItem=(nm,sub,a)=>{const c=sev(a);return `<div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;background:var(--surface2);border:1px solid var(--line)">`
+          +`<span style="flex:0 0 auto;width:32px;height:32px;border-radius:9px;background:${c};color:#fff;display:grid;place-items:center;font-weight:800;font-size:11px">${esc(pInitials(nm))}</span>`
+          +`<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</div><div style="font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(sub)}</div><div style="height:4px;border-radius:99px;background:var(--surface3);margin-top:6px;overflow:hidden"><div style="width:${clamp(a*100,3,100)}%;height:100%;background:${c}"></div></div></div>`
+          +`<b class="num" style="flex:0 0 auto;font-size:13.5px;color:${c}">${pct(a,0)}</b></div>`;};
+        const sbuList=behind.length?behind.map(d=>icItem(d.name,d.leader,(+d.attn)||0)).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">Every SBU is at or above required pace.</div>`;
+        const pplList=lowPeople.length?lowPeople.map(p=>icItem(p.name,p.sbu,rAttn(p))).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">No staff below 80% of target.</div>`;
+        const head='display:flex;align-items:center;gap:7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:10px';
         return `<div class="card"><div class="chead"><h4>Intervention Centre</h4><span class="chip coral">What needs you</span></div>
           <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">${ans.map(([l,v,sub,a])=>`<div style="background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${a};border-radius:11px;padding:14px 16px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">${l}</span><b class="num" style="display:block;font-size:19px;margin:6px 0 3px;color:var(--ink);line-height:1.15">${v}</b><div style="font-size:11px;color:var(--muted)">${sub}</div></div>`).join("")}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px">
-            <div><div style="${head}">SBUs behind pace</div>${sbuList}</div>
-            <div><div style="${head}">Lowest-performing staff</div>${pplList}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px">
+            <div><div style="${head}">SBUs behind pace <span class="chip coral">${behind.length}</span></div><div style="display:flex;flex-direction:column;gap:8px">${sbuList}</div></div>
+            <div><div style="${head}">Lowest-performing staff <span class="chip coral">${lowPeople.length}</span></div><div style="display:flex;flex-direction:column;gap:8px">${pplList}</div></div>
           </div></div>`;
       }
       function staffRanking(){
