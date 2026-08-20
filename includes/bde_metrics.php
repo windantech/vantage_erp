@@ -131,7 +131,7 @@ if (!function_exists('bde_fetch_metrics')) {
      * @param string $start_date  'Y-m-d'
      * @param string $end_date    'Y-m-d'
      */
-    function bde_fetch_metrics($conn, $ruId, $start_date, $end_date)
+    function bde_fetch_metrics($conn, $ruId, $start_date, $end_date, $soleEventsOnly = false)
     {
         $ruId = (int) $ruId;
         $out = [
@@ -217,8 +217,11 @@ if (!function_exists('bde_fetch_metrics')) {
         }
 
         // --- EVENTS (international + corporate): Event.assigned_to → ticket_congress (status=2) ---
+        // $soleEventsOnly restricts to events assigned SOLELY to this person (no co-assignees) — used
+        // for a BDO's own contribution so co-led team events aren't double-counted on top of the BDEs.
         $events = [];
-        $evq = @mysqli_query($conn, "SELECT event_id, COALESCE(early_amount,0) AS early FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
+        $soleCond = $soleEventsOnly ? " AND TRIM(TRAILING ',' FROM REPLACE(assigned_to,' ','')) = '$ruId'" : "";
+        $evq = @mysqli_query($conn, "SELECT event_id, COALESCE(early_amount,0) AS early FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0" . $soleCond);
         while ($evq && ($evr = mysqli_fetch_assoc($evq))) { $events[(int) $evr['event_id']] = (float) $evr['early']; }
         if (!empty($events)) {
             $ein = implode(',', array_map('intval', array_keys($events)));
@@ -874,16 +877,22 @@ if (!function_exists('bdo_rollup')) {
         }
         $out['bdoIsSeller'] = $bdoIsSeller;
 
+        $bmOwn = $bm;   // the BDO's numbers to display in their personal section (default: full)
         if ($bdoIsSeller) {
-            // a real seller (Edwin): count their own attribution toward the department and give them a row
-            $deptRevenue += (float) $bm['revenue_kes']; $deptClients += (int) $bm['paid_clients'];
-            $deptPipe += max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
-            $collN += (float) $bm['revenue_usd']; $collD += (float) $bm['expected_usd'];
-            $deptLeadsTotal += (int) ($bm['total_leads'] ?? 0);
-            foreach (($bm['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
-            $bmPipe = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
-            $bmColl = (float) $bm['expected_usd'] > 0 ? (float) $bm['revenue_usd'] / (float) $bm['expected_usd'] : 0.0;
-            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'clientsTarget' => $bdoClientsTarget, 'actual' => (float) $bm['revenue_kes'], 'clients' => (int) $bm['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
+            // a real seller (Edwin/Francesca): count only their DISTINCT sales — sole-owned events +
+            // their own intakes — NEVER co-assigned team events (those already count under the BDE).
+            // This keeps Francesca's single-owner Virtual intakes but drops Edwin's co-led Corporate
+            // events, so the department is not double-counted.
+            $bmS = bde_fetch_metrics($conn, $bdoId, $from, $to, true);
+            $bmOwn = $bmS;
+            $deptRevenue += (float) $bmS['revenue_kes']; $deptClients += (int) $bmS['paid_clients'];
+            $deptPipe += max(0.0, ((float) $bmS['expected_usd'] - (float) $bmS['revenue_usd'])) * $rate;
+            $collN += (float) $bmS['revenue_usd']; $collD += (float) $bmS['expected_usd'];
+            $deptLeadsTotal += (int) ($bmS['total_leads'] ?? 0);
+            foreach (($bmS['sources'] ?? []) as $sr) { if (is_array($sr) && count($sr) >= 2) { $srcAgg[(string) $sr[0]] = ($srcAgg[(string) $sr[0]] ?? 0) + (int) $sr[1]; } }
+            $bmPipe = max(0.0, ((float) $bmS['expected_usd'] - (float) $bmS['revenue_usd'])) * $rate;
+            $bmColl = (float) $bmS['expected_usd'] > 0 ? (float) $bmS['revenue_usd'] / (float) $bmS['expected_usd'] : 0.0;
+            $team[] = ['id' => $bdoId, 'name' => ($out['name'] ?: 'BDO'), 'title' => ($out['title'] !== '' ? $out['title'] : 'BDO'), 'target' => ($ownFloor > 0 ? $ownFloor : $bdoTarget), 'clientsTarget' => $bdoClientsTarget, 'actual' => (float) $bmS['revenue_kes'], 'clients' => (int) $bmS['paid_clients'], 'pipeline' => $bmPipe, 'collection' => $bmColl, 'notes' => '', 'me' => true];
         } else {
             // a MANAGER BDO (Erick): their events are their BDEs' events, so their revenue/clients are
             // ALREADY in the team rows and the department total — do NOT count them again. But still show
@@ -914,10 +923,10 @@ if (!function_exists('bdo_rollup')) {
                 'threshold' => $cr['threshold_pct'] !== null ? (float) $cr['target_value'] * (float) $cr['threshold_pct'] / 100.0 : 0.0];
         }
         $out['ownTarget'] = $ownFloor;
-        $out['ownActual'] = (float) $bm['revenue_kes'];
-        $out['ownClients'] = (int) $bm['paid_clients'];
-        $out['ownLeads'] = (int) ($bm['total_leads'] ?? 0);
-        $out['ownSources'] = $bm['sources'] ?? [];
+        $out['ownActual'] = (float) $bmOwn['revenue_kes'];
+        $out['ownClients'] = (int) $bmOwn['paid_clients'];
+        $out['ownLeads'] = (int) ($bmOwn['total_leads'] ?? 0);
+        $out['ownSources'] = $bmOwn['sources'] ?? [];
         // the BDO's own escalated chats count as an action alert too
         if ((int) ($bm['wa_unread'] ?? 0) > 0) { $out['deptAlerts'][] = ['name' => ($out['name'] ?: 'You'), 'id' => $bdoId, 'n' => (int) $bm['wa_unread'], 'text' => (int) $bm['wa_unread'] . ' escalated chat' . ((int) $bm['wa_unread'] > 1 ? 's' : '') . ' to reply']; }
         // highest → lowest
