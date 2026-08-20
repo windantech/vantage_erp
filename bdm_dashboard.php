@@ -9,6 +9,22 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
+require_once 'includes/bde_metrics.php';
+
+// Who are we viewing? The BDM is Michael #127. Admins can preview via ?as=<id>; everyone else
+// sees their own login. Default to Michael so the page always has a subject while it's new.
+$bdm_is_admin = isset($role) && is_array($role) && in_array(777, $role);
+$bdm_id = (int) ($_SESSION['login_id'] ?? 0);
+if ($bdm_id <= 0) { $bdm_id = 127; }
+if (isset($_GET['as']) && $bdm_is_admin) { $bdm_id = (int) $_GET['as']; }
+
+$bdm_from = date('Y-m-01');
+$bdm_to   = date('Y-m-d');
+$bdm = bdm_rollup($conn, $bdm_from, $bdm_to, $bdm_id);
+
+// Admin "view as" roster for the BDM page: the super-user plus the BDM (Michael).
+$bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM']];
 ?>
 <section id="content-wrapper" class="d-flex flex-column">
   <div id="content">
@@ -177,9 +193,18 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       <header class="bde-topbar">
         <div class="brand"><div class="mark">VA</div><div><h1>Performance Command Centre</h1><p>Strategy → daily execution → verified revenue → commission → growth</p></div></div>
         <div class="controls">
+          <?php if ($bdm_is_admin): ?>
+          <div class="control"><label>View as (admin)</label>
+            <select id="viewAsSelect" onchange="if(this.value)window.location.href='bdm_dashboard.php?as='+this.value;">
+              <?php foreach ($bdm_people as $p): ?>
+                <option value="<?php echo (int) $p['id']; ?>" <?php echo $p['id'] === $bdm_id ? 'selected' : ''; ?>><?php echo htmlspecialchars($p['name']) . ' (' . htmlspecialchars($p['role']) . ')'; ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <?php endif; ?>
           <div class="control"><label>Analytics month</label><select id="periodSelect"></select></div>
           <button class="tbtn" id="themeBtn" type="button">🌙 Dark</button>
-          <div class="profile-chip"><span class="a">MO</span><div><b>Michael Obworo Mongere</b><span>BDM · All five SBUs</span></div></div>
+          <div class="profile-chip"><span class="a"><?php echo htmlspecialchars($bdm['initials'] ?: 'BDM'); ?></span><div><b><?php echo htmlspecialchars($bdm['name'] ?: 'Business Development Manager'); ?></b><span>BDM · All SBUs</span></div></div>
         </div>
       </header>
       <nav class="tabs" aria-label="Dashboard sections">
@@ -196,21 +221,20 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       "use strict";
       const root=document.getElementById("bdeApp");
       const B={
-        name:"Michael Obworo Mongere", initials:"MO", title:"Business Development Manager", dept:"All five SBUs", level:"Commercial leadership",
-        target:52754875, actual:32070000, forecast:54860000, pipeline:117300000, collection:.90,
-        personalTarget:5000000, personalActual:3720000, personalPipeline:17400000,
-        mandate:"Make growth systematic across all five SBUs while remaining a direct strategic revenue producer.",
+        name:<?php echo json_encode($bdm['name'] ?: 'Business Development Manager', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDM"'; ?>,
+        initials:<?php echo json_encode($bdm['initials'] ?: 'BDM', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDM"'; ?>,
+        title:"Business Development Manager", dept:"All SBUs", level:"Commercial leadership",
+        target:<?php echo (float) $bdm['target']; ?>, actual:<?php echo (float) $bdm['actual']; ?>, forecast:<?php echo (float) $bdm['forecast']; ?>, pipeline:<?php echo (float) $bdm['pipeline']; ?>, collection:<?php echo (float) $bdm['collection']; ?>,
+        personalTarget:<?php echo (float) $bdm['personalTarget']; ?>, personalActual:<?php echo (float) $bdm['personalActual']; ?>, personalPipeline:<?php echo (float) $bdm['personalPipeline']; ?>, personalClients:<?php echo (int) $bdm['personalClients']; ?>,
+        intl:<?php echo json_encode($bdm['intl'] ?: null, JSON_INVALID_UTF8_SUBSTITUTE) ?: 'null'; ?>,
+        totalLeads:<?php echo (int) $bdm['totalLeads']; ?>, clients:<?php echo (int) $bdm['clients']; ?>,
+        mandate:"Make growth systematic across all SBUs while remaining a direct strategic revenue producer.",
         mandateText:"The BDM controls consolidated revenue, qualified pipeline, proposals, strategic accounts, marketing-to-sales conversion, collections, CRM discipline, HOD performance and early recovery action.",
         focus:"Move blocked high-value accounts, correct weak SBUs and ensure every HOD has an evidence-based forecast and recovery action.",
-        drivers:[["Active SBUs",5,"Business units"],["Strategic accounts",34,"In play"],["Proposals / tenders",28,"Live"],["HOD forecasts",5,"Audited"],["Org collection","90%","Cleared"]],
-        funnel:[["Enterprise leads",13320],["Qualified",6096],["Meetings / sessions / demos",3706],["Proposal / commitment",1866],["Payment / activation",1174]],
-        sources:[["Organizations / sponsorships",34],["Digital campaigns",22],["Cross-SBU referrals",17],["Alumni / partners",15],["RFPs / procurement",12]],
-        priorities:[
-          ["High-value organization A","Negotiation","KES 5.8M","Executive decision call","Today"],
-          ["Government / donor programme","Proposal / RFP","KES 8.4M","Compliance review","Tomorrow"],
-          ["Multi-participant sponsorship","Approval","KES 3.2M","Confirm nominee list","Today"],
-          ["Recurring digital account","Renewal","KES 1.1M","Resolve adoption issue","Friday"]
-        ],
+        funnel:<?php echo json_encode(!empty($bdm['funnel']) ? $bdm['funnel'] : [['Leads', 0], ['Paid clients', 0]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[["Leads",0],["Paid clients",0]]'; ?>,
+        sources:<?php echo json_encode($bdm['sources'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        alerts:<?php echo json_encode($bdm['alerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        crossSbu:<?php echo json_encode($bdm['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         dailyRhythm:[
           ["8:00–8:30","Review consolidated revenue, the weakest SBU, strategic accounts, RFPs, collections and overdue actions."],
           ["8:30–9:00","Set the day's SBU recovery, strategic-account and personal-revenue outcomes."],
@@ -224,19 +248,17 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
           ["Every forecast is evidence-based","No HOD forecast without stage, value, probability, owner and a dated next action."],
           ["Lead by intervention, not observation","Move blocked high-value deals and correct weak SBUs before month-end, not after."]
         ],
-        sbus:[
-          {name:"International", leader:"Erick Kwemoi Ndiema", target:24000000, actual:13650000, forecast:25100000, pipeline:45200000, collection:.91},
-          {name:"Virtual", leader:"Francisca Ing'aa", target:11504875, actual:7920000, forecast:11850000, pipeline:21100000, collection:.87},
-          {name:"Corporate", leader:"Edwin Otieno", target:10000000, actual:6250000, forecast:10400000, pipeline:31800000, collection:.90},
-          {name:"Digital Solutions", leader:"Alein Kawinzi Kagunza", target:4850000, actual:2790000, forecast:4990000, pipeline:14600000, collection:.93},
-          {name:"Academic", leader:"Hellen Letting", target:2400000, actual:1460000, forecast:2520000, pipeline:4600000, collection:.96}
-        ]
+        sbus:<?php echo json_encode($bdm['sbus'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>
       };
-      const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command"};
+      const periods=[{label:<?php echo json_encode(date('F Y', strtotime($bdm_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($bdm_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($bdm_to)), (int) date('t', strtotime($bdm_to)))); ?>}];
+      const state={p:0,view:"command"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
+      // SBU display is metric-aware: International is client-based, the rest are KES.
+      const sbuActual=d=>d.kes?kMoney(d.actual):nf.format(Math.round(d.actual||0))+" clients";
+      const sbuTarget=d=>d.kes?kMoney(d.target):nf.format(Math.round(d.target||0))+" clients";
+      const liveSbus=()=>B.sbus.filter(d=>!d.placeholder);
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
@@ -246,17 +268,20 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       function pace(){const p=period();const expected=B.target*(p.elapsed/p.working);const ratio=expected?B.actual/expected:0;const status=ratio>=1?"green":ratio>=.85?"amber":"red";return {expected,ratio,status,label:status==="green"?"On pace":status==="amber"?"At risk":"Behind pace"};}
       const scol=s=>s==="green"?"var(--jade)":s==="amber"?"var(--amber)":"var(--coral)";
       function commission(){
-        const s=B;const orgAtt=s.actual/s.target;const personal=s.personalActual;
+        const s=B;const orgAtt=s.target>0?s.actual/s.target:0;const personal=s.personalActual;
+        const live=liveSbus();const nS=live.length||1;
         const personalComm=personal>=7500000?150000:personal>=6000000?120000:personal>=5000000?90000:personal>=4000000?60000:0;
-        const sbus80=s.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const sbus80=live.filter(d=>(+d.attn)>=.8).length;
+        const need=Math.max(1,Math.ceil(nS*0.8));
         const leadership=orgAtt>=1.1?125000:orgAtt>=1?100000:orgAtt>=.9?75000:orgAtt>=.8?50000:0;
-        const gated=sbus80>=4&&s.collection>=.9&&s.sbus.every(d=>d.actual/d.target>=.5);
+        const noneBelow50=live.every(d=>(+d.attn)>=.5);
+        const gated=sbus80>=need&&s.collection>=.9&&noneBelow50;
         const current=gated?personalComm+leadership:Math.round(personalComm*.7);
         const atTarget=90000+100000;
         const gates=[
           ["Organization reaches 80%+",orgAtt>=.8,pct(orgAtt,0)],
-          ["At least 4 of 5 SBUs at 80%+",sbus80>=4,sbus80+" of 5"],
-          ["No SBU below 50%",s.sbus.every(d=>d.actual/d.target>=.5),s.sbus.filter(d=>d.actual/d.target<.5).length+" below"],
+          [`At least ${need} of ${nS} SBUs at 80%+`,sbus80>=need,sbus80+" of "+nS],
+          ["No SBU below 50%",noneBelow50,live.filter(d=>(+d.attn)<.5).length+" below"],
           ["Organization collection at 90%+",s.collection>=.9,pct(s.collection,0)],
           ["Personal strategic sales (KES 4M+)",personal>=4000000,kMoney(personal)]
         ];
@@ -266,16 +291,18 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
 
       /* ---------- shared blocks ---------- */
-      function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Five-SBU commercial command</div><h2>${esc(B.mandate)}</h2><p>${esc(B.mandateText)}</p></div><div class="focus"><b>Today's strategic focus</b><span>${esc(B.focus)}</span></div></section>`;}
+      function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Multi-SBU commercial command</div><h2>${esc(B.mandate)}</h2><p>${esc(B.mandateText)}</p></div><div class="focus"><b>Today's strategic focus</b><span>${esc(B.focus)}</span></div></section>`;}
 
       function kpiBlock(){
-        const att=B.actual/B.target;const c=commission();const sbus80=B.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const att=B.target>0?B.actual/B.target:0;const c=commission();const live=liveSbus();const nS=live.length;const sbus80=live.filter(d=>(+d.attn)>=.8).length;
+        const intl=B.intl;const intlCell=intl?`${nf.format(Math.round(intl.actual))} / ${nf.format(Math.round(intl.target))} clients`:"—";
+        const pT=B.personalTarget>0?pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget):"no personal target";
         const items=[
-          ["Organization target",kMoney(B.target),"All five SBUs","flat","var(--slate)"],
+          ["Organization target (KES SBUs)",kMoney(B.target),nS+" revenue SBUs","flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
-          ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
-          ["BDM personal sales",kMoney(B.personalActual),pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget),"up","var(--slate)"],
-          ["SBUs at 80%+",sbus80+" / 5","Balanced-SBU gate","flat","var(--gold)"],
+          ["Month-end forecast",kMoney(B.forecast),(B.target>0?pct(B.forecast/B.target):"0%")+" projected","flat","var(--slate)"],
+          ["International (clients)",intlCell,intl?pct(intl.attn,0)+" of target":"not resolved","up","var(--violet)"],
+          ["BDM personal sales",kMoney(B.personalActual),pT,"up","var(--slate)"],
           ["Commission estimate",kMoney(c.current),c.current>0?"Personal + leadership":"Not yet unlocked","flat","var(--amber)"]
         ];
         const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
@@ -330,14 +357,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       function teamTable(){
         const avatarCols=["var(--slate)","#2f8f88","var(--brand)","var(--violet)","var(--gold)"];
         const p=period();
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><a href="bdo_dashboard.php" style="color:inherit;text-decoration:none">${esc(d.name)}</a></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");if(d.placeholder){return `<tr style="opacity:.6"><td><div class="prow"><span class="a" style="background:var(--faint)">${ini}</span><div><b>${esc(d.name)}</b><span>${esc(d.leader)}</span></div></div></td><td class="num" colspan="4" style="color:var(--muted)">Not yet configured in the CRM</td><td><span class="chip slate">Placeholder</span></td></tr>`;}const a=(+d.attn)||0;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const nameCell=d.bdoId?`<a href="bdo_dashboard.php?as=${d.bdoId}" style="color:inherit;text-decoration:none">${esc(d.name)} ↗</a>`:esc(d.name);return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b>${nameCell}</b><span>${esc(d.leader)}${d.kes?"":" · clients"}</span></div></div></td><td class="num">${sbuTarget(d)}</td><td class="num">${sbuActual(d)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- executive master view (BDM request) ---------- */
       function execRevenueBreakdown(){
         const shortName={"International":"Int'l","Virtual":"Virtual","Corporate":"Corporate","Digital Solutions":"Digital","Academic":"Academic"};
-        const data=B.sbus.map(d=>({name:shortName[d.name]||d.name,closed:d.actual,open:d.pipeline}));
-        const max=Math.max(...data.map(d=>d.closed+d.open))*1.14;
+        const data=liveSbus().map(d=>({name:shortName[d.name]||d.name,closed:d.kes?d.actual:(d.kesActual||0),open:d.pipeline}));
+        const max=(Math.max(1,...data.map(d=>d.closed+d.open)))*1.14;
         const w=640,h=250,pd=34,base=h-pd-16,plot=base-pd,step=(w-2*pd)/data.length,bw=52;
         const bars=data.map((d,i)=>{const cx=pd+step*i+step/2,x=cx-bw/2;const ch=d.closed/max*plot,oh=d.open/max*plot;return `<g><rect x="${x.toFixed(1)}" y="${(base-ch).toFixed(1)}" width="${bw}" height="${Math.max(0,ch).toFixed(1)}" rx="3" fill="var(--jade)"/><rect x="${x.toFixed(1)}" y="${(base-ch-oh).toFixed(1)}" width="${bw}" height="${Math.max(0,oh).toFixed(1)}" rx="3" fill="#4d8bd6"/><text x="${cx.toFixed(1)}" y="${base+16}" text-anchor="middle">${esc(d.name)}</text><text x="${cx.toFixed(1)}" y="${(base-ch-oh-6).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">${kMoney(d.closed+d.open)}</text></g>`;}).join("");
         return `<div class="card"><div class="chead"><div><h4>Revenue breakdown</h4><p>Open pipeline vs closed-won revenue, by department.</p></div><span class="segmented">${["Monthly","Quarterly","YTD"].map((f,i)=>`<button class="seg${i===0?" on":""}" type="button">${f}</button>`).join("")}</span></div>
@@ -346,23 +373,14 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
       function execTargetProgress(){
         const p=period();
-        const rows=B.sbus.map(d=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";return `<div class="tvp"><div class="tvp-top"><b>${esc(d.name)}</b><span class="chip ${st==="green"?"jade":st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div><div class="track2"><div class="fill2" style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></div><div class="tvp-sub">${kMoney(d.actual)} / ${kMoney(d.target)}</div></div>`;}).join("");
+        const rows=liveSbus().map(d=>{const a=(+d.attn)||0;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";return `<div class="tvp"><div class="tvp-top"><b>${esc(d.name)}</b><span class="chip ${st==="green"?"jade":st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div><div class="track2"><div class="fill2" style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></div><div class="tvp-sub">${sbuActual(d)} / ${sbuTarget(d)}</div></div>`;}).join("");
         return `<div class="card"><div class="chead"><div><h4>Target vs actual — by department</h4><p>Closed revenue against each departmental quota.</p></div><span class="chip slate">Colour = pace</span></div><div class="tvp-grid">${rows}</div></div>`;
       }
       function execTopDeals(){
-        const deals=[
-          ["National Bank L&D framework","National Bank","Corporate",8400000,"Negotiation","Edwin Otieno"],
-          ["Ministry M&E rollout — Botswana","Ministry of Finance","International",5800000,"Proposal / RFP","Erick Ndiema"],
-          ["Government planning — Eval360","Government Planning Unit","Digital Solutions",4200000,"RFP qualified","Alein Kagunza"],
-          ["Manufacturing group appraisal","Manufacturing Group","Digital Solutions",3200000,"Approval","Alein Kagunza"],
-          ["Regional NGO consortium","NGO Consortium","Corporate",2800000,"Discovery","Edwin Otieno"],
-          ["Corporate L&D partner","Safaricom","Virtual",2400000,"Negotiation","Francisca Ing'aa"],
-          ["University staff cohort","Kenyatta University","Virtual",2400000,"Proposal","Francisca Ing'aa"],
-          ["Central Bank data analysis","Central Bank — Sierra Leone","International",1900000,"Discovery","Erick Ndiema"],
-          ["College network CPD","College Network","Academic",1600000,"Proposal","Hellen Letting"],
-          ["Recurring digital account","AAR Insurance","Digital Solutions",1100000,"Renewal","Alein Kagunza"]
-        ].sort((a,b)=>b[3]-a[3]);
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Deal</th><th>Account</th><th>Department</th><th>Value</th><th>Stage</th><th>Owner</th></tr></thead><tbody>${deals.map((r,i)=>`<tr><td class="num">${i+1}</td><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td><span class="stage-chip">${esc(r[2])}</span></td><td class="num">${kMoney(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table></div></div>`;
+        // Real cross-SBU opportunities flagged on BDO/BDE field visits (bde_visits.opportunity_note).
+        const rows=(B.crossSbu||[]);
+        if(!rows.length) return `<div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">From field visits</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No opportunities flagged from field visits yet. As BDOs and BDEs log field visits with opportunity notes, the highest-value ones surface here for cross-SBU action. A structured strategic-deals pipeline (value · stage · owner) needs a deals table — not yet in the CRM.</p></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Opportunity flagged on a field visit</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td class="num">${i+1}</td><td>${esc(x)}</td></tr>`).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- views ---------- */
@@ -374,11 +392,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
             ${progressCard()}
           </section>
 
-          <div class="section-tag"><h3>Five-SBU performance comparison</h3><span>The whole picture — each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>SBU performance comparison</h3><span>The whole picture — each SBU drills into its department (BDO) dashboard</span><div class="rule"></div></div>
           ${teamTable()}
           ${execRevenueBreakdown()}
 
-          <div class="section-tag"><h3>Top strategic deals</h3><span>Top active open deals company-wide, by value</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Cross-SBU opportunities</h3><span>Opportunities flagged across the SBUs' field visits</span><div class="rule"></div></div>
           ${execTopDeals()}
 
           <div class="section-tag"><h3>Pace, forecast &amp; today's execution</h3><span>Month-end trajectory and the actions in play now</span><div class="rule"></div></div>
@@ -389,29 +407,30 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
 
       function vPipeline(){
-        const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
-        const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
+        const fmax=Math.max(1,B.funnel[0][1]);const smax=Math.max(1,...B.sources.map(s=>s[1]));
+        const alerts=B.alerts||[];
+        const sHTML=B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No lead-source data across the SBUs this period.</p>`;
+        const aHTML=alerts.length?alerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.text||((a.n||0)+" escalated chats to reply"))}</b><p>${esc(a.name||"")}${a.sbu?" · "+esc(a.sbu):""}</p></div><span class="due">${nf.format(a.n||0)}</span></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No escalated WhatsApp chats awaiting reply across the SBUs. </p>`;
         return `
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Source ROI</span></div>${B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}%</b></div>`).join("")}</div>
+            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live · all SBUs</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,B.funnel[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Consolidated leads → paid clients across every SBU.</div></div>
+            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${sHTML}</div>
           </section>
-          <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>`;
+          <div class="card"><div class="chead"><h4>Escalations awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} flagged</span></div><div class="list">${aHTML}</div></div>`;
       }
 
       function vReport(){
         const p=period();
-        const sbusGreen=B.sbus.filter(d=>d.actual>=d.target*(p.elapsed/p.working)).length;
+        const live=liveSbus();
+        const sbusGreen=live.filter(d=>d.actual>=d.target*(p.elapsed/p.working)).length;
         const fields=[
-          ["Organization daily revenue target","number",Math.round(B.target/p.working)],
+          ["Organization daily revenue target (KES SBUs)","number",Math.round(B.target/p.working)],
           ["Actual cleared revenue today","number",Math.round(B.actual/p.elapsed)],
-          ["SBUs at 80%+ pace","number",sbusGreen],
-          ["Strategic-account meetings","number",4],
+          ["SBUs at pace (of "+live.length+")","number",sbusGreen],
+          ["International clients MTD","number",B.intl?Math.round(B.intl.actual):0],
           ["BDM personal revenue MTD","number",B.personalActual],
           ["Consolidated qualified pipeline","number",B.pipeline],
-          ["Proposals / tenders at risk","number",3],
-          ["Collections requiring escalation","number",7],
-          ["SBU performance summary","textarea",B.sbus.map(d=>`${d.name}: ${kMoney(d.actual)} / ${kMoney(d.target)}; forecast ${kMoney(d.forecast)}`).join("\n")],
+          ["SBU performance summary","textarea",live.map(d=>`${d.name}: ${sbuActual(d)} / ${sbuTarget(d)}; forecast ${d.kes?kMoney(d.forecast):Math.round(d.forecast)+" clients"}`).join("\n")],
           ["Strategic accounts and blocked deals","textarea","Account, value, stage, owner, blocker, executive action and next date."],
           ["HOD coaching / recovery decisions","textarea","Named HOD, issue, action, deadline and review point."],
           ["CEO decisions required","textarea","Budget, pricing, executive access, technology, legal, payment or capacity decision."]
@@ -454,11 +473,11 @@ require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
-        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDE_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
+        el("dlReport").addEventListener("click",()=>{genReport();const t=el("reportPreview").textContent;const b=new Blob([t],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="Vantage_BDM_"+period().label.replace(/\s+/g,"_")+"_Report.txt";a.click();URL.revokeObjectURL(a.href);});
         el("clrReport").addEventListener("click",()=>root.querySelectorAll("#reportForm textarea").forEach(x=>x.value=""));
       }
       function genReport(){
-        const lines=["VANTAGE AFRICA — BDE DAILY REPORT","Period: "+period().label,"Consultant: "+B.name+" | "+B.title+" · "+B.dept,""];
+        const lines=["VANTAGE AFRICA — BDM CONSOLIDATED REPORT","Period: "+period().label,"Manager: "+B.name+" | "+B.title+" · "+B.dept,""];
         root.querySelectorAll("#reportForm input,#reportForm textarea").forEach(x=>lines.push(x.dataset.label+": "+(x.value.trim()||"—")));
         const att=B.actual/B.target;lines.push("");lines.push("Dashboard position: "+kMoney(B.actual)+" cleared against "+kMoney(B.target)+" ("+pct(att)+").");
         lines.push("Qualified pipeline: "+kMoney(B.pipeline)+". Collection: "+pct(B.collection,0)+".");

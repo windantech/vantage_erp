@@ -925,4 +925,96 @@ if (!function_exists('bdo_rollup')) {
         while ($xq && ($xr = mysqli_fetch_assoc($xq))) { $out['crossSbu'][] = trim((string) $xr['opportunity_note']); }
         return $out;
     }
+
+    /**
+     * bdm_rollup — the Business Development Manager's consolidated view across the SBUs.
+     * Aggregates the real BDO department roll-ups (bdo_rollup) for each SBU. International is
+     * CLIENT-based (target 80 clients), so it is reported separately in $out['intl'] and does NOT
+     * feed the KES organisation total; the KES total sums only the revenue SBUs. Academic is a
+     * placeholder until its BDO/targets exist in the CRM. The BDM ($bdmId, default Michael #127)
+     * also sells strategic accounts — their own sole-owned attribution is the "personal" line.
+     */
+    function bdm_rollup($conn, $from, $to, $bdmId = 127)
+    {
+        // SBU → BDO map. 'kes' = feeds the KES org total; International is client-based (kes=false).
+        $sbuDefs = [
+            ['bdoId' => 121, 'name' => 'International',      'kes' => false],
+            ['bdoId' => 125, 'name' => 'Virtual',           'kes' => true],
+            ['bdoId' => 118, 'name' => 'Corporate',         'kes' => true],
+            ['bdoId' => 132, 'name' => 'Digital Solutions', 'kes' => true],
+            ['bdoId' => 0,   'name' => 'Academic',          'kes' => true, 'placeholder' => true],
+        ];
+        $out = [
+            'name' => 'Business Development Manager', 'title' => 'Business Development Manager',
+            'initials' => 'BDM', 'dept' => 'All SBUs',
+            'target' => 0.0, 'actual' => 0.0, 'forecast' => 0.0, 'pipeline' => 0.0, 'collection' => 0.0,
+            'sbus' => [], 'intl' => null,
+            'funnel' => [], 'sources' => [], 'totalLeads' => 0, 'clients' => 0,
+            'personalTarget' => 0.0, 'personalActual' => 0.0, 'personalPipeline' => 0.0, 'personalClients' => 0,
+            'alerts' => [], 'crossSbu' => [], 'from' => $from, 'to' => $to,
+        ];
+        $rate = bde_usd_to_kes($conn);
+        $working = (int) date('t', strtotime($to));
+        $elapsed = max(1, min((int) date('j', strtotime($to)), $working));
+        $srcAgg = []; $leads = 0; $paid = 0; $collN = 0.0; $collD = 0.0;
+
+        foreach ($sbuDefs as $sd) {
+            if (!empty($sd['placeholder']) || (int) $sd['bdoId'] <= 0) {
+                $out['sbus'][] = ['name' => $sd['name'], 'leader' => 'Not set up yet', 'bdoId' => 0,
+                    'target' => 0.0, 'actual' => 0.0, 'forecast' => 0.0, 'pipeline' => 0.0, 'collection' => 0.0,
+                    'attn' => 0.0, 'metric' => 'revenue', 'kes' => true, 'clients' => 0, 'members' => 0, 'placeholder' => true];
+                continue;
+            }
+            $r = bdo_rollup($conn, (int) $sd['bdoId'], $from, $to);
+            $isClient = (($r['metric'] ?? 'revenue') === 'participants');
+            $tgt = (float) ($r['target'] ?? 0);
+            $kesAct = (float) ($r['clearedKes'] ?? 0);
+            $act = $isClient ? (float) ($r['clients'] ?? 0) : $kesAct;   // client count for Int'l, else KES
+            $fore = $act > 0 ? $act / $elapsed * $working : $act;
+            $sbu = ['name' => $sd['name'], 'leader' => (string) ($r['name'] ?: 'BDO'), 'bdoId' => (int) $sd['bdoId'],
+                'target' => $tgt, 'actual' => $act, 'kesActual' => $kesAct, 'forecast' => $fore,
+                'pipeline' => (float) ($r['pipeline'] ?? 0), 'collection' => (float) ($r['collection'] ?? 0),
+                'attn' => $tgt > 0 ? $act / $tgt : 0.0, 'metric' => (string) ($r['metric'] ?? 'revenue'),
+                'kes' => !$isClient, 'clients' => (int) ($r['clients'] ?? 0), 'members' => (int) ($r['members'] ?? 0)];
+            $out['sbus'][] = $sbu;
+
+            if ($isClient) {
+                $out['intl'] = $sbu;                       // reported separately, NOT in the KES total
+            } else {
+                $out['target'] += $tgt; $out['actual'] += $kesAct;
+                $out['forecast'] += $fore; $out['pipeline'] += (float) ($r['pipeline'] ?? 0);
+                $collN += (float) ($r['collection'] ?? 0) * max(1.0, $kesAct); $collD += max(1.0, $kesAct);
+            }
+            // funnel + sources roll up across every SBU (Int'l included — it's still acquisition)
+            $leads += (int) ($r['totalLeads'] ?? 0); $paid += (int) ($r['clients'] ?? 0);
+            foreach (($r['sources'] ?? []) as $s) { if (is_array($s) && count($s) >= 2) { $srcAgg[(string) $s[0]] = ($srcAgg[(string) $s[0]] ?? 0) + (int) $s[1]; } }
+            foreach (($r['deptAlerts'] ?? []) as $al) { $al['sbu'] = $sd['name']; $out['alerts'][] = $al; }
+            foreach (($r['crossSbu'] ?? []) as $x) { $out['crossSbu'][] = $x; }
+        }
+
+        $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
+        $out['totalLeads'] = $leads; $out['clients'] = $paid;
+        $out['funnel'] = [['Leads', $leads], ['Paid clients', $paid]];
+        arsort($srcAgg); $srcOut = [];
+        foreach (array_slice($srcAgg, 0, 6, true) as $lab => $n) { $srcOut[] = [$lab, $n]; }
+        $out['sources'] = $srcOut;
+        usort($out['alerts'], function ($a, $b) { return ($b['n'] ?? 0) <=> ($a['n'] ?? 0); });
+        $out['crossSbu'] = array_slice($out['crossSbu'], 0, 12);
+
+        // The BDM's own strategic-account sales (sole-owned, like a selling BDO) + personal target.
+        $bm = bde_fetch_metrics($conn, (int) $bdmId, $from, $to, true);
+        $out['name'] = (string) ($bm['name'] ?: 'Business Development Manager');
+        $ini = '';
+        foreach (preg_split('/\s+/', trim((string) $out['name'])) as $w) { if ($w !== '') { $ini .= strtoupper($w[0]); } }
+        $out['initials'] = substr($ini !== '' ? $ini : 'BDM', 0, 2);
+        $out['personalActual'] = (float) $bm['revenue_kes'];
+        $out['personalClients'] = (int) $bm['paid_clients'];
+        $out['personalPipeline'] = max(0.0, ((float) $bm['expected_usd'] - (float) $bm['revenue_usd'])) * $rate;
+        $pt = 0.0;
+        $ptq = @mysqli_query($conn, "SELECT COALESCE(SUM(target_value),0) t FROM bde_targets
+            WHERE scope_type='user' AND scope_ref='" . (int) $bdmId . "' AND metric IN ('revenue','course_revenue')");
+        if ($ptq && ($ptr = mysqli_fetch_assoc($ptq))) { $pt = (float) $ptr['t']; }
+        $out['personalTarget'] = $pt;
+        return $out;
+    }
 }
