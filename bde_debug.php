@@ -147,5 +147,56 @@ if ($ru) {
     if (!$any) { echo "  (no training/ticket activity in the last 30 days)\n"; }
 }
 
+if ($ru) {
+    $id2 = (int) $ru['id'];
+    echo "\n\n=== WHATSAPP / PRODUCT ASSIGNMENTS (is this person a rep of a specific course/training?) ===\n";
+
+    echo "\n-- (E1) COURSES they are a rep of (course.assigned_to comma-list) --\n";
+    $soleCourse = 0; $coCourse = 0;
+    $r = @mysqli_query($conn, "SELECT course_id, course, assigned_to FROM course WHERE FIND_IN_SET('$id2', REPLACE(assigned_to,' ','')) > 0 ORDER BY id DESC LIMIT 40");
+    $anyC = false;
+    while ($r && ($c = mysqli_fetch_assoc($r))) {
+        $anyC = true;
+        $list = array_values(array_filter(array_map('trim', explode(',', (string) $c['assigned_to'])), 'strlen'));
+        $sole = (count($list) === 1);
+        if ($sole) { $soleCourse++; } else { $coCourse++; }
+        echo "  course {$c['course_id']} \"" . substr((string) $c['course'], 0, 50) . "\" assigned_to='{$c['assigned_to']}' — " . ($sole ? "SOLE rep" : "CO-rep (" . count($list) . " people)") . "\n";
+    }
+    if (!$anyC) { echo "  (not a rep of any course)\n"; }
+
+    echo "\n-- (E2) EVENTS they are a rep of (Event.assigned_to comma-list) — SOLE vs CO --\n";
+    $soleEv = 0; $coEv = 0;
+    $r = @mysqli_query($conn, "SELECT event_id, event_title, assigned_to FROM Event WHERE FIND_IN_SET('$id2', REPLACE(assigned_to,' ','')) > 0 ORDER BY event_id DESC LIMIT 40");
+    $anyE = false;
+    while ($r && ($e = mysqli_fetch_assoc($r))) {
+        $anyE = true;
+        $list = array_values(array_filter(array_map('trim', explode(',', (string) $e['assigned_to'])), 'strlen'));
+        $sole = (count($list) === 1);
+        if ($sole) { $soleEv++; } else { $coEv++; }
+        echo "  event#{$e['event_id']} \"" . substr((string) $e['event_title'], 0, 45) . "\" assigned_to='{$e['assigned_to']}' — " . ($sole ? "SOLE rep" : "CO-rep (" . count($list) . " people)") . "\n";
+    }
+    if (!$anyE) { echo "  (not a rep of any event)\n"; }
+
+    echo "\n-- (E3) MANUAL WhatsApp overrides where THEY are the primary rep (wa_course_owner) --\n";
+    $r = @mysqli_query($conn, "SELECT ref_type, ref_id, updated_at FROM wa_course_owner WHERE user_id = $id2 ORDER BY updated_at DESC");
+    $anyO = false; $nOverride = 0;
+    while ($r && ($o = mysqli_fetch_assoc($r))) { $anyO = true; $nOverride++; echo "  {$o['ref_type']} #{$o['ref_id']} (set {$o['updated_at']})\n"; }
+    if (!$anyO) { echo "  (no manual WhatsApp primary-rep overrides)\n"; }
+
+    echo "\n-- VERDICT --\n";
+    $ownsSole = ($soleCourse + $soleEv) > 0;
+    $ownsCoOnly = !$ownsSole && ($coCourse + $coEv) > 0;
+    if ($ownsSole) {
+        echo "  ✔ PERSONAL SELLER — they are the SOLE rep on {$soleCourse} course(s) + {$soleEv} event(s).\n";
+        echo "    → Treat like Edwin: give them their own target and a Personal section. Their attributed revenue is genuinely theirs.\n";
+    } elseif ($ownsCoOnly || $nOverride > 0) {
+        echo "  ~ CO-ASSIGNEE ONLY — they share every course/event with others ({$coCourse} co-course(s), {$coEv} co-event(s), {$nOverride} override(s)).\n";
+        echo "    → Their attributed revenue is SHARED with teammates (Event.assigned_to is a comma-list), so it is ALSO counted on those teammates' rows — risk of double-counting the department total.\n";
+        echo "    → Likely a manager tagged on team programmes, NOT a distinct personal product. Keep the neutral 'combined dept target' row rather than splitting.\n";
+    } else {
+        echo "  ✖ NO course/event rep assignment found — any attributed revenue must come from intakes/enquiries directly assigned to them (see sections above).\n";
+    }
+}
+
 echo '</pre>';
 require_once 'footer.php';
