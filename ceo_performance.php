@@ -566,6 +566,9 @@ try {
       const sbuTarget=d=>d.kes?kMoney(d.target):nf.format(Math.round(d.target||0))+" clients";
       const liveSbus=()=>B.sbus.filter(d=>!d.placeholder);
       const rAttn=r=>(+r.target>0)?(r.actual/r.target):0;
+      // Real sales-commission liability owed to marketers (from the Finance data, stored USD → KES).
+      function commPayableKes(){const c=(typeof FIN!=="undefined"&&FIN.commission)||{};const rate=(typeof FIN!=="undefined"&&FIN.rate)||1;const owed=Math.max(0,(+c.pending||0)+(+c.approved||0));return owed*rate;}
+      function commEligibleKes(){const c=(typeof FIN!=="undefined"&&FIN.commission)||{};const rate=(typeof FIN!=="undefined"&&FIN.rate)||1;return Math.max(0,(+c.eligible||0))*rate;}
       const repActual=r=>r.kes===false?nf.format(Math.round(r.actual||0))+" clients":kMoney(r.actual);
       const repTarget=r=>r.kes===false?nf.format(Math.round(r.target||0))+" clients":kMoney(r.target);
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
@@ -603,15 +606,15 @@ try {
 
       function kpiBlock(){
         const att=B.target>0?B.actual/B.target:0;const kesN=liveSbus().filter(d=>d.kes).length;
-        const commLiability=liveSbus().reduce((s,d)=>s+(d.kes?d.actual:(d.kesActual||0))*0.04,0);
+        const payable=commPayableKes();const eligible=commEligibleKes();
         const intl=B.intl;const intlCell=intl?`${nf.format(Math.round(intl.actual))} / ${nf.format(Math.round(intl.target))} clients`:"—";
         const items=[
           ["Organization target (KES SBUs)",kMoney(B.target),kesN+" revenue SBU"+(kesN===1?"":"s"),"flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
           ["Month-end forecast",kMoney(B.forecast),(B.target>0?pct(B.forecast/B.target):"0%")+" projected","flat","var(--slate)"],
           ["International (clients)",intlCell,intl?pct(intl.attn,0)+" of target":"not resolved","up","var(--violet)"],
-          ["Collection rate",pct(B.collection,0),"Finance-cleared receipts","flat","var(--brand)"],
-          ["Commission exposure",kMoney(commLiability),"~4% of cleared revenue","flat","var(--amber)"]
+          ["Collection rate",pct(B.collection,0),"across all SBUs","flat","var(--brand)"],
+          ["Commission to pay",kMoney(payable),"owed to marketers · "+kMoney(eligible)+" eligible","flat","var(--amber)"]
         ];
         const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
         const kIcons=[
@@ -627,7 +630,7 @@ try {
 
       function progressCard(){
         const p=period();const att=B.actual/B.target;const ps=pace();const daysLeft=Math.max(0,p.working-p.elapsed);
-        const motiv=ps.status==="green"?"<b>Keep going:</b> You're at or above required pace. Protect collections, quality and stretch opportunities.":ps.status==="amber"?"<b>Close the gap:</b> You're near pace. Focus on the opportunities nearest to payment and remove today's biggest blocker.":"<b>Recover now:</b> The current pace will miss target. Start a quantified recovery plan today — not at month end.";
+        const motiv=ps.status==="green"?"<b>On track:</b> The organization is at or above required pace. Protect collections and margin, and back the SBUs pursuing stretch targets.":ps.status==="amber"?"<b>Watch:</b> The organization is near pace. The nearest-to-close accounts and the weakest SBU need attention to hold the month.":"<b>Behind pace:</b> At the current run-rate the organization will miss target. The weakest SBUs need intervention now to close the gap before month-end.";
         return `<div class="card prog">
           <div class="chead"><h4>Progress to target</h4><span class="chip ${ps.status==="green"?"jade":ps.status==="amber"?"amber":"coral"} num">${pct(att)}</span></div>
           <div class="pl">Cleared revenue · <b class="num">${kMoney(B.actual)} / ${kMoney(B.target)}</b></div>
@@ -717,33 +720,34 @@ try {
         const live=liveSbus();
         const worst=[...live].sort((a,b)=>((+a.attn)||0)-((+b.attn)||0))[0]||null;
         const gap=Math.max(0,B.target-B.actual);
-        const commNow=live.reduce((s,d)=>s+(d.kes?d.actual:(d.kesActual||0))*0.04,0);
-        const commAtTarget=live.reduce((s,d)=>s+(d.kes?d.target:0)*0.04,0);
+        const commNow=commPayableKes();
+        const commAtTarget=commEligibleKes();
         const sbusOnPace=live.filter(d=>(+d.attn)>=(per.elapsed/per.working)).length;
         return {daysLeft,at100,below80,earners,top,low,worst,gap,commNow,commAtTarget,sbusOnPace,liveN:live.length,total:bdes.length,dailyReq:daysLeft?gap/daysLeft:0};
       }
       function countsStrip(){
         const s=orgStats();
+        const ic={ok:'<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',warn:'<svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',coin:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></svg>',pace:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>'};
         const tiles=[
-          ["Staff at 100%+",s.at100+" / "+s.total,"target achieved","var(--jade)"],
-          ["Staff below 80%",s.below80+" / "+s.total,"need support","var(--coral)"],
-          ["Commission earners",s.earners+" / "+s.total,"past the 80% gate","var(--gold)"],
-          ["SBUs on pace",s.sbusOnPace+" / "+s.liveN,"at / above required pace","var(--slate)"]
+          ["Staff at 100%+",s.at100+" / "+s.total,"target achieved","var(--jade)",ic.ok],
+          ["Staff below 80%",s.below80+" / "+s.total,"need support","var(--coral)",ic.warn],
+          ["Commission earners",s.earners+" / "+s.total,"past the 80% gate","var(--gold)",ic.coin],
+          ["SBUs on pace",s.sbusOnPace+" / "+s.liveN,"at / above required pace","var(--slate)",ic.pace]
         ];
-        return `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${tiles.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        return `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${tiles.map(([l,v,m,a,icn])=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a}">${icn}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
       }
       function interventionCentre(){
         const s=orgStats();
         const ans=[
-          ["Biggest gap",s.worst?esc(s.worst.name):"—",s.worst?pct((+s.worst.attn)||0,0)+" attained · "+(s.worst.kes?"revenue SBU":"clients SBU"):""],
-          ["Top performer",s.top?esc(s.top.name):"—",s.top?pct(rAttn(s.top),0)+" · "+esc(s.top.sbu):""],
-          ["Lowest performer",s.low?esc(s.low.name):"—",s.low?pct(rAttn(s.low),0)+" · "+esc(s.low.sbu):""],
-          ["Commission exposure",kMoney(s.commNow),"now · "+kMoney(s.commAtTarget)+" at target"],
-          ["Staff needing support",s.below80+" people","below 80% of target"],
-          ["Daily revenue required",kMoney(s.dailyReq),s.daysLeft+" working days left"]
+          ["Biggest gap",s.worst?esc(s.worst.name):"—",s.worst?pct((+s.worst.attn)||0,0)+" attained · "+(s.worst.kes?"revenue SBU":"clients SBU"):"","var(--coral)"],
+          ["Top performer",s.top?esc(s.top.name):"—",s.top?pct(rAttn(s.top),0)+" · "+esc(s.top.sbu):"","var(--jade)"],
+          ["Lowest performer",s.low?esc(s.low.name):"—",s.low?pct(rAttn(s.low),0)+" · "+esc(s.low.sbu):"","var(--brand)"],
+          ["Commission to pay",kMoney(s.commNow),"owed now · "+kMoney(s.commAtTarget)+" eligible","var(--amber)"],
+          ["Staff needing support",s.below80+" people","below 80% of target","var(--violet)"],
+          ["Daily revenue required",kMoney(s.dailyReq),s.daysLeft+" working days left","var(--slate)"]
         ];
         return `<div class="card"><div class="chead"><h4>Intervention Centre</h4><span class="chip coral">What needs you</span></div>
-          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${ans.map(([l,v,sub])=>`<div class="cm"><span>${l}</span><b class="num" style="font-size:16px">${v}</b><div style="font-size:11px;color:var(--muted);margin-top:3px">${sub}</div></div>`).join("")}</div></div>`;
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">${ans.map(([l,v,sub,a])=>`<div style="background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${a};border-radius:11px;padding:14px 16px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">${l}</span><b class="num" style="display:block;font-size:19px;margin:6px 0 3px;color:var(--ink);line-height:1.15">${v}</b><div style="font-size:11px;color:var(--muted)">${sub}</div></div>`).join("")}</div></div>`;
       }
       function staffRanking(){
         const bdes=allPeople().filter(p=>p.role==="BDE").sort((a,b)=>rAttn(b)-rAttn(a));

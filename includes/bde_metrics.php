@@ -997,8 +997,9 @@ if (!function_exists('bdo_rollup')) {
             } else {
                 $out['target'] += $tgt; $out['actual'] += $kesAct;
                 $out['forecast'] += $fore; $out['pipeline'] += (float) ($r['pipeline'] ?? 0);
-                $collN += (float) ($r['collection'] ?? 0) * max(1.0, $kesAct); $collD += max(1.0, $kesAct);
             }
+            // collection rate spans EVERY SBU (International included), weighted by cleared KES
+            $collN += (float) ($r['collection'] ?? 0) * max(1.0, $kesAct); $collD += max(1.0, $kesAct);
             // funnel + sources roll up across every SBU (Int'l included — it's still acquisition)
             $leads += (int) ($r['totalLeads'] ?? 0); $paid += (int) ($r['clients'] ?? 0);
             foreach (($r['sources'] ?? []) as $s) { if (is_array($s) && count($s) >= 2) { $srcAgg[(string) $s[0]] = ($srcAgg[(string) $s[0]] ?? 0) + (int) $s[1]; } }
