@@ -964,7 +964,7 @@ if (!function_exists('bdo_rollup')) {
             if (!empty($sd['placeholder']) || (int) $sd['bdoId'] <= 0) {
                 $out['sbus'][] = ['name' => $sd['name'], 'leader' => 'Not set up yet', 'bdoId' => 0,
                     'target' => 0.0, 'actual' => 0.0, 'forecast' => 0.0, 'pipeline' => 0.0, 'collection' => 0.0,
-                    'attn' => 0.0, 'metric' => 'revenue', 'kes' => true, 'clients' => 0, 'members' => 0, 'placeholder' => true];
+                    'attn' => 0.0, 'metric' => 'revenue', 'kes' => true, 'clients' => 0, 'members' => 0, 'reps' => [], 'placeholder' => true];
                 continue;
             }
             $r = bdo_rollup($conn, (int) $sd['bdoId'], $from, $to);
@@ -973,11 +973,23 @@ if (!function_exists('bdo_rollup')) {
             $kesAct = (float) ($r['clearedKes'] ?? 0);
             $act = $isClient ? (float) ($r['clients'] ?? 0) : $kesAct;   // client count for Int'l, else KES
             $fore = $act > 0 ? $act / $elapsed * $working : $act;
+            // each SBU's real reps (the BDO's team) — metric-aware target/actual for the CEO drill-down
+            $reps = [];
+            foreach (($r['team'] ?? []) as $t) {
+                $reps[] = [
+                    'name' => (string) $t['name'], 'title' => (string) ($t['title'] ?? ''),
+                    'target' => $isClient ? (float) ($t['clientsTarget'] ?? 0) : (float) ($t['target'] ?? 0),
+                    'actual' => $isClient ? (float) ($t['clients'] ?? 0) : (float) ($t['actual'] ?? 0),
+                    'pipeline' => (float) ($t['pipeline'] ?? 0), 'collection' => (float) ($t['collection'] ?? 0),
+                    'clients' => (int) ($t['clients'] ?? 0), 'kes' => !$isClient, 'manager' => !empty($t['manager']),
+                ];
+            }
             $sbu = ['name' => $sd['name'], 'leader' => (string) ($r['name'] ?: 'BDO'), 'bdoId' => (int) $sd['bdoId'],
                 'target' => $tgt, 'actual' => $act, 'kesActual' => $kesAct, 'forecast' => $fore,
                 'pipeline' => (float) ($r['pipeline'] ?? 0), 'collection' => (float) ($r['collection'] ?? 0),
                 'attn' => $tgt > 0 ? $act / $tgt : 0.0, 'metric' => (string) ($r['metric'] ?? 'revenue'),
-                'kes' => !$isClient, 'clients' => (int) ($r['clients'] ?? 0), 'members' => (int) ($r['members'] ?? 0)];
+                'kes' => !$isClient, 'clients' => (int) ($r['clients'] ?? 0), 'members' => (int) ($r['members'] ?? 0),
+                'reps' => $reps];
             $out['sbus'][] = $sbu;
 
             if ($isClient) {

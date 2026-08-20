@@ -9,6 +9,13 @@
 // Bootstrap styles. The theme toggle flips a class on that container only.
 session_start();
 require_once 'header.php';   // enquiry/admin left nav + chrome + $conn
+require_once 'includes/bde_metrics.php';
+if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
+
+// ---- Organization sales roll-up: the whole-org view across the SBUs (real, with reps per SBU). ----
+$ceo_from = date('Y-m-01');
+$ceo_to   = date('Y-m-d');
+$ceo = bdm_rollup($conn, $ceo_from, $ceo_to);
 
 // ---- HR tab: render the real HR content natively (no iframe). Defensive against PHP 8.1 mysqli. ----
 $hr = ['stats' => ['total'=>0,'active'=>0,'pending'=>0,'under_review'=>0,'approved'=>0,'suspended'=>0,'terminated'=>0,'rejected'=>0], 'by_dept' => [], 'staff' => [], 'payroll_pending' => 0, 'att_present' => 0, 'att_punches' => 0, 'payroll' => null, 'payslips' => [], 'clockins' => []];
@@ -503,21 +510,18 @@ try {
       const REP = <?php echo json_encode($reports, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}'; ?>;
       const B={
         name:"Office of the CEO", initials:"VA", title:"Chief Executive Officer", dept:"Whole organization", level:"Executive",
-        bdmName:"Michael Obworo Mongere", bdmInitials:"MO",
-        target:52754875, actual:32070000, forecast:54860000, pipeline:117300000, collection:.90,
-        personalTarget:5000000, personalActual:3720000, personalPipeline:17400000,
-        mandate:"Make growth systematic across all five SBUs while remaining a direct strategic revenue producer.",
-        mandateText:"The BDM controls consolidated revenue, qualified pipeline, proposals, strategic accounts, marketing-to-sales conversion, collections, CRM discipline, HOD performance and early recovery action.",
-        focus:"Move blocked high-value accounts, correct weak SBUs and ensure every HOD has an evidence-based forecast and recovery action.",
-        drivers:[["Active SBUs",5,"Business units"],["Strategic accounts",34,"In play"],["Proposals / tenders",28,"Live"],["HOD forecasts",5,"Audited"],["Org collection","90%","Cleared"]],
-        funnel:[["Enterprise leads",13320],["Qualified",6096],["Meetings / sessions / demos",3706],["Proposal / commitment",1866],["Payment / activation",1174]],
-        sources:[["Organizations / sponsorships",34],["Digital campaigns",22],["Cross-SBU referrals",17],["Alumni / partners",15],["RFPs / procurement",12]],
-        priorities:[
-          ["High-value organization A","Negotiation","KES 5.8M","Executive decision call","Today"],
-          ["Government / donor programme","Proposal / RFP","KES 8.4M","Compliance review","Tomorrow"],
-          ["Multi-participant sponsorship","Approval","KES 3.2M","Confirm nominee list","Today"],
-          ["Recurring digital account","Renewal","KES 1.1M","Resolve adoption issue","Friday"]
-        ],
+        bdmName:<?php echo json_encode($ceo['name'] ?: 'Business Development Manager', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"BDM"'; ?>, bdmInitials:<?php echo json_encode($ceo['initials'] ?: 'MO', JSON_INVALID_UTF8_SUBSTITUTE) ?: '"MO"'; ?>,
+        target:<?php echo (float) $ceo['target']; ?>, actual:<?php echo (float) $ceo['actual']; ?>, forecast:<?php echo (float) $ceo['forecast']; ?>, pipeline:<?php echo (float) $ceo['pipeline']; ?>, collection:<?php echo (float) $ceo['collection']; ?>,
+        clearedKes:<?php echo (float) ($ceo['clearedKes'] ?? 0); ?>, clients:<?php echo (int) $ceo['clients']; ?>, totalLeads:<?php echo (int) $ceo['totalLeads']; ?>,
+        intl:<?php echo json_encode($ceo['intl'] ?: null, JSON_INVALID_UTF8_SUBSTITUTE) ?: 'null'; ?>,
+        personalTarget:<?php echo (float) $ceo['personalTarget']; ?>, personalActual:<?php echo (float) $ceo['personalActual']; ?>, personalPipeline:<?php echo (float) $ceo['personalPipeline']; ?>,
+        mandate:"Make growth systematic across every SBU while protecting balanced performance, collections and margin.",
+        mandateText:"The CEO oversees consolidated revenue, qualified pipeline, every SBU's attainment, collections, HR, finance and statutory health — intervening where a unit is at risk before month-end.",
+        focus:"Correct the weakest SBU, unblock the highest-value accounts, and ensure every HOD carries an evidence-based forecast and recovery action.",
+        funnel:<?php echo json_encode(!empty($ceo['funnel']) ? $ceo['funnel'] : [['Leads', 0], ['Paid clients', 0]], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[["Leads",0],["Paid clients",0]]'; ?>,
+        sources:<?php echo json_encode($ceo['sources'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        alerts:<?php echo json_encode($ceo['alerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        crossSbu:<?php echo json_encode($ceo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         dailyRhythm:[
           ["8:00–8:30","Review consolidated revenue, the weakest SBU, strategic accounts, RFPs, collections and overdue actions."],
           ["8:30–9:00","Set the day's SBU recovery, strategic-account and personal-revenue outcomes."],
@@ -531,35 +535,20 @@ try {
           ["Every forecast is evidence-based","No HOD forecast without stage, value, probability, owner and a dated next action."],
           ["Lead by intervention, not observation","Move blocked high-value deals and correct weak SBUs before month-end, not after."]
         ],
-        sbus:[
-          {name:"International", leader:"Erick Kwemoi Ndiema", target:24000000, actual:13650000, forecast:25100000, pipeline:45200000, collection:.91, reps:[
-            {name:"Brenda Achieng", title:"BDE — International", target:9000000, actual:5400000, pipeline:18800000, collection:.92, units:38},
-            {name:"Samuel Kiptoo", title:"BDE — International", target:8000000, actual:4100000, pipeline:15200000, collection:.88, units:29},
-            {name:"Diana Mwangi", title:"BDE — International", target:7000000, actual:4150000, pipeline:11200000, collection:.93, units:31}
-          ]},
-          {name:"Virtual", leader:"Francisca Ing'aa", target:11504875, actual:7920000, forecast:11850000, pipeline:21100000, collection:.87, reps:[
-            {name:"Peter Kamau", title:"BDE — Virtual", target:6000000, actual:4300000, pipeline:11600000, collection:.86, units:210},
-            {name:"Mercy Wanjala", title:"BDE — Virtual", target:5504875, actual:3620000, pipeline:9500000, collection:.89, units:184}
-          ]},
-          {name:"Corporate", leader:"Edwin Otieno", target:10000000, actual:6250000, forecast:10400000, pipeline:31800000, collection:.90, reps:[
-            {name:"Grace Njoroge", title:"BDE — Corporate", target:5500000, actual:3600000, pipeline:18400000, collection:.90, units:12},
-            {name:"Alein Kagunza", title:"BDE — Corporate", target:4500000, actual:2650000, pipeline:13400000, collection:.90, units:9}
-          ]},
-          {name:"Digital Solutions", leader:"Alein Kawinzi Kagunza", target:4850000, actual:2790000, forecast:4990000, pipeline:14600000, collection:.93, reps:[
-            {name:"Austin Abere", title:"BDE — Eval360", target:2150000, actual:1370000, pipeline:8900000, collection:.95, units:84},
-            {name:"Ruth Ngari", title:"BDE — 360 Appraisal", target:1200000, actual:1020000, pipeline:5700000, collection:.92, units:510}
-          ]},
-          {name:"Academic", leader:"Hellen Letting", target:2400000, actual:1460000, forecast:2520000, pipeline:4600000, collection:.96, reps:[
-            {name:"Joseph Mutua", title:"BDE — Academic", target:1300000, actual:820000, pipeline:2600000, collection:.96, units:64},
-            {name:"Lydia Chumo", title:"BDE — Academic", target:1100000, actual:640000, pipeline:2000000, collection:.95, units:52}
-          ]}
-        ]
+        sbus:<?php echo json_encode($ceo['sbus'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>
       };
-      const periods=[{label:"July 2026",working:23,elapsed:23},{label:"August 2026",working:21,elapsed:21},{label:"September 2026",working:22,elapsed:13},{label:"October 2026",working:23,elapsed:6}];
-      const state={p:2,view:"command",role:"ceo",dept:0,emp:0,finYear:"all",finCur:"USD"};
+      const periods=[{label:<?php echo json_encode(date('F Y', strtotime($ceo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($ceo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($ceo_to)), (int) date('t', strtotime($ceo_to)))); ?>}];
+      const state={p:0,view:"command",role:"ceo",dept:0,emp:0,finYear:"all",finCur:"USD"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
+      // SBUs/reps are metric-aware: International is client-based, the rest KES.
+      const sbuActual=d=>d.kes?kMoney(d.actual):nf.format(Math.round(d.actual||0))+" clients";
+      const sbuTarget=d=>d.kes?kMoney(d.target):nf.format(Math.round(d.target||0))+" clients";
+      const liveSbus=()=>B.sbus.filter(d=>!d.placeholder);
+      const rAttn=r=>(+r.target>0)?(r.actual/r.target):0;
+      const repActual=r=>r.kes===false?nf.format(Math.round(r.actual||0))+" clients":kMoney(r.actual);
+      const repTarget=r=>r.kes===false?nf.format(Math.round(r.target||0))+" clients":kMoney(r.target);
       const pct=(v,d=1)=>(v*100).toFixed(d).replace(/\.0$/,"")+"%";
       const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
       const el=id=>document.getElementById(id);
@@ -569,17 +558,19 @@ try {
       function pace(){const p=period();const expected=B.target*(p.elapsed/p.working);const ratio=expected?B.actual/expected:0;const status=ratio>=1?"green":ratio>=.85?"amber":"red";return {expected,ratio,status,label:status==="green"?"On pace":status==="amber"?"At risk":"Behind pace"};}
       const scol=s=>s==="green"?"var(--jade)":s==="amber"?"var(--amber)":"var(--coral)";
       function commission(){
-        const s=B;const orgAtt=s.actual/s.target;const personal=s.personalActual;
+        const s=B;const orgAtt=s.target>0?s.actual/s.target:0;const personal=s.personalActual;
+        const live=liveSbus();const nS=live.length||1;const need=Math.max(1,Math.ceil(nS*0.8));
         const personalComm=personal>=7500000?150000:personal>=6000000?120000:personal>=5000000?90000:personal>=4000000?60000:0;
-        const sbus80=s.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const sbus80=live.filter(d=>(+d.attn)>=.8).length;
+        const noneBelow50=live.every(d=>(+d.attn)>=.5);
         const leadership=orgAtt>=1.1?125000:orgAtt>=1?100000:orgAtt>=.9?75000:orgAtt>=.8?50000:0;
-        const gated=sbus80>=4&&s.collection>=.9&&s.sbus.every(d=>d.actual/d.target>=.5);
+        const gated=sbus80>=need&&s.collection>=.9&&noneBelow50;
         const current=gated?personalComm+leadership:Math.round(personalComm*.7);
         const atTarget=90000+100000;
         const gates=[
           ["Organization reaches 80%+",orgAtt>=.8,pct(orgAtt,0)],
-          ["At least 4 of 5 SBUs at 80%+",sbus80>=4,sbus80+" of 5"],
-          ["No SBU below 50%",s.sbus.every(d=>d.actual/d.target>=.5),s.sbus.filter(d=>d.actual/d.target<.5).length+" below"],
+          [`At least ${need} of ${nS} SBUs at 80%+`,sbus80>=need,sbus80+" of "+nS],
+          ["No SBU below 50%",noneBelow50,live.filter(d=>(+d.attn)<.5).length+" below"],
           ["Organization collection at 90%+",s.collection>=.9,pct(s.collection,0)],
           ["Personal strategic sales (KES 4M+)",personal>=4000000,kMoney(personal)]
         ];
@@ -592,15 +583,16 @@ try {
       function strategyStrip(){return `<section class="strategy"><div><div class="eyebrow">Enterprise intervention dashboard</div><h2>See the entire organization clearly and intervene where leadership, resources or decisions will change the result.</h2><p>The CEO dashboard consolidates revenue, forecasts, staff performance, strategic accounts, commissions, collections, product readiness and the few decisions requiring executive attention.</p></div><div class="focus"><b>Today's strategic focus</b><span>Protect organization-wide revenue, resolve the biggest bottleneck and support the opportunities with the greatest strategic value.</span></div></section>`;}
 
       function kpiBlock(){
-        const att=B.actual/B.target;
-        const commLiability=B.sbus.reduce((s,d)=>s+d.actual*0.04,0);
+        const att=B.target>0?B.actual/B.target:0;const kesN=liveSbus().filter(d=>d.kes).length;
+        const commLiability=liveSbus().reduce((s,d)=>s+(d.kes?d.actual:(d.kesActual||0))*0.04,0);
+        const intl=B.intl;const intlCell=intl?`${nf.format(Math.round(intl.actual))} / ${nf.format(Math.round(intl.target))} clients`:"—";
         const items=[
-          ["Organization target",kMoney(B.target),"Approved five-SBU plan","flat","var(--slate)"],
+          ["Organization target (KES SBUs)",kMoney(B.target),kesN+" revenue SBU"+(kesN===1?"":"s"),"flat","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","up","var(--jade)"],
-          ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","flat","var(--slate)"],
-          ["Qualified pipeline",kMoney(B.pipeline),(B.pipeline/B.target).toFixed(1)+"× target","up","var(--slate)"],
+          ["Month-end forecast",kMoney(B.forecast),(B.target>0?pct(B.forecast/B.target):"0%")+" projected","flat","var(--slate)"],
+          ["International (clients)",intlCell,intl?pct(intl.attn,0)+" of target":"not resolved","up","var(--violet)"],
           ["Collection rate",pct(B.collection,0),"Finance-cleared receipts","flat","var(--brand)"],
-          ["Commission exposure",kMoney(commLiability),"Current estimated exposure","flat","var(--amber)"]
+          ["Commission exposure",kMoney(commLiability),"~4% of cleared revenue","flat","var(--amber)"]
         ];
         const dt={up:'<span class="dic">↗</span> Positive movement',down:'<span class="dic">↘</span> Below pace',flat:'<span class="dic">•</span> Live from CRM / Finance'};
         const kIcons=[
@@ -643,8 +635,9 @@ try {
       }
 
       function actionsCard(){
+        const w=orgStats().worst;
         const list=[
-          ["red","Recover the weakest SBU","Require a quantified seven-day recovery forecast and a named opportunity list.","Today"],
+          ["red","Recover "+(w?esc(w.name):"the weakest SBU"),"Require a quantified seven-day recovery forecast and a named opportunity list.","Today"],
           ["amber","Unblock strategic accounts","Use executive access, pricing, partnerships or internal coordination to move high-value deals.","Today"],
           ["blue","Audit HOD forecasts","Every SBU forecast must be supported by stage, value, probability, owner and next action.","Before weekly review"],
           ["green","Protect balanced performance","Strong results in one SBU must not hide serious underperformance elsewhere.","Ongoing"]
@@ -654,50 +647,42 @@ try {
         return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip coral">Interventions</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
       }
       function decisionsCard(){
-        const items=[
-          ["Pricing / discount approval","National Bank L&D — a 12% above-policy discount is requested to close KES 8.4M.","Decision"],
-          ["Resource allocation","International needs one more BDE to hold pace — approve, defer or reallocate.","Decision"],
-          ["Partnership sign-off","Co-delivery MOU with a university for the Academic SBU awaits signature.","Sign-off"],
-          ["Product go / no-go","Eval360 v2 release — confirm the launch date or hold.","Go / No-go"]
-        ];
-        return `<div class="card"><div class="chead"><h4>Decisions requiring executive attention</h4><span class="chip gold">${items.length} pending</span></div><div class="list">${items.map(([t,d,tag])=>`<div class="arow"><span class="pd amber"></span><div><b>${esc(t)}</b><p>${esc(d)}</p></div><span class="chip slate">${esc(tag)}</span></div>`).join("")}</div></div>`;
+        // Executive-decision tracking isn't captured in the CRM yet — no fabricated items.
+        return `<div class="card"><div class="chead"><h4>Decisions requiring executive attention</h4><span class="chip slate">Not tracked in CRM</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Pricing approvals, resource allocation, partnership sign-offs and go/no-go calls aren't captured in the CRM yet. When an approvals/decisions workflow exists, pending items will list here automatically.</p></div>`;
       }
       function teamTable(){
         const avatarCols=["var(--slate)","#2f8f88","var(--brand)","var(--violet)","var(--gold)"];
         const p=period();
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Projected</th><th>Team ▲ / ▼</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");const reps=d.reps||[];const hi=reps.filter(r=>r.actual/r.target>=1).length;const lo=reps.filter(r=>r.actual/r.target<.8).length;return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><span data-scope="bdo-${i}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(d.name)}</span></b><span>${esc(d.leader)}</span></div></div></td><td class="num">${kMoney(d.target)}</td><td class="num">${kMoney(d.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(d.forecast)}</td><td class="num"><b style="color:var(--jade)">${hi}▲</b> / <b style="color:var(--coral)">${lo}▼</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>SBU</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Projected</th><th>Team ▲ / ▼</th><th>Collection</th><th>Status / response</th></tr></thead><tbody>${B.sbus.map((d,i)=>{const ini=d.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("");if(d.placeholder){return `<tr style="opacity:.6"><td><div class="prow"><span class="a" style="background:var(--faint)">${ini}</span><div><b>${esc(d.name)}</b><span>${esc(d.leader)}</span></div></div></td><td class="num" colspan="6" style="color:var(--muted)">Not yet configured in the CRM</td><td><span class="chip slate">Placeholder</span></td></tr>`;}const a=(+d.attn)||0;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";const lbl=st==="green"?"On pace":st==="amber"?"At risk":"Behind pace";const resp=st==="red"?"Recovery plan + daily monitoring":st==="amber"?"Corrective action within 24h":"Protect quality; pursue stretch";const reps=d.reps||[];const hi=reps.filter(r=>rAttn(r)>=1).length;const lo=reps.filter(r=>rAttn(r)<.8).length;return `<tr><td><div class="prow"><span class="a" style="background:${avatarCols[i%avatarCols.length]}">${ini}</span><div><b><span data-scope="bdo-${i}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(d.name)}</span></b><span>${esc(d.leader)}${d.kes?"":" · clients"}</span></div></div></td><td class="num">${sbuTarget(d)}</td><td class="num">${sbuActual(d)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${d.kes?kMoney(d.forecast):nf.format(Math.round(d.forecast))+" cl"}</td><td class="num"><b style="color:var(--jade)">${hi}▲</b> / <b style="color:var(--coral)">${lo}▼</b></td><td class="num">${pct(d.collection,0)}</td><td><span class="sbadge s${st[0]}"><span class="dot"></span>${lbl}</span><div style="font-size:10.5px;color:var(--muted);margin-top:5px">${resp}</div></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- executive master view (BDM request) ---------- */
       function execRevenueBreakdown(){
         const shortName={"International":"Int'l","Virtual":"Virtual","Corporate":"Corporate","Digital Solutions":"Digital","Academic":"Academic"};
-        const data=B.sbus.map(d=>({name:shortName[d.name]||d.name,closed:d.actual,open:d.pipeline}));
-        const max=Math.max(...data.map(d=>d.closed+d.open))*1.14;
-        const w=640,h=250,pd=34,base=h-pd-16,plot=base-pd,step=(w-2*pd)/data.length,bw=52;
-        const bars=data.map((d,i)=>{const cx=pd+step*i+step/2,x=cx-bw/2;const ch=d.closed/max*plot,oh=d.open/max*plot;return `<g><rect x="${x.toFixed(1)}" y="${(base-ch).toFixed(1)}" width="${bw}" height="${Math.max(0,ch).toFixed(1)}" rx="3" fill="var(--jade)"/><rect x="${x.toFixed(1)}" y="${(base-ch-oh).toFixed(1)}" width="${bw}" height="${Math.max(0,oh).toFixed(1)}" rx="3" fill="#4d8bd6"/><text x="${cx.toFixed(1)}" y="${base+16}" text-anchor="middle">${esc(d.name)}</text><text x="${cx.toFixed(1)}" y="${(base-ch-oh-6).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">${kMoney(d.closed+d.open)}</text></g>`;}).join("");
-        return `<div class="card"><div class="chead"><div><h4>Revenue breakdown</h4><p>Open pipeline vs closed-won revenue, by department.</p></div><span class="segmented">${["Monthly","Quarterly","YTD"].map((f,i)=>`<button class="seg${i===0?" on":""}" type="button">${f}</button>`).join("")}</span></div>
-          <svg class="chart" viewBox="0 0 ${w} ${h}" style="height:250px" role="img" aria-label="Revenue breakdown by department">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg>
-          <div class="legend"><span class="lg"><i style="background:var(--jade)"></i>Closed-won</span><span class="lg"><i style="background:#4d8bd6"></i>Open pipeline</span></div></div>`;
+        const data=liveSbus().map(d=>({name:shortName[d.name]||d.name,attn:(+d.attn)||0,tLab:sbuTarget(d),aLab:sbuActual(d)}));
+        const maxA=Math.max(1.1,...data.map(d=>d.attn))*1.12;
+        const w=680,h=286,pd=42,base=h-pd-26,plot=base-pd,step=(w-2*pd)/Math.max(1,data.length),bw=38,gap=14;
+        const bars=data.map((d,i)=>{const cx=pd+step*i+step/2;const xT=cx-bw-gap/2,xA=cx+gap/2;const th=1/maxA*plot;const ah=Math.max(3,d.attn/maxA*plot);const st=d.attn>=1?"green":d.attn>=.7?"amber":"red";return `<g>
+          <rect x="${xT.toFixed(1)}" y="${(base-th).toFixed(1)}" width="${bw}" height="${th.toFixed(1)}" rx="4" fill="var(--slate)"/>
+          <rect x="${xA.toFixed(1)}" y="${(base-ah).toFixed(1)}" width="${bw}" height="${ah.toFixed(1)}" rx="4" fill="${scol(st)}"/>
+          <text x="${(xT+bw/2).toFixed(1)}" y="${(base-th-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:700;fill:var(--slate)">${d.tLab}</text>
+          <text x="${(xA+bw/2).toFixed(1)}" y="${(base-ah-7).toFixed(1)}" text-anchor="middle" style="font-size:10px;font-weight:800;fill:${scol(st)}">${d.aLab}</text>
+          <text x="${cx.toFixed(1)}" y="${(base+16).toFixed(1)}" text-anchor="middle" style="font-weight:700">${esc(d.name)}</text>
+          <text x="${cx.toFixed(1)}" y="${(base+30).toFixed(1)}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${pct(d.attn,0)} of target</text></g>`;}).join("");
+        return `<div class="card"><div class="chead"><div><h4>Cleared vs target — by SBU</h4><p>How far each SBU has cleared toward its own target. International is in clients, the rest in KES.</p></div></div>
+          <svg class="chart" viewBox="0 0 ${w} ${h}" style="height:286px" role="img" aria-label="Cleared versus target by SBU">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg>
+          <div class="legend"><span class="lg"><i style="background:var(--slate)"></i>Target</span><span class="lg"><i style="background:var(--jade)"></i>Cleared &nbsp;<span style="color:var(--muted)">· colour = pace</span></span></div></div>`;
       }
       function execTargetProgress(){
         const p=period();
-        const rows=B.sbus.map(d=>{const a=d.actual/d.target;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";return `<div class="tvp"><div class="tvp-top"><b>${esc(d.name)}</b><span class="chip ${st==="green"?"jade":st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div><div class="track2"><div class="fill2" style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></div><div class="tvp-sub">${kMoney(d.actual)} / ${kMoney(d.target)}</div></div>`;}).join("");
+        const rows=liveSbus().map(d=>{const a=(+d.attn)||0;const exp=d.target*(p.elapsed/p.working);const st=d.actual>=exp?"green":d.actual>=exp*.85?"amber":"red";return `<div class="tvp"><div class="tvp-top"><b>${esc(d.name)}</b><span class="chip ${st==="green"?"jade":st==="amber"?"amber":"coral"}">${pct(a,0)}</span></div><div class="track2"><div class="fill2" style="width:${clamp(a*100,0,100)}%;background:${scol(st)}"></div></div><div class="tvp-sub">${sbuActual(d)} / ${sbuTarget(d)}</div></div>`;}).join("");
         return `<div class="card"><div class="chead"><div><h4>Target vs actual — by department</h4><p>Closed revenue against each departmental quota.</p></div><span class="chip slate">Colour = pace</span></div><div class="tvp-grid">${rows}</div></div>`;
       }
       function execTopDeals(){
-        const deals=[
-          ["National Bank L&D framework","National Bank","Corporate",8400000,"Negotiation","Edwin Otieno"],
-          ["Ministry M&E rollout — Botswana","Ministry of Finance","International",5800000,"Proposal / RFP","Erick Ndiema"],
-          ["Government planning — Eval360","Government Planning Unit","Digital Solutions",4200000,"RFP qualified","Alein Kagunza"],
-          ["Manufacturing group appraisal","Manufacturing Group","Digital Solutions",3200000,"Approval","Alein Kagunza"],
-          ["Regional NGO consortium","NGO Consortium","Corporate",2800000,"Discovery","Edwin Otieno"],
-          ["Corporate L&D partner","Safaricom","Virtual",2400000,"Negotiation","Francisca Ing'aa"],
-          ["University staff cohort","Kenyatta University","Virtual",2400000,"Proposal","Francisca Ing'aa"],
-          ["Central Bank data analysis","Central Bank — Sierra Leone","International",1900000,"Discovery","Erick Ndiema"],
-          ["College network CPD","College Network","Academic",1600000,"Proposal","Hellen Letting"],
-          ["Recurring digital account","AAR Insurance","Digital Solutions",1100000,"Renewal","Alein Kagunza"]
-        ].sort((a,b)=>b[3]-a[3]);
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Deal</th><th>Account</th><th>Department</th><th>Value</th><th>Stage</th><th>Owner</th></tr></thead><tbody>${deals.map((r,i)=>`<tr><td class="num">${i+1}</td><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td><span class="stage-chip">${esc(r[2])}</span></td><td class="num">${kMoney(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table></div></div>`;
+        // Real cross-SBU opportunities flagged on field visits (bde_visits.opportunity_note).
+        const rows=(B.crossSbu||[]);
+        if(!rows.length) return `<div class="card"><div class="chead"><h4>Cross-SBU opportunities</h4><span class="chip slate">From field visits</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">No opportunities flagged from field visits yet. As BDOs and BDEs log field visits with opportunity notes, the highest-value ones surface here. A structured strategic-deals pipeline (value · stage · owner) needs a deals table — not yet in the CRM.</p></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Opportunity flagged on a field visit</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td class="num">${i+1}</td><td>${esc(x)}</td></tr>`).join("")}</tbody></table></div></div>`;
       }
 
       /* ---------- views ---------- */
@@ -705,17 +690,18 @@ try {
       function orgStats(){
         const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
         const bdes=allPeople().filter(p=>p.role==="BDE");
-        const at100=bdes.filter(p=>p.actual/p.target>=1).length;
-        const below80=bdes.filter(p=>p.actual/p.target<.8).length;
-        const earners=bdes.filter(p=>p.actual/p.target>=.8).length;
-        const sorted=[...bdes].sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
+        const at100=bdes.filter(p=>rAttn(p)>=1).length;
+        const below80=bdes.filter(p=>rAttn(p)<.8).length;
+        const earners=bdes.filter(p=>rAttn(p)>=.8).length;
+        const sorted=[...bdes].sort((a,b)=>rAttn(b)-rAttn(a));
         const top=sorted[0]||null,low=sorted[sorted.length-1]||null;
-        const worst=[...B.sbus].sort((a,b)=>(a.actual/a.target)-(b.actual/b.target))[0];
+        const live=liveSbus();
+        const worst=[...live].sort((a,b)=>((+a.attn)||0)-((+b.attn)||0))[0]||null;
         const gap=Math.max(0,B.target-B.actual);
-        const commNow=B.sbus.reduce((s,d)=>s+d.actual*0.04,0);
-        const commAtTarget=B.sbus.reduce((s,d)=>s+d.target*0.04,0);
-        const sbusOnPace=B.sbus.filter(d=>d.actual>=d.target*(per.elapsed/per.working)).length;
-        return {daysLeft,at100,below80,earners,top,low,worst,gap,commNow,commAtTarget,sbusOnPace,total:bdes.length,dailyReq:daysLeft?gap/daysLeft:0};
+        const commNow=live.reduce((s,d)=>s+(d.kes?d.actual:(d.kesActual||0))*0.04,0);
+        const commAtTarget=live.reduce((s,d)=>s+(d.kes?d.target:0)*0.04,0);
+        const sbusOnPace=live.filter(d=>(+d.attn)>=(per.elapsed/per.working)).length;
+        return {daysLeft,at100,below80,earners,top,low,worst,gap,commNow,commAtTarget,sbusOnPace,liveN:live.length,total:bdes.length,dailyReq:daysLeft?gap/daysLeft:0};
       }
       function countsStrip(){
         const s=orgStats();
@@ -723,16 +709,16 @@ try {
           ["Staff at 100%+",s.at100+" / "+s.total,"target achieved","var(--jade)"],
           ["Staff below 80%",s.below80+" / "+s.total,"need support","var(--coral)"],
           ["Commission earners",s.earners+" / "+s.total,"past the 80% gate","var(--gold)"],
-          ["SBUs on pace",s.sbusOnPace+" / 5","at / above required pace","var(--slate)"]
+          ["SBUs on pace",s.sbusOnPace+" / "+s.liveN,"at / above required pace","var(--slate)"]
         ];
         return `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${tiles.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
       }
       function interventionCentre(){
         const s=orgStats();
         const ans=[
-          ["Biggest gap",esc(s.worst.name),kMoney(s.worst.target-s.worst.actual)+" behind · "+pct(s.worst.actual/s.worst.target,0)],
-          ["Top performer",s.top?esc(s.top.name):"—",s.top?pct(s.top.actual/s.top.target,0)+" · "+esc(s.top.sbu):""],
-          ["Lowest performer",s.low?esc(s.low.name):"—",s.low?pct(s.low.actual/s.low.target,0)+" · "+esc(s.low.sbu):""],
+          ["Biggest gap",s.worst?esc(s.worst.name):"—",s.worst?pct((+s.worst.attn)||0,0)+" attained · "+(s.worst.kes?"revenue SBU":"clients SBU"):""],
+          ["Top performer",s.top?esc(s.top.name):"—",s.top?pct(rAttn(s.top),0)+" · "+esc(s.top.sbu):""],
+          ["Lowest performer",s.low?esc(s.low.name):"—",s.low?pct(rAttn(s.low),0)+" · "+esc(s.low.sbu):""],
           ["Commission exposure",kMoney(s.commNow),"now · "+kMoney(s.commAtTarget)+" at target"],
           ["Staff needing support",s.below80+" people","below 80% of target"],
           ["Daily revenue required",kMoney(s.dailyReq),s.daysLeft+" working days left"]
@@ -741,13 +727,14 @@ try {
           <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${ans.map(([l,v,sub])=>`<div class="cm"><span>${l}</span><b class="num" style="font-size:16px">${v}</b><div style="font-size:11px;color:var(--muted);margin-top:3px">${sub}</div></div>`).join("")}</div></div>`;
       }
       function staffRanking(){
-        const bdes=allPeople().filter(p=>p.role==="BDE").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Staff member</th><th>Department</th><th>Target</th><th>Cleared</th><th>Score</th><th>Status</th></tr></thead><tbody>${bdes.map((p,i)=>{const a=p.actual/p.target;const pc=paceOf(p);const rowbg=i===0?"background:var(--jade-soft)":i===bdes.length-1?"background:var(--coral-soft)":"";return `<tr style="${rowbg}"><td class="num">${i+1}</td><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(p.name))}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.title||"BDE")}</span></div></div></td><td>${esc(p.sbu)}</td><td class="num">${kMoney(p.target)}</td><td class="num">${kMoney(p.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        const bdes=allPeople().filter(p=>p.role==="BDE").sort((a,b)=>rAttn(b)-rAttn(a));
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Staff member</th><th>Department</th><th>Target</th><th>Cleared</th><th>Score</th><th>Status</th></tr></thead><tbody>${bdes.map((p,i)=>{const a=rAttn(p);const pc=paceOf(p);const rowbg=i===0?"background:var(--jade-soft)":i===bdes.length-1?"background:var(--coral-soft)":"";return `<tr style="${rowbg}"><td class="num">${i+1}</td><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(p.name))}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.title||"BDE")}</span></div></div></td><td>${esc(p.sbu)}</td><td class="num">${repTarget(p)}</td><td class="num">${repActual(p)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
       function productMix(){
-        const lines=[["Leadership programmes",9200000,"#4d8bd6"],["Data & M&E",7400000,"var(--jade)"],["Digital products (Eval360/360)",5100000,"var(--brand)"],["Academic / online",3600000,"var(--violet)"],["Corporate bespoke",6770000,"var(--gold)"]];
-        const total=lines.reduce((a,l)=>a+l[1],0);
-        return `<div class="card"><div class="chead"><h4>Revenue mix by product line</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Where the money comes from this period. Trend arrives with live data.</div></div>`;
+        const cols=["#4d8bd6","var(--jade)","var(--brand)","var(--violet)","var(--gold)","var(--slate)"];
+        const lines=liveSbus().map((d,i)=>[d.name,(d.kes?d.actual:(d.kesActual||0)),cols[i%cols.length]]);
+        const total=lines.reduce((a,l)=>a+l[1],0)||1;
+        return `<div class="card"><div class="chead"><h4>Revenue mix by SBU</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Cleared revenue share by SBU this period (International in its own metric excluded from the KES split).</div></div>`;
       }
       function learnerJourney(){
         const stages=[["Enrolled",4200],["Active",3140],["Completed",1980],["Certified / paid-up",1520]];
@@ -769,7 +756,7 @@ try {
           <div class="section-tag"><h3>Intervention Centre — what needs you</h3><span>Plain answers: the gap, the people and the number to hit</span><div class="rule"></div></div>
           ${interventionCentre()}
 
-          <div class="section-tag"><h3>Five-SBU performance</h3><span>The whole picture — click any SBU to drill into that department</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>SBU performance</h3><span>The whole picture — click any SBU to drill into that department</span><div class="rule"></div></div>
           ${teamTable()}
 
           <div class="section-tag"><h3>Revenue trajectory &amp; strategic accounts</h3><span>Month-end forecast and the highest-value open accounts company-wide</span><div class="rule"></div></div>
@@ -779,11 +766,8 @@ try {
           </section>
           ${execTopDeals()}
 
-          <div class="section-tag"><h3>Revenue mix &amp; learner journey</h3><span>Where the money comes from, and how learners move through</span><div class="rule"></div></div>
-          <section class="grid-2">
-            ${productMix()}
-            ${learnerJourney()}
-          </section>
+          <div class="section-tag"><h3>Revenue mix</h3><span>Cleared revenue share across the SBUs this period</span><div class="rule"></div></div>
+          ${productMix()}
 
           <div class="section-tag"><h3>Where to intervene</h3><span>The few things that need leadership, resources or a decision — now</span><div class="rule"></div></div>
           <section class="grid-2">
@@ -793,14 +777,16 @@ try {
       }
 
       function vPipeline(){
-        const fmax=B.funnel[0][1];const smax=Math.max(...B.sources.map(s=>s[1]));
-        const stale=[["5 hot leads have no action today","red"],["3 proposals have no confirmed review date","amber"],["11 payment promises are overdue","amber"]];
+        const fmax=Math.max(1,B.funnel[0][1]);const smax=Math.max(1,...B.sources.map(s=>s[1]));
+        const alerts=B.alerts||[];
+        const sHTML=B.sources.length?B.sources.map(([n,v])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${nf.format(v)}</b></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No lead-source data across the SBUs this period.</p>`;
+        const aHTML=alerts.length?alerts.map(a=>`<div class="arow"><span class="pd red"></span><div><b>${esc(a.text||((a.n||0)+" unread WhatsApp chats to reply"))}</b><p>${esc(a.name||"")}${a.sbu?" · "+esc(a.sbu):""}</p></div><span class="due">${nf.format(a.n||0)}</span></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No unread WhatsApp chats awaiting reply across the SBUs.</p>`;
         return `
           <section class="grid-2">
-            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live funnel</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/B.funnel[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>
-            <div class="card"><div class="chead"><h4>Lead-source ROI</h4><span class="chip slate">Contribution × return</span></div>${B.sources.map(([n,v],i)=>{const roi=[4.2,3.1,5.6,2.4,3.8][i%5];return `<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/smax*100}%"></div></div><b>${v}% · ${roi}×</b></div>`;}).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Return = cleared revenue per KES of channel spend (illustrative).</div></div>
+            <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live · all SBUs</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,B.funnel[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Consolidated leads → paid clients across every SBU.</div></div>
+            <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${sHTML}</div>
           </section>
-          <div class="card"><div class="chead"><h4>Stale-lead alerts</h4><span class="chip coral">${stale.length} flagged</span></div><div class="list">${stale.map(([x,c])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(x)}</b><p>Open the filtered list and assign the next action.</p></div><span class="abtn hot">Open</span></div>`).join("")}</div></div>`;
+          <div class="card"><div class="chead"><h4>Unread WhatsApp chats awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} ${alerts.length===1?"person":"people"}</span></div><div class="list">${aHTML}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Open WhatsApp conversations assigned to each rep with an unanswered message.</div></div>`;
       }
 
       function vReport(){
@@ -854,10 +840,11 @@ try {
       /* ---------- people model + drill-down (CEO can open anyone) ---------- */
       const pInitials=n=>String(n||"").trim().split(/\s+/).map(x=>x[0]).slice(0,2).join("").toUpperCase();
       function allPeople(){
-        const list=[{key:"bdm",role:"BDM",name:B.bdmName,ini:B.bdmInitials,sbu:"All five SBUs",target:B.target,actual:B.actual,pipeline:B.pipeline,collection:B.collection,forecast:B.forecast}];
+        const list=[{key:"bdm",role:"BDM",name:B.bdmName,ini:B.bdmInitials,sbu:"All SBUs",target:B.target,actual:B.actual,pipeline:B.pipeline,collection:B.collection,forecast:B.forecast,kes:true}];
         B.sbus.forEach((s,si)=>{
-          list.push({key:"bdo-"+si,role:"BDO",name:s.leader,ini:pInitials(s.leader),sbu:s.name,target:s.target,actual:s.actual,pipeline:s.pipeline,collection:s.collection,forecast:s.forecast,sbuIndex:si});
-          (s.reps||[]).forEach((r,ri)=>list.push({key:"bde-"+si+"-"+ri,role:"BDE",name:r.name,ini:pInitials(r.name),sbu:s.name,title:r.title,target:r.target,actual:r.actual,pipeline:r.pipeline,collection:r.collection,units:r.units}));
+          if(s.placeholder)return;
+          list.push({key:"bdo-"+si,role:"BDO",name:s.leader,ini:pInitials(s.leader),sbu:s.name,target:s.target,actual:s.actual,pipeline:s.pipeline,collection:s.collection,forecast:s.forecast,sbuIndex:si,kes:s.kes});
+          (s.reps||[]).forEach((r,ri)=>list.push({key:"bde-"+si+"-"+ri,role:"BDE",name:r.name,ini:pInitials(r.name),sbu:s.name,title:r.title,target:r.target,actual:r.actual,pipeline:r.pipeline,collection:r.collection,units:r.clients,kes:r.kes}));
         });
         return list;
       }
@@ -866,8 +853,8 @@ try {
 
       function vPeople(){
         const people=allPeople();
-        const leaders=people.filter(p=>p.role==="BDO").sort((a,b)=>(b.actual/b.target)-(a.actual/a.target));
-        const lead=leaders.map((p,i)=>{const a=p.actual/p.target;const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.sbu)}</span></div></div></td><td><span class="chip slate">${p.role}</span></td><td class="num">${kMoney(p.target)}</td><td class="num">${kMoney(p.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
+        const leaders=people.filter(p=>p.role==="BDO").sort((a,b)=>rAttn(b)-rAttn(a));
+        const lead=leaders.map((p,i)=>{const a=rAttn(p);const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.sbu)}</span></div></div></td><td><span class="chip slate">${p.role}</span></td><td class="num">${repTarget(p)}</td><td class="num">${repActual(p)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
         return `
           <div class="section-tag"><h3>Leadership scorecard</h3><span>Department heads (BDOs), ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Role</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
@@ -876,10 +863,10 @@ try {
       }
 
       function vPerson(p){
-        const a=p.actual/p.target;const pc=paceOf(p);
+        const a=rAttn(p);const pc=paceOf(p);
         const kpis=[
-          ["Target",kMoney(p.target),"Approved target","var(--slate)"],
-          ["Cleared revenue",kMoney(p.actual),pct(a)+" of target","var(--jade)"],
+          ["Target",repTarget(p),"Approved target","var(--slate)"],
+          ["Cleared revenue",repActual(p),pct(a)+" of target","var(--jade)"],
           ["Qualified pipeline",kMoney(p.pipeline),(p.pipeline/p.target).toFixed(1)+"× coverage","var(--slate)"],
           ["Collection",pct(p.collection,0),"cleared vs invoiced","var(--brand)"]
         ];
@@ -887,8 +874,8 @@ try {
         else kpis.push(["Month-end forecast",kMoney(p.forecast||p.actual),"projected","var(--gold)"]);
         const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,ac])=>`<div class="kpi" style="--acc:${ac}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
         let extra="";
-        if(p.role==="BDM"){extra=`<div class="section-tag"><h3>Five-SBU performance</h3><span>Consolidated across all departments</span><div class="rule"></div></div>${teamTable()}`;}
-        else if(p.role==="BDO"&&p.sbuIndex!=null){const reps=(B.sbus[p.sbuIndex].reps||[]);const rows=reps.map((r,ri)=>{const ra=r.actual/r.target;const rp=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${p.sbuIndex}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${kMoney(r.target)}</td><td class="num">${kMoney(r.actual)}</td><td><span class="mini-track"><div style="width:${clamp(ra*100,0,100)}%;background:${scol(rp.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(ra,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td><span class="sbadge s${rp.st[0]}"><span class="dot"></span>${rp.label}</span></td></tr>`;}).join("");extra=`<div class="section-tag"><h3>${esc(p.sbu)} team</h3><span>Executives reporting to ${esc(p.name)} — click to drill in</span><div class="rule"></div></div><div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
+        if(p.role==="BDM"){extra=`<div class="section-tag"><h3>SBU performance</h3><span>Consolidated across all departments</span><div class="rule"></div></div>${teamTable()}`;}
+        else if(p.role==="BDO"&&p.sbuIndex!=null){const reps=(B.sbus[p.sbuIndex].reps||[]);const rows=reps.map((r,ri)=>{const ra=rAttn(r);const rp=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${p.sbuIndex}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${repTarget(r)}</td><td class="num">${repActual(r)}</td><td><span class="mini-track"><div style="width:${clamp(ra*100,0,100)}%;background:${scol(rp.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(ra,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td><span class="sbadge s${rp.st[0]}"><span class="dot"></span>${rp.label}</span></td></tr>`;}).join("");extra=`<div class="section-tag"><h3>${esc(p.sbu)} team</h3><span>Executives reporting to ${esc(p.name)} — click to drill in</span><div class="rule"></div></div><div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
         else{extra=`<div class="card"><div class="chead"><h4>Notes</h4><span class="chip slate">Prototype</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Individual field activity, deals and daily reports appear here once live data is wired. For now this shows ${esc(p.name)}'s headline numbers scoped from the organization dataset.</p></div>`;}
         return `
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
@@ -916,32 +903,32 @@ try {
       }
       function kpiRow(items){return `<div class="kpis">${items.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;}
       function repsTable(d,si){
-        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Collection</th><th>Status</th></tr></thead><tbody>${(d.reps||[]).map((r,ri)=>{const a=r.actual/r.target;const pc=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${si}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${kMoney(r.target)}</td><td class="num">${kMoney(r.actual)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td class="num">${pct(r.collection,0)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
+        return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Collection</th><th>Status</th></tr></thead><tbody>${(d.reps||[]).map((r,ri)=>{const a=rAttn(r);const pc=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${si}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${repTarget(r)}</td><td class="num">${repActual(r)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td class="num">${pct(r.collection,0)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
       function viewBDM(){
-        const ps=pace();const att=B.actual/B.target;const c=commission();const sbus80=B.sbus.filter(d=>d.actual/d.target>=.8).length;
+        const ps=pace();const att=B.target>0?B.actual/B.target:0;const c=commission();const live=liveSbus();const sbus80=live.filter(d=>(+d.attn)>=.8).length;
         const kpis=[
-          ["Organization target",kMoney(B.target),"All five SBUs","var(--slate)"],
+          ["Organization target (KES SBUs)",kMoney(B.target),live.filter(d=>d.kes).length+" revenue SBUs","var(--slate)"],
           ["Cleared revenue",kMoney(B.actual),pct(att)+" attainment","var(--jade)"],
-          ["Month-end forecast",kMoney(B.forecast),pct(B.forecast/B.target)+" projected","var(--slate)"],
-          ["BDM personal sales",kMoney(B.personalActual),pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget),"var(--slate)"],
-          ["SBUs at 80%+",sbus80+" / 5","Balanced-SBU gate","var(--gold)"],
+          ["Month-end forecast",kMoney(B.forecast),(B.target>0?pct(B.forecast/B.target):"0%")+" projected","var(--slate)"],
+          ["BDM personal sales",kMoney(B.personalActual),(B.personalTarget>0?pct(B.personalActual/B.personalTarget)+" of "+kMoney(B.personalTarget):"no personal target"),"var(--slate)"],
+          ["SBUs at 80%+",sbus80+" / "+live.length,"Balanced-SBU gate","var(--gold)"],
           ["Commission estimate",kMoney(c.current),"Personal + leadership","var(--amber)"]
         ];
-        return roleBanner(B.bdmInitials,B.bdmName,"BDM · All five SBUs",{st:ps.status,label:ps.label,ratio:ps.ratio})
+        return roleBanner(B.bdmInitials,B.bdmName,"BDM · All SBUs",{st:ps.status,label:ps.label,ratio:ps.ratio})
           +kpiRow(kpis)
-          +`<div class="section-tag"><h3>Five-SBU performance</h3><span>Consolidated across all departments — click a SBU to drill in</span><div class="rule"></div></div>${teamTable()}${execRevenueBreakdown()}`
+          +`<div class="section-tag"><h3>SBU performance</h3><span>Consolidated across all departments — click a SBU to drill in</span><div class="rule"></div></div>${teamTable()}${execRevenueBreakdown()}`
           +`<div class="section-tag"><h3>Top strategic deals</h3><span>Highest-value open deals company-wide</span><div class="rule"></div></div>${execTopDeals()}`
           +`<div class="section-tag"><h3>Revenue pace &amp; today's execution</h3><span>Month-end trajectory and the interventions in play</span><div class="rule"></div></div><section class="grid-2"><div class="card"><div class="chead"><h4>Revenue pace &amp; forecast</h4><span class="chip jade">${kMoney(B.forecast)} forecast</span></div>${trendSVG()}</div>${actionsCard()}</section>`;
       }
       function viewBDO(){
-        const si=state.dept;const d=B.sbus[si]||B.sbus[0];const pc=paceOf(d);const att=d.actual/d.target;
-        const reps=d.reps||[];const team80=reps.filter(r=>r.actual/r.target>=.8).length;
+        const si=state.dept;const d=B.sbus[si]||B.sbus[0];const pc=paceOf(d);const att=(+d.attn)||0;
+        const reps=d.reps||[];const team80=reps.filter(r=>rAttn(r)>=.8).length;
         const kpis=[
-          ["Department target",kMoney(d.target),"Approved SBU target","var(--slate)"],
-          ["Cleared revenue",kMoney(d.actual),pct(att)+" attainment","var(--jade)"],
-          ["Month-end forecast",kMoney(d.forecast),pct(d.forecast/d.target)+" projected","var(--slate)"],
-          ["Qualified pipeline",kMoney(d.pipeline),(d.pipeline/d.target).toFixed(1)+"× target","var(--slate)"],
+          ["Department target",sbuTarget(d),"Approved SBU target","var(--slate)"],
+          ["Cleared "+(d.kes?"revenue":"clients"),sbuActual(d),pct(att)+" attainment","var(--jade)"],
+          ["Month-end forecast",d.kes?kMoney(d.forecast):nf.format(Math.round(d.forecast))+" clients",(d.target>0?pct(d.forecast/d.target):"0%")+" projected","var(--slate)"],
+          ["Qualified pipeline",kMoney(d.pipeline),"expected · uncollected","var(--slate)"],
           ["Team at 80%+",team80+" / "+reps.length,"Balanced performance","var(--gold)"],
           ["Collection",pct(d.collection,0),"Finance-cleared","var(--brand)"]
         ];
@@ -951,10 +938,10 @@ try {
           +`<div class="section-tag"><h3>Where to focus today</h3><span>Department interventions</span><div class="rule"></div></div>${actionsCard()}`;
       }
       function viewBDE(){
-        const d=B.sbus[state.dept]||B.sbus[0];const r=(d.reps||[])[state.emp]||(d.reps||[])[0];const pc=paceOf(r);const att=r.actual/r.target;const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
+        const d=B.sbus[state.dept]||B.sbus[0];const r=(d.reps||[])[state.emp]||(d.reps||[])[0];const pc=paceOf(r);const att=rAttn(r);const per=period();const daysLeft=Math.max(0,per.working-per.elapsed);
         const kpis=[
-          ["Monthly target",kMoney(r.target),"Approved personal target","var(--slate)"],
-          ["Cleared revenue",kMoney(r.actual),pct(att)+" of target","var(--jade)"],
+          ["Monthly target",repTarget(r),"Approved personal target","var(--slate)"],
+          ["Cleared revenue",repActual(r),pct(att)+" of target","var(--jade)"],
           ["Volume achieved",nf.format(r.units||0),"units this period","var(--slate)"],
           ["Qualified pipeline",kMoney(r.pipeline),(r.pipeline/r.target).toFixed(1)+"× coverage","var(--slate)"],
           ["Collection",pct(r.collection,0),"cleared vs invoiced","var(--brand)"],
