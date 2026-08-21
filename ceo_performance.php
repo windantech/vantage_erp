@@ -310,6 +310,7 @@ try {
                COUNT(CASE WHEN tc.status=2 AND tc.amount>0 THEN tc.id END) paidn,
                COALESCE(SUM(CASE WHEN tc.status=2 THEN tc.amount ELSE 0 END),0) collected
                FROM `ticket_congress` tc INNER JOIN `Event` e ON tc.event_id=e.event_id
+               WHERE tc.date_sent >= '$since'
                GROUP BY e.location, e.early_amount");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         $k = (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown');
@@ -1311,8 +1312,8 @@ try {
         const vRev=chart("Virtual · fee collected","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads this year.",cur);
         const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
-        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
-        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"","No outstanding balances.");
+        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length} · ${ytd}</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location this year.");
+        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length} · ${ytd}</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"","No outstanding balances this year.");
         const cEnq=chart("Corporate · enquiries vs won","",[{name:"Enquiries",color:"var(--brand)",vals:cm.map(m=>m.enq)},{name:"Won",color:"var(--jade)",vals:cm.map(m=>m.cli)}],cm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Won",color:"var(--jade)"}]),"No corporate enquiries this year.",cur);
         const cMon=chart("Corporate · fee collected","",[{name:"Collected",color:"var(--jade)",vals:cm.map(m=>m.collected)}],cm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         return `
@@ -1322,7 +1323,7 @@ try {
           </div><div class="rule" style="margin:0 0 4px"></div>
           <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment, Jan–${vm.length?vm[vm.length-1].label:"now"}</span><div class="rule"></div></div>
           <section class="grid-2">${vEnq}${vRev}</section>
-          <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees (this year) &amp; geographic spread (all-time)</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees &amp; geographic spread — this year (${ytd})</span><div class="rule"></div></div>
           <section class="grid-2">${iEnq}${iMon}</section>
           <section class="grid-2">${iRev}${iBal}</section>
           <div class="section-tag"><h3>Corporate (trainings)</h3><span>Corporate proposals, wins and training fees</span><div class="rule"></div></div>
