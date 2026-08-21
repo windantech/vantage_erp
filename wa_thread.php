@@ -59,7 +59,29 @@ mysqli_query($conn, "UPDATE wa_conversations SET last_read_at = NOW() WHERE id =
 $messages = wa_thread($conn, (int)$conv['contact_id']);
 $open = wa_within_window($conv['last_inbound_at']);
 $lastMsgId = 0;
+// Computed from wa_messages ONLY, and before anything is merged in below. It is
+// the high-water mark the live poll sends as ?after=, so a voice call's id --
+// which comes from a different table and a different sequence -- must never
+// reach it, or the poll starts asking for messages after an id that is not one.
 foreach ($messages as $m) { if ((int)$m['id'] > $lastMsgId) { $lastMsgId = (int)$m['id']; } }
+
+// Phase 2.2 -- telephone calls appear in the thread alongside the messages, in
+// the order they happened. They are NOT wa_messages rows: a voice summary must
+// not become a turn in the AI's history, the inbox's last-message preview, or
+// anything the burst guard counts. They are merged for display only.
+$voiceCalls = function_exists('wa_voice_calls_for_contact')
+    ? wa_voice_calls_for_contact($conn, (int)$conv['contact_id'], 20) : [];
+$stream = [];
+foreach ($messages as $m) {
+    $stream[] = ['_kind' => 'message', '_at' => (string)($m['wa_timestamp'] ?: $m['created_at']), 'm' => $m];
+}
+foreach ($voiceCalls as $vc) {
+    $stream[] = ['_kind' => 'voice', '_at' => (string)$vc['started_at'], 'v' => $vc];
+}
+usort($stream, function ($a, $b) {
+    if ($a['_at'] === $b['_at']) { return $a['_kind'] === 'voice' ? 1 : -1; }
+    return strcmp($a['_at'], $b['_at']);
+});
 
 // Staff for the reassign dropdown (available to all WhatsApp staff now).
 $staffOptions = [];
@@ -250,7 +272,86 @@ if ($r) { while ($o = mysqli_fetch_assoc($r)) { $staffOptions[] = $o; } }
                 </script>
 
                 <div class="card-body" style="max-height:60vh; overflow-y:auto; background:#f3f5f9" id="wa_messages">
-                    <?php foreach ($messages as $m): ?>
+                    <?php foreach ($stream as $_row): ?>
+                        <?php if ($_row['_kind'] === 'voice'): $vc = $_row['v'];
+                            // "Vala voice call" -- a record of a telephone conversation.
+                            // Deliberately carries no call id, no payload and no transcript:
+                            // none of the three means anything to a rep, and the surest way
+                            // to keep an internal identifier off the page is never to fetch
+                            // it (see wa_voice_calls_for_contact()).
+                            $vcMins = $vc['duration_seconds'] !== null
+                                ? max(1, (int)round(((int)$vc['duration_seconds']) / 60)) : null;
+                            $vcDisc = $vcConf = [];
+                            foreach ($vc['programmes'] as $vp) {
+                                if ($vp['relation'] === 'confirmed_interest') { $vcConf[] = $vp['name']; }
+                                elseif ($vp['relation'] === 'discussed')       { $vcDisc[] = $vp['name']; }
+                            }
+                            $vcOutcome = [
+                                'completed'    => ['Completed', 'secondary'],
+                                'transferred'  => ['Transferred to a colleague', 'info'],
+                                'disconnected' => ['Caller hung up', 'warning'],
+                                'failed'       => ['Call failed', 'danger'],
+                            ][$vc['outcome']] ?? ['Completed', 'secondary'];
+                        ?>
+                            <div class="d-flex justify-content-center mb-2">
+                                <div class="px-3 py-2 rounded-3" style="max-width:88%; background:#eef4ff; border:1px solid #b6cdf5">
+                                    <div class="small fw-semibold" style="font-size:11px; letter-spacing:.02em; color:#2a4d8f">
+                                        <i class="bi bi-telephone-inbound me-1"></i>VALA VOICE CALL
+                                        <span class="text-muted fw-normal ms-1">
+                                            <?php echo wa_e(date('j M Y, H:i', strtotime((string)$vc['started_at']))); ?>
+                                            <?php if ($vcMins !== null): ?> · <?php echo (int)$vcMins; ?> min<?php endif; ?>
+                                        </span>
+                                    </div>
+
+                                    <?php if (trim((string)$vc['summary']) !== ''): ?>
+                                        <div class="text-dark mt-1" style="white-space:pre-wrap; word-wrap:break-word"><?php echo nl2br(wa_e($vc['summary'])); ?></div>
+                                    <?php else: ?>
+                                        <div class="text-muted fst-italic mt-1" style="font-size:13px">No summary was produced for this call.</div>
+                                    <?php endif; ?>
+
+                                    <?php if ($vcConf): ?>
+                                        <div class="mt-2 small"><span class="badge bg-success"><i class="bi bi-check2-circle me-1"></i>Interest confirmed</span>
+                                            <span class="ms-1"><?php echo wa_e(implode(', ', $vcConf)); ?></span></div>
+                                    <?php endif; ?>
+                                    <?php if ($vcDisc): ?>
+                                        <div class="mt-1 small text-muted">Discussed: <?php echo wa_e(implode(', ', $vcDisc)); ?></div>
+                                    <?php endif; ?>
+
+                                    <?php if (trim((string)$vc['unresolved_questions']) !== ''): ?>
+                                        <div class="mt-2 small"><span class="fw-semibold text-warning-emphasis">Still unanswered:</span>
+                                            <?php echo wa_e($vc['unresolved_questions']); ?></div>
+                                    <?php endif; ?>
+                                    <?php if (trim((string)$vc['objections_or_concerns']) !== ''): ?>
+                                        <div class="mt-1 small"><span class="fw-semibold text-warning-emphasis">Concerns raised:</span>
+                                            <?php echo wa_e($vc['objections_or_concerns']); ?></div>
+                                    <?php endif; ?>
+                                    <?php if (trim((string)$vc['requested_next_step']) !== ''): ?>
+                                        <div class="mt-1 small"><span class="fw-semibold">Next step:</span>
+                                            <?php echo wa_e($vc['requested_next_step']); ?></div>
+                                    <?php endif; ?>
+
+                                    <div class="mt-2 small d-flex flex-wrap gap-1 align-items-center">
+                                        <?php if ((int)$vc['follow_up_required'] === 1): ?>
+                                            <?php $vcPri = ['high' => 'danger', 'normal' => 'primary', 'low' => 'secondary'][$vc['follow_up_priority']] ?? 'primary'; ?>
+                                            <span class="badge bg-<?php echo $vcPri; ?>">Follow-up: <?php echo wa_e($vc['follow_up_priority']); ?></span>
+                                        <?php endif; ?>
+                                        <?php if ($vc['requested_callback_at']): ?>
+                                            <span class="badge bg-light text-dark border">Call back <?php echo wa_e(date('j M, H:i', strtotime((string)$vc['requested_callback_at']))); ?></span>
+                                        <?php endif; ?>
+                                        <?php if ((int)$vc['transfer_requested'] === 1): ?>
+                                            <span class="badge bg-<?php echo (int)$vc['transfer_completed'] === 1 ? 'info' : 'warning text-dark'; ?>">
+                                                <?php echo (int)$vc['transfer_completed'] === 1 ? 'Transferred' : 'Transfer attempted'; ?>
+                                            </span>
+                                        <?php endif; ?>
+                                        <span class="badge bg-<?php echo wa_e($vcOutcome[1]); ?>"><?php echo wa_e($vcOutcome[0]); ?></span>
+                                        <?php if ($vc['summary_source'] === 'fallback'): ?>
+                                            <span class="badge bg-light text-muted border" title="The summariser was unavailable, so this was assembled from what the call recorded.">partial</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php continue; endif; ?>
+                        <?php $m = $_row['m']; ?>
                         <?php if (($m['type'] ?? '') === 'note'): ?>
                             <?php /* Internal staff-only handoff note — never sent to the customer. */ ?>
                             <div class="d-flex justify-content-center mb-2">

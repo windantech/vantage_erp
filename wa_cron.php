@@ -82,6 +82,20 @@ $step('onsite',     function () use ($wa_conn) {                                
     $mins = (int) wa_setting_get($wa_conn, 'onsite_escalate_after_mins', '60');
     return wa_run_onsite_escalation($wa_conn, $mins, 50);
 });
+$step('voice_actions', function () use ($wa_conn) {
+    // Phase 2.2 — apply interest changes a caller confirmed on the telephone.
+    //
+    // This runs HERE, as the application, rather than in the voice endpoint,
+    // because the voice database account deliberately cannot write to
+    // wa_conversations at all. The endpoint records what the caller agreed to;
+    // this decides whether it may be acted on, re-validating the reference and
+    // refusing to touch any conversation a human has taken charge of.
+    if (!function_exists('wa_voice_actions_process')) { return ['skipped' => 'not_installed']; }
+    if (wa_setting_get($wa_conn, 'voice_actions_enabled', '0') !== '1') {
+        return ['skipped' => 'disabled'];
+    }
+    return wa_voice_actions_process($wa_conn, 25);
+});
 // LAST: drain large broadcasts (up to ~45s) so a big send never delays live customer chats.
 $step('bcast_queue', function () use ($wa_conn) { return wa_run_broadcast_queue($wa_conn, 45, 150); });
 

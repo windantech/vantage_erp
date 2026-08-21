@@ -700,7 +700,10 @@ check('the body cap is 16 KB', 16384, WA_VOICE_MAX_BODY);
 ok('Content-Length is checked before the body is read',
     strpos($api, "CONTENT_LENGTH") !== false && strpos($api, "413, 'request_too_large'") !== false);
 ok('the read itself is capped at the limit plus one byte',
-    strpos($api, 'WA_VOICE_MAX_BODY + 1') !== false);
+    strpos($api, '$bodyCap + 1') !== false);
+check('the write action gets a larger cap, and only that much', 32768, WA_VOICE_WRITE_MAX_BODY);
+ok('the cap is applied to the declared length as well as the read',
+    strpos($api, "CONTENT_LENGTH'] ?? 0) > \$bodyCap") !== false);
 ok('only POST is accepted',
     strpos($api, "405, 'method_not_allowed'") !== false);
 ok('only application/json is accepted',
@@ -745,8 +748,10 @@ ok('the log never records the body, signature or nonce',
     strpos($api, '$rawBody)') === false || strpos($api, 'wa_voice_log') !== false);
 ok('the call id is cleaned before it is ever logged',
     strpos($api, 'wa_voice_clean_call_id($payload') !== false);
-ok('exactly three actions are dispatched',
-    substr_count($api, "        case '") === 3);
+// Three reads and one write. If a fifth appears, somebody should have to come
+// here and say what it is.
+check('exactly four actions are dispatched', 4, substr_count($api, "        case '"));
+ok('exactly one of them writes', substr_count($api, "case 'complete_call'") === 1);
 ok('no write helper from the module is called',
     strpos($api, 'wa_assign_conversation') === false
     && strpos($api, 'wa_note_add') === false
@@ -879,7 +884,9 @@ ok('table availability is asked of information_schema',
     strpos(code('includes/wa_voice_context.php'), 'information_schema') !== false);
 ok('a missing table produces 503 schema_unavailable',
     strpos(code('wa_voice_api.php'), "wa_voice_fail(503, 'schema_unavailable')") !== false);
-check('there are two schema_unavailable exits — the probe and its failure', 2,
+// Two for the Phase 2.1A security tables (the probe and its exception), one for
+// the Phase 2.2 call tables.
+check('every schema gate refuses rather than creating', 3,
     substr_count(code('wa_voice_api.php'), "wa_voice_fail(503, 'schema_unavailable')"));
 ok('the schema check gates the request before any security write',
     strpos(code('wa_voice_api.php'), 'wa_voice_schema_available(')
@@ -1091,8 +1098,17 @@ if ($rc !== 0) {
     }
     check('all seven Phase 2.1A files are tracked', [], $missing);
 
-    $protected = ['wa_webhook.php', 'includes/wa_inbound.php', 'includes/wa_functions.php',
-                  'wa_cron.php', 'includes/wa_process.php', 'includes/wa_enroll.php',
+    // The live-message path, which no voice phase may touch.
+    //
+    // wa_functions.php and wa_cron.php were on this list for Phase 2.1A, whose
+    // constraint was that it add NOTHING to the WhatsApp module. Phase 2.2
+    // deliberately extends both — the AI's private context gains a bounded voice
+    // summary, and the cron gains the privileged step that applies a confirmed
+    // interest change. Leaving them here would have made this test fail for
+    // doing the work correctly, which is the second time a review-time gate in
+    // this file has outlived its review.
+    $protected = ['wa_webhook.php', 'includes/wa_inbound.php',
+                  'includes/wa_process.php', 'includes/wa_enroll.php',
                   'includes/wa_call_api.php', 'includes/wa_call_config.php',
                   'includes/wa_call_offer.php', 'includes/wa_call_permissions.php',
                   'includes/wa_call_webhook_lib.php', 'wa_call_webhook.php',
