@@ -787,18 +787,15 @@ try {
       function productMix(){
         const cols=["#4d8bd6","var(--jade)","var(--brand)","var(--violet)","var(--gold)","var(--slate)"];
         const live=liveSbus();
-        const revTot=live.reduce((a,d)=>a+(d.kes?d.actual:(d.kesActual||0)),0)||1;
-        const rows=live.map((d,i)=>{const c=cols[i%cols.length];const rev=d.kes?d.actual:(d.kesActual||0);const share=rev/revTot;const cl=(+d.clients)||0;
-          return `<div style="padding:12px 0;border-bottom:1px solid var(--line)">`
-            +`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">`
-              +`<span style="display:flex;align-items:center;gap:8px;min-width:0"><span style="flex:0 0 auto;width:9px;height:9px;border-radius:3px;background:${c}"></span><b style="font-size:13px">${esc(d.name)}</b><span style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${esc(d.leader)}</span></span>`
-              +`<span class="chip slate" style="flex:0 0 auto">${nf.format(cl)} client${cl===1?"":"s"}</span>`
-            +`</div>`
-            +`<div style="display:flex;align-items:center;gap:10px">`
-              +`<div class="sb" style="flex:1"><div style="width:${clamp(share*100,0,100)}%;background:${c}"></div></div>`
-              +`<b class="num" style="flex:0 0 auto;font-size:12px">${kMoney(rev)} · ${pct(share,0)}</b></div>`
-          +`</div>`;}).join("");
-        return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Cleared revenue (the bar) and paying clients (the chip) per SBU, this period</p></div></div>${rows}<div style="font-size:11px;color:var(--muted);margin-top:12px">International is client-based, so its revenue bar reflects only its small event KES.</div></div>`;
+        const lines=live.map((d,i)=>[d.name,(d.kes?d.actual:(d.kesActual||0)),cols[i%cols.length]]);
+        const total=lines.reduce((a,l)=>a+l[1],0)||1;
+        const cli=live.map((d,i)=>[d.name,(+d.clients)||0,cols[i%cols.length]]);const cliMax=Math.max(1,...cli.map(c=>c[1]));
+        const subHead='font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin:0 0 8px';
+        const subHead2=subHead+';margin-top:18px;padding-top:16px;border-top:1px solid var(--line)';
+        return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Where the cleared revenue and paying clients came from this period</p></div></div>
+          <div style="${subHead}">Cleared revenue share</div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}
+          <div style="${subHead2}">Paid clients by SBU</div>${cli.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/cliMax*100}%;background:${c}"></div></div><b>${nf.format(v)}</b></div>`).join("")}
+          <div style="font-size:11px;color:var(--muted);margin-top:12px">International contributes clients, not KES, so it's excluded from the revenue split.</div></div>`;
       }
       function learnerJourney(){
         const L=B.lms||{};const courses=L.courses||[];
@@ -806,7 +803,7 @@ try {
         const stat=(l,v,c,tip)=>`<div title="${esc(tip||"")}" style="flex:1;background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${c};border-radius:10px;padding:11px 13px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800">${l}</div><b class="num" style="display:block;font-size:20px;margin-top:3px;color:var(--ink)">${v}</b></div>`;
         const stats=`<div style="display:flex;gap:10px;margin-bottom:14px">${stat("New enrolments",nf.format((+L.enrMonth)||0),"var(--brand)","New course enrolments this month")}${stat("Certificates issued",nf.format((+L.certMonth)||0),"var(--jade)","Certificates issued this month")}${stat("Active learners",nf.format((+L.active)||0),"var(--slate)","Learners who accessed the LMS in the last 30 days")}</div>`;
         const cmax=Math.max(1,...courses.map(c=>c[1]));
-        const courseBlock=courses.length?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:8px">Courses enrolled this month</div>${courses.map(([nm,n])=>`<div class="src"><label style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</label><div class="sb"><div style="width:${n/cmax*100}%"></div></div><b>${nf.format(n)}</b></div>`).join("")}`:`<p style="color:var(--muted);font-size:12.5px;margin:0">No new course enrolments this month.</p>`;
+        const courseBlock=courses.length?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin:22px 0 10px;padding-top:16px;border-top:1px solid var(--line)">Courses enrolled this month</div>${courses.map(([nm,n])=>`<div class="src"><label style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</label><div class="sb"><div style="width:${n/cmax*100}%"></div></div><b>${nf.format(n)}</b></div>`).join("")}`:`<p style="color:var(--muted);font-size:12.5px;margin:0">No new course enrolments this month.</p>`;
         return `<div class="card"><div class="chead"><div><h4>Learning · eLearning platform</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">This ${esc(L.monthLabel||"month")}${L.enrolledAll!=null?" · "+nf.format(L.enrolledAll)+" enrolled all-time":""}</p></div><span class="chip slate">Live</span></div>${stats}${courseBlock}</div>`;
       }
 
