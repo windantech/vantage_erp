@@ -671,16 +671,21 @@ try {
       }
 
       function actionsCard(){
-        const w=orgStats().worst;
-        const list=[
-          ["red","Recover "+(w?esc(w.name):"the weakest SBU"),"Require a quantified seven-day recovery forecast and a named opportunity list.","Today"],
-          ["amber","Unblock strategic accounts","Use executive access, pricing, partnerships or internal coordination to move high-value deals.","Today"],
-          ["blue","Audit HOD forecasts","Every SBU forecast must be supported by stage, value, probability, owner and next action.","Before weekly review"],
-          ["green","Protect balanced performance","Strong results in one SBU must not hide serious underperformance elsewhere.","Ongoing"]
-        ];
+        // Generated from the live data: real SBU gaps, collection, staff, commission and escalations.
+        const s=orgStats();const per=period();const need=per.elapsed/per.working;
+        const behind=liveSbus().filter(d=>(+d.attn)<need).sort((a,b)=>((+a.attn)||0)-((+b.attn)||0));
+        const alertN=(B.alerts||[]).reduce((a,x)=>a+((+x.n)||0),0);
+        const list=[];
+        behind.slice(0,2).forEach(d=>list.push(["red","Recover "+d.name+" — "+pct((+d.attn)||0,0)+" attained","Weakest SBU under pace. Require a 7-day recovery forecast and a named opportunity list from "+(d.leader||"the HOD")+".","Today"]));
+        if((+B.collection)<0.7) list.push(["amber","Lift collections — "+pct(B.collection,0)+" collected","A large expected pipeline is still uncollected; chase outstanding fees to convert it.","This week"]);
+        if(s.below80>0) list.push(["amber","Support "+s.below80+" staff below 80%","of "+s.total+" BDEs are under target — coach the recoverable ones, reassign or replace the rest.","This week"]);
+        if(s.commNow>0) list.push(["blue","Clear "+kMoney(s.commNow)+" commission owed","Pending + approved marketer commission is due — approve for payroll.","Before payroll"]);
+        if(alertN>0) list.push(["blue",alertN+" WhatsApp chats awaiting reply","Escalated conversations across the SBUs need a human response.","Today"]);
+        if(behind.length===0) list.push(["green","Protect balanced performance","Every SBU is at or above required pace — protect collections, quality and stretch.","Ongoing"]);
+        if(list.length===0) list.push(["green","No critical interventions","The organization is on pace with collections and staffing healthy.","—"]);
         const riskLabel={red:"Critical",amber:"High",blue:"Watch",green:"Positive"};
         const riskChip={red:"coral",amber:"amber",blue:"slate",green:"jade"};
-        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip coral">Interventions</span></div><div class="list">${list.map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip ${list.some(x=>x[0]==="red")?"coral":"slate"}">Interventions</span></div><div class="list">${list.slice(0,6).map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
       }
       function decisionsCard(){
         // Executive-decision tracking isn't captured in the CRM yet — no fabricated items.
