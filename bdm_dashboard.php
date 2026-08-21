@@ -24,6 +24,7 @@ if ($bdm_is_admin) { $bdm_id = isset($_GET['as']) ? (int) $_GET['as'] : 127; }
 $bdm_from = date('Y-m-01');
 $bdm_to   = date('Y-m-d');
 $bdm = bdm_rollup($conn, $bdm_from, $bdm_to, $bdm_id);
+$bdm_series = bde_daily_series($bdm['daily'] ?? [], $bdm_to);   // real month-to-date daily cleared KES
 
 // Admin "view as" roster for the BDM page: the super-user plus the BDM (Michael).
 $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM']];
@@ -251,6 +252,10 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           ["Every forecast is evidence-based","No HOD forecast without stage, value, probability, owner and a dated next action."],
           ["Lead by intervention, not observation","Move blocked high-value deals and correct weak SBUs before month-end, not after."]
         ],
+        dailyCum:<?php echo json_encode($bdm_series['cum'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        dailyAmt:<?php echo json_encode($bdm_series['amt'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        dailyDates:<?php echo json_encode($bdm_series['dates'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        daysInMonth:<?php echo (int) $bdm_series['dim']; ?>, dayToday:<?php echo (int) $bdm_series['dom']; ?>,
         sbus:<?php echo json_encode($bdm['sbus'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>
       };
       const periods=[{label:<?php echo json_encode(date('F Y', strtotime($bdm_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($bdm_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($bdm_to)), (int) date('t', strtotime($bdm_to)))); ?>}];
@@ -333,19 +338,24 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
       }
 
       function trendSVG(){
-        const target=B.target,actual=B.actual,forecast=B.forecast;const p=period();const frac=p.elapsed/p.working;const N=9;
-        const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);pts.push(x<=frac?actual*(x/Math.max(.01,frac)):actual+(forecast-actual)*((x-frac)/Math.max(.01,1-frac)));}
-        const max=Math.max(target,forecast,...pts)*1.1;const w=560,h=200,pd=30;
-        const P=pts.map((v,i)=>[pd+i*(w-2*pd)/(N-1),h-pd-v/max*(h-2*pd)]);
-        const line=P.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
-        const area=`M${P[0][0]},${h-pd} `+P.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${P[N-1][0]},${h-pd} Z`;
-        const ty=h-pd-target/max*(h-2*pd);const tx=pd+frac*(w-2*pd);
-        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
+        // Real month-to-date consolidated cleared revenue, day-by-day from actual payments across the SBUs.
+        const series=(B.dailyCum&&B.dailyCum.length)?B.dailyCum:[0];
+        const dim=Math.max(2,B.daysInMonth||30);const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
+        const target=B.target||0;const cur=series[series.length-1]||0;const w=560,h=200,pd=34;
+        const max=Math.max(target,cur,...series,1)*1.12;
+        const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);const Y=v=>h-pd-(v/max)*(h-2*pd);
+        const A=series.map((v,i)=>[X(i+1),Y(v)]);
+        const aLine=A.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
+        const aArea=`M${A[0][0].toFixed(1)},${(h-pd).toFixed(1)} `+A.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${A[A.length-1][0].toFixed(1)},${(h-pd).toFixed(1)} Z`;
+        const ty=Y(target),tx=X(dayT);
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Month-to-date cleared revenue vs target">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
           <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
-          <path class="area" d="${area}"/><path class="line" d="${line}"/>${P.map(q=>`<circle class="dot" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5"/>`).join("")}
-          <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
+          <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
+          ${A.map((q,i)=>{const dAmt=(B.dailyAmt&&B.dailyAmt[i])||0;const dLbl=(B.dailyDates&&B.dailyDates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="10" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
+          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+10,Y(cur)-9).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
+          <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (day ${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
 
       // The same forecast chart as the consolidated one, parameterised for a single SBU's numbers.
