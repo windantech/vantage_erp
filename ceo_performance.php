@@ -94,7 +94,8 @@ try {
         if (empty($row['punch_time'])) { continue; }
         $key = !empty($row['staff_id']) ? 'S' . $row['staff_id'] : 'N' . (string) ($row['full_name'] ?? '');
         $t = strtotime($row['punch_time']);
-        $name = trim((string) ($row['full_name'] ?? '')) !== '' ? (string) $row['full_name'] : 'Unmapped device user';
+        $devId = ($row['staff_id'] !== null && (string) $row['staff_id'] !== '') ? (string) $row['staff_id'] : '?';
+        $name = trim((string) ($row['full_name'] ?? '')) !== '' ? (string) $row['full_name'] : ('Unmapped device #' . $devId);
         if (!isset($byp[$key])) { $byp[$key] = ['name'=>$name, 'in'=>$t, 'out'=>$t]; }
         else { if ($t < $byp[$key]['in']) { $byp[$key]['in'] = $t; } if ($t > $byp[$key]['out']) { $byp[$key]['out'] = $t; } }
     }
