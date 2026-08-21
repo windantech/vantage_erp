@@ -1333,6 +1333,22 @@ try {
         root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();else if(m==="waescal")showWaEscal();}));
         const fySel=el("finYear");if(fySel)fySel.addEventListener("change",e=>{state.finYear=e.target.value;render();});
         root.querySelectorAll("[data-fincur]").forEach(x=>x.addEventListener("click",()=>{state.finCur=x.getAttribute("data-fincur");render();}));
+        try{history.replaceState(null,"","#"+navHash());}catch(e){}
+      }
+      const CEO_VIEWS=["command","people","pipeline","hr","finance","admin","reports"];
+      function navHash(){
+        if(state.role==="bdm")return "bdm";
+        if(state.role==="bdo")return "bdo-"+state.dept;
+        if(state.role==="bde")return "bde-"+state.dept+"-"+state.emp;
+        return state.view;
+      }
+      function applyHash(){
+        const h=(location.hash||"").replace(/^#/,"");
+        if(!h)return;
+        if(h==="bdm"){state.role="bdm";}
+        else if(/^bdo-\d+$/.test(h)){state.role="bdo";state.dept=+h.split("-")[1]||0;}
+        else if(/^bde-\d+-\d+$/.test(h)){const a=h.split("-");state.role="bde";state.dept=+a[1]||0;state.emp=+a[2]||0;}
+        else if(CEO_VIEWS.indexOf(h)>=0){state.role="ceo";state.view=h;}
       }
       function bindReport(){
         el("genReport").addEventListener("click",genReport);
@@ -1357,7 +1373,9 @@ try {
       root.querySelectorAll("#tabNav .tab[data-v]").forEach(a=>a.addEventListener("click",()=>{state.view=a.dataset.v;render();}));
       el("themeBtn").addEventListener("click",()=>{const dark=root.classList.toggle("theme-dark");el("themeBtn").textContent=dark?"☀ Light":"🌙 Dark";});
       el("opsModal").addEventListener("click",e=>{ if(e.target.id==="opsModal" || (e.target.closest && e.target.closest("[data-close]"))) closeOpsModal(); });
+      window.addEventListener("hashchange",()=>{applyHash();render();});
 
+      applyHash();
       render();
     })();
     </script>
