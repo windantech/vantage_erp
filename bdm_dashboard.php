@@ -25,6 +25,12 @@ $bdm_from = date('Y-m-01');
 $bdm_to   = date('Y-m-d');
 $bdm = bdm_rollup($conn, $bdm_from, $bdm_to, $bdm_id);
 $bdm_series = bde_daily_series($bdm['daily'] ?? [], $bdm_to);   // real month-to-date daily cleared KES
+if (!empty($bdm['sbus']) && is_array($bdm['sbus'])) {
+    foreach ($bdm['sbus'] as $i => $sb) {
+        $ser = bde_daily_series(($sb['daily'] ?? []), $bdm_to);
+        $bdm['sbus'][$i]['cum'] = $ser['cum']; $bdm['sbus'][$i]['amt'] = $ser['amt']; $bdm['sbus'][$i]['dates'] = $ser['dates'];
+    }
+}
 
 // Admin "view as" roster for the BDM page: the super-user plus the BDM (Michael).
 $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM']];
@@ -377,10 +383,31 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
           <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
       // One forecast card per SBU (same look as the consolidated chart), laid out two-up.
+      // Per-SBU chart: real month-to-date daily cleared KES for revenue SBUs; synthetic pace for
+      // International (client-based) or when there's no daily data.
+      function sbuTrend(d){
+        if(!(d.kes&&d.cum&&d.cum.length)) return trendSVGFor(d.target,d.actual,d.forecast,d.kes);
+        const series=d.cum;const dim=Math.max(2,B.daysInMonth||30);const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
+        const target=d.target||0;const cur=series[series.length-1]||0;const w=520,h=188,pd=28;
+        const max=Math.max(target,cur,...series,1)*1.12;
+        const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);const Y=v=>h-pd-(v/max)*(h-2*pd);
+        const A=series.map((v,i)=>[X(i+1),Y(v)]);
+        const aLine=A.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
+        const aArea=`M${A[0][0].toFixed(1)},${(h-pd).toFixed(1)} `+A.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${A[A.length-1][0].toFixed(1)},${(h-pd).toFixed(1)} Z`;
+        const ty=Y(target),tx=X(dayT);
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" style="height:188px" role="img" aria-label="Month-to-date cleared revenue vs target">
+          ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
+          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
+          <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
+          <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
+          ${A.map((q,i)=>{const dAmt=(d.amt&&d.amt[i])||0;const dLbl=(d.dates&&d.dates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.4" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="9" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
+          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+9,Y(cur)-8).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
+          <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
+      }
       function sbuForecasts(){
         const live=liveSbus();
         if(!live.length) return `<p style="color:var(--muted);font-size:12.5px">No SBUs to chart yet.</p>`;
-        const cards=live.map(d=>{const fore=d.forecast||0;const att=(+d.attn)||0;const chip=att>=1?"jade":att>=.7?"amber":"coral";const foreLab=d.kes?kMoney(fore):nf.format(Math.round(fore))+" clients";return `<div class="card"><div class="chead"><div><h4>${esc(d.name)}</h4><p style="font-size:11px;color:var(--muted);margin:2px 0 0">${esc(d.leader||"")}</p></div><span class="chip ${chip}">${foreLab} forecast</span></div>${trendSVGFor(d.target,d.actual,fore,d.kes)}<div style="font-size:11.5px;color:var(--muted);margin-top:8px">${sbuActual(d)} of ${sbuTarget(d)} · ${pct(att,0)} to target</div></div>`;}).join("");
+        const cards=live.map(d=>{const fore=d.forecast||0;const att=(+d.attn)||0;const chip=att>=1?"jade":att>=.7?"amber":"coral";const foreLab=d.kes?kMoney(fore):nf.format(Math.round(fore))+" clients";return `<div class="card"><div class="chead"><div><h4>${esc(d.name)}</h4><p style="font-size:11px;color:var(--muted);margin:2px 0 0">${esc(d.leader||"")}</p></div><span class="chip ${chip}">${foreLab} forecast</span></div>${sbuTrend(d)}<div style="font-size:11.5px;color:var(--muted);margin-top:8px">${sbuActual(d)} of ${sbuTarget(d)} · ${pct(att,0)} to target</div></div>`;}).join("");
         return `<section class="grid-2">${cards}</section>`;
       }
 

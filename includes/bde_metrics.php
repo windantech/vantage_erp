@@ -1018,7 +1018,7 @@ if (!function_exists('bdo_rollup')) {
                 'pipeline' => (float) ($r['pipeline'] ?? 0), 'collection' => (float) ($r['collection'] ?? 0),
                 'attn' => $tgt > 0 ? $act / $tgt : 0.0, 'metric' => (string) ($r['metric'] ?? 'revenue'),
                 'kes' => !$isClient, 'clients' => (int) ($r['clients'] ?? 0), 'members' => (int) ($r['members'] ?? 0),
-                'reps' => $reps];
+                'reps' => $reps, 'daily' => ($r['daily'] ?? [])];
             $out['sbus'][] = $sbu;
 
             if ($isClient) {
