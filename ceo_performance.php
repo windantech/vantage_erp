@@ -965,10 +965,10 @@ try {
       function vPeople(){
         const people=allPeople();
         const leaders=people.filter(p=>p.role==="BDO").sort((a,b)=>rAttn(b)-rAttn(a));
-        const lead=leaders.map((p,i)=>{const a=rAttn(p);const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer;background:${avCols[i%avCols.length]}">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.sbu)}</span></div></div></td><td><span class="chip slate">${p.role}</span></td><td class="num">${repTarget(p)}</td><td class="num">${repActual(p)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
+        const lead=leaders.map((p,i)=>{const a=rAttn(p);const pc=paceOf(p);return `<tr><td class="num">${i+1}</td><td><div class="prow"><span class="a" data-scope="${p.key}" style="cursor:pointer;background:${avCols[i%avCols.length]}">${esc(p.ini)}</span><div><b><span data-scope="${p.key}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(p.name)}</span></b><span>${esc(p.role)}</span></div></div></td><td>${esc(p.sbu)}</td><td class="num">${repTarget(p)}</td><td class="num">${repActual(p)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(p.pipeline)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("");
         return `
           <div class="section-tag"><h3>Leadership scorecard</h3><span>Department heads (BDOs), ranked by attainment — click anyone to open their view</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Role</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>#</th><th>Person</th><th>Department</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${lead}</tbody></table></div></div>
           <div class="section-tag"><h3>Org-wide staff ranking</h3><span>Every executive scored — click a name to open their view; top and bottom highlighted</span><div class="rule"></div></div>
           ${staffRanking()}`;
       }
@@ -994,7 +994,7 @@ try {
             <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(p.ini)}</span><div><b>${esc(p.name)}</b><span>${p.role} · ${esc(p.sbu)}</span></div></div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
-              ${dashLink?`<a class="tbtn" href="${dashLink}" target="_blank" rel="noopener" style="white-space:nowrap">Open dashboard ↗</a>`:""}
+              ${dashLink?`<a class="tbtn solid" href="${dashLink}" target="_blank" rel="noopener" style="white-space:nowrap;box-shadow:0 4px 16px -3px rgba(236,110,45,.6)">View full dashboard ↗</a>`:""}
             </div>
           </div>
           ${kpiRow}
@@ -1016,7 +1016,7 @@ try {
           <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(ini)}</span><div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>
           <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
-            ${link?`<a class="tbtn" href="${link}" target="_blank" rel="noopener" style="white-space:nowrap">Open dashboard ↗</a>`:""}
+            ${link?`<a class="tbtn solid" href="${link}" target="_blank" rel="noopener" style="white-space:nowrap;box-shadow:0 4px 16px -3px rgba(236,110,45,.6)">View full dashboard ↗</a>`:""}
           </div>
         </div>`;
       }
