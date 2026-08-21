@@ -1171,12 +1171,12 @@ try {
         // ---- KPI row ----
         const kIco={rev:'<svg viewBox="0 0 24 24"><path d="M3 7l3-3h12l3 3v12H3z"/><path d="M3 7h18"/><path d="M15 12h3"/></svg>',virt:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>',intl:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>',txn:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>'};
         const kpi=(l,v,m,a,ic)=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a};background:var(--surface3)">${ic}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
-        const kpiRowRev=`<div class="kpis4">
+        const kpiRowRev=`<div class="card" style="padding:14px"><div class="kpis4">
           ${kpi("Total Revenue",fmoneyFull(r.total),esc(yrLabel),"var(--brand)",kIco.rev)}
           ${kpi("Virtual (Courses)",fmoneyFull(r.v),pctOf(r.v,r.total)+"% of total","var(--jade)",kIco.virt)}
           ${kpi("International (Events)",fmoneyFull(r.i),pctOf(r.i,r.total)+"% of total","var(--slate)",kIco.intl)}
           ${kpi("Total Transactions",nf.format(r.vn+r.ic),"V: "+nf.format(r.vn)+" &nbsp;|&nbsp; I: "+nf.format(r.ic),"var(--gold)",kIco.txn)}
-        </div>`;
+        </div></div>`;
         // ---- distribution donut + monthly trend ----
         const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
         const dlegend=(r.total>0?[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]):[]).map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${s[2]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${s[0]}</span><b class="num" style="font-size:12.5px">${fmoney(s[1])}</b><span style="font-size:11px;color:var(--muted);width:38px;text-align:right">${pctOf(s[1],r.total)}%</span></div>`).join("")||'<p style="color:var(--muted);font-size:12.5px;margin:0">No revenue.</p>';
