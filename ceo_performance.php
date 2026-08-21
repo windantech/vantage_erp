@@ -40,7 +40,7 @@ if ($mconn) {
         FROM mdl_user_enrolments ue JOIN mdl_enrol e ON e.id = ue.enrolid JOIN mdl_course c ON c.id = e.courseid
         JOIN mdl_user u ON u.id = ue.userid
         WHERE c.id > 1 AND u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU
-        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 8");
+        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 5");
     while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $courses[] = [(string) $cr['nm'], (int) $cr['n']]; }
     if ($enrMonth !== null || $certMonth !== null || !empty($courses)) {
         $lms = ['enrMonth' => $enrMonth, 'certMonth' => $certMonth, 'active' => $active, 'enrolledAll' => $enrolled,
@@ -794,7 +794,7 @@ try {
         const subHead2=subHead+';margin-top:18px;padding-top:16px;border-top:1px solid var(--line)';
         const g='grid-template-columns:132px 1fr auto';
         return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Where the cleared revenue and paying clients came from this period</p></div></div>
-          <div style="${subHead}">Cleared revenue share</div>${lines.map(([n,v,c])=>`<div class="src" style="${g}"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${kMoney(v)} · ${pct(v/total,0)}</b></div>`).join("")}
+          <div style="${subHead}">Cleared revenue share</div>${lines.map(([n,v,c])=>`<div class="src" style="${g}"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}
           <div style="${subHead2}">Paid clients by SBU</div>${cli.map(([n,v,c])=>`<div class="src" style="${g}"><label>${esc(n)}</label><div class="sb"><div style="width:${v/cliMax*100}%;background:${c}"></div></div><b>${nf.format(v)}</b></div>`).join("")}
           <div style="font-size:11px;color:var(--muted);margin-top:12px">International contributes clients, not KES, so it's excluded from the revenue split.</div></div>`;
       }
