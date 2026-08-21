@@ -787,14 +787,18 @@ try {
       function productMix(){
         const cols=["#4d8bd6","var(--jade)","var(--brand)","var(--violet)","var(--gold)","var(--slate)"];
         const live=liveSbus();
-        const lines=live.map((d,i)=>[d.name,(d.kes?d.actual:(d.kesActual||0)),cols[i%cols.length]]);
-        const total=lines.reduce((a,l)=>a+l[1],0)||1;
-        const cli=live.map((d,i)=>[d.name,(+d.clients)||0,cols[i%cols.length]]);const cliMax=Math.max(1,...cli.map(c=>c[1]));const cliTotal=cli.reduce((a,l)=>a+l[1],0);
-        const subHead='font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin:0 0 8px';
-        return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Where the cleared revenue and paying clients came from this period</p></div></div>
-          <div style="${subHead}">Cleared revenue share</div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}
-          <div style="${subHead}">Paid clients by SBU</div>${cli.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/cliMax*100}%;background:${c}"></div></div><b>${nf.format(v)}</b></div>`).join("")}
-          <div style="font-size:11px;color:var(--muted);margin-top:10px">International contributes clients, not KES, so it's excluded from the revenue split.</div></div>`;
+        const revTot=live.reduce((a,d)=>a+(d.kes?d.actual:(d.kesActual||0)),0)||1;
+        const rows=live.map((d,i)=>{const c=cols[i%cols.length];const rev=d.kes?d.actual:(d.kesActual||0);const share=rev/revTot;const cl=(+d.clients)||0;
+          return `<div style="padding:12px 0;border-bottom:1px solid var(--line)">`
+            +`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">`
+              +`<span style="display:flex;align-items:center;gap:8px;min-width:0"><span style="flex:0 0 auto;width:9px;height:9px;border-radius:3px;background:${c}"></span><b style="font-size:13px">${esc(d.name)}</b><span style="color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${esc(d.leader)}</span></span>`
+              +`<span class="chip slate" style="flex:0 0 auto">${nf.format(cl)} client${cl===1?"":"s"}</span>`
+            +`</div>`
+            +`<div style="display:flex;align-items:center;gap:10px">`
+              +`<div class="sb" style="flex:1"><div style="width:${clamp(share*100,0,100)}%;background:${c}"></div></div>`
+              +`<b class="num" style="flex:0 0 auto;font-size:12px">${kMoney(rev)} · ${pct(share,0)}</b></div>`
+          +`</div>`;}).join("");
+        return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Cleared revenue (the bar) and paying clients (the chip) per SBU, this period</p></div></div>${rows}<div style="font-size:11px;color:var(--muted);margin-top:12px">International is client-based, so its revenue bar reflects only its small event KES.</div></div>`;
       }
       function learnerJourney(){
         const L=B.lms||{};const courses=L.courses||[];
