@@ -697,9 +697,32 @@ try {
         if(alertN>0) list.push(["blue",alertN+" WhatsApp chats awaiting reply","Escalated conversations across the SBUs need a human response.","Today","waescal"]);
         if(behind.length===0) list.push(["green","Protect balanced performance","Every SBU is at or above required pace — protect collections, quality and stretch.","Ongoing"]);
         if(list.length===0) list.push(["green","No critical interventions","The organization is on pace with collections and staffing healthy.","—"]);
+        return actionsRender(list,"Interventions");
+      }
+      function actionsRender(list,chip){
         const riskLabel={red:"Critical",amber:"High",blue:"Watch",green:"Positive"};
         const riskChip={red:"coral",amber:"amber",blue:"slate",green:"jade"};
-        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip ${list.some(x=>x[0]==="red")?"coral":"slate"}">Interventions</span></div><div class="list">${list.slice(0,6).map(([c,b,p,d,mk])=>`<div class="arow"${mk?` data-modal="${mk}" style="cursor:pointer"`:""}><span class="pd ${c}"></span><div><b>${esc(b)}${mk?' <span style="color:var(--brand);font-weight:800">→</span>':''}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip ${list.some(x=>x[0]==="red")?"coral":"slate"}">${esc(chip||"Focus")}</span></div><div class="list">${list.slice(0,6).map(([c,b,p,d,mk])=>`<div class="arow"${mk?` data-modal="${mk}" style="cursor:pointer"`:""}><span class="pd ${c}"></span><div><b>${esc(b)}${mk?' <span style="color:var(--brand);font-weight:800">→</span>':''}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
+      }
+      // Department-scoped interventions for a single SBU drill (not the org-wide card).
+      function deptActionsCard(d){
+        const per=period();const need=per.elapsed/per.working;const attn=(+d.attn)||0;const reps=d.reps||[];
+        const low=reps.filter(r=>rAttn(r)<.8).sort((a,b)=>rAttn(a)-rAttn(b));
+        const list=[];
+        if(attn<need) list.push(["red","Recover "+d.name+" — "+pct(attn,0)+" attained","Behind required pace. Agree a quantified 7-day recovery plan with "+(d.leader||"the HOD")+".","Today"]);
+        if(low.length) list.push(["amber","Support "+low.length+" of "+reps.length+" below 80%",(low.slice(0,3).map(r=>r.name).join(", "))+(low.length>3?" and others":"")+" — coach the recoverable, reassign the rest.","This week"]);
+        if((+d.collection)<0.7) list.push(["amber","Lift "+d.name+" collections — "+pct(d.collection,0),"Chase committed fees and convert them into cleared revenue.","This week"]);
+        if(!list.length) list.push(["green",d.name+" is on track","At or above pace with staffing healthy — protect quality and collections.","Ongoing"]);
+        return actionsRender(list,"Department focus");
+      }
+      // Person-scoped priorities for a single BDE drill.
+      function repActionsCard(r){
+        const attn=rAttn(r);const list=[];
+        if(attn<.8) list.push(["red","Close the gap — "+pct(attn,0)+" of target","Behind target. Work the nearest-to-pay opportunities and clear outstanding fees.","Today"]);
+        else if(attn<1) list.push(["amber","Push to 100% — "+pct(attn,0),"Above 80% — a final push and disciplined collection secures the month.","This week"]);
+        else list.push(["green","On/above target — "+pct(attn,0),"Protect collections and pursue a stretch target.","Ongoing"]);
+        if((+r.collection)<0.7) list.push(["amber","Collections at "+pct(r.collection,0),"Follow up committed payments and convert them.","This week"]);
+        return actionsRender(list,"Today's priorities");
       }
       function decisionsCard(){
         // Executive-decision tracking isn't captured in the CRM yet — no fabricated items.
@@ -1025,7 +1048,7 @@ try {
         return roleBanner(pInitials(d.leader),d.leader,"BDO · "+d.name+" department",pc)
           +kpiRow(kpis)
           +`<div class="section-tag"><h3>Team performance</h3><span>Executives in ${esc(d.name)} — click to open a person</span><div class="rule"></div></div>${repsTable(d,si)}`
-          +`<div class="section-tag"><h3>Where to focus today</h3><span>Department interventions</span><div class="rule"></div></div>${actionsCard()}`;
+          +`<div class="section-tag"><h3>Where to focus today</h3><span>${esc(d.name)} interventions</span><div class="rule"></div></div>${deptActionsCard(d)}`;
       }
       function viewBDE(){
         const d=B.sbus[state.dept]||B.sbus[0];const reps=d.reps||[];
@@ -1041,7 +1064,7 @@ try {
         ];
         return roleBanner(pInitials(r.name),r.name,(r.title||"BDE")+" · "+d.name,pc)
           +kpiRow(kpis)
-          +`<div class="section-tag"><h3>Today's priorities</h3><span>The nearest commercial next steps</span><div class="rule"></div></div>${actionsCard()}`
+          +`<div class="section-tag"><h3>Today's priorities</h3><span>For ${esc(r.name)}</span><div class="rule"></div></div>${repActionsCard(r)}`
           +`<div class="card" style="margin-top:2px"><div class="chead"><h4>Notes</h4><span class="chip slate">Prototype</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Field activity, deals and the daily report for ${esc(r.name)} appear here once live data is wired. Figures shown are scoped from the organization dataset.</p></div>`;
       }
       function roleView(){return state.role==="bdm"?viewBDM():state.role==="bdo"?viewBDO():viewBDE();}
