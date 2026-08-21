@@ -1174,9 +1174,9 @@ try {
         const yopts=['<option value="" disabled hidden'+(isYearScope?"":" selected")+'>By year…</option>',
           '<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>']
           .concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
-        const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:2px">
+        const controls=`<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:0 0 2px">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;box-shadow:var(--shadow-sm)">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 9px;box-shadow:var(--shadow-sm)">
             <div class="curtoggle"><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button></div>
             <select id="finMonth" class="finsel">${monthOpts}</select>
             <select id="finYear" class="finsel">${yopts}</select>
@@ -1188,7 +1188,7 @@ try {
           ${kpi("Total Revenue",fmoneyFull(r.total),esc(yrLabel),"var(--brand)",kIco.rev)}
           ${kpi("Virtual (Courses)",fmoneyFull(r.v),pctOf(r.v,r.total)+"% of total","var(--jade)",kIco.virt)}
           ${kpi("International (Events)",fmoneyFull(r.i),pctOf(r.i,r.total)+"% of total","var(--slate)",kIco.intl)}
-          ${kpi("Total Transactions",nf.format(r.vn+r.ic),"V: "+nf.format(r.vn)+" &nbsp;|&nbsp; I: "+nf.format(r.ic),"var(--gold)",kIco.txn)}
+          ${kpi("Total Transactions",nf.format(r.vn+r.ic),"Successful payments","var(--gold)",kIco.txn)}
         </div></div>`;
         // ---- distribution donut + monthly trend ----
         const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
