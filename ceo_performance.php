@@ -1280,7 +1280,7 @@ try {
         const agg={};let tot=0;((FIN.expenses.rows)||[]).filter(finMatch).forEach(x=>{if(!agg[x.name])agg[x.name]={name:x.name,count:0,amount:0};agg[x.name].count+=(x.count||0);agg[x.name].amount+=x.amount;tot+=x.amount;});
         const list=Object.values(agg).sort((a,b)=>b.amount-a.amount);
         const rows=list.length?list.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${fmoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses in this period.</td></tr>';
-        openOpsModal("Expenses by category · "+esc(lbl)+" · "+fmoney(tot),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+        openOpsModal("Expenses by category · "+esc(lbl)+" · "+fmoney(tot),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Entries</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showRequests(){
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
