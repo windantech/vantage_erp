@@ -31,10 +31,24 @@ if ($mconn) {
     // funnel all-time & monotonic (Enrolled → Completed); Active (30d) is a separate engagement stat.
     $done = ($completed !== null && $completed > 0) ? $completed : $certified;
     $doneLabel = ($completed !== null && $completed > 0) ? 'Completed' : 'Certified / completed';
+    // this-month activity (matches the dashboard's month filter), shown as a sub-line under the funnel
+    $fromU = "UNIX_TIMESTAMP('" . mysqli_real_escape_string($mconn, $ceo_from) . " 00:00:00')";
+    $toU   = "UNIX_TIMESTAMP('" . mysqli_real_escape_string($mconn, $ceo_to) . " 23:59:59')";
+    $enrMonth  = $mq("SELECT COUNT(DISTINCT ue.userid) FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU");
+    $compMonth = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_course_completions WHERE timecompleted BETWEEN $fromU AND $toU");
+    $certMonth = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_customcert_issues WHERE timecreated BETWEEN $fromU AND $toU");
+    $doneMonth = ($compMonth !== null && $compMonth > 0) ? $compMonth : $certMonth;
+    // top courses by enrolment (all-time) — course names from the LMS
+    $courses = [];
+    $cq = @mysqli_query($mconn, "SELECT c.fullname nm, COUNT(DISTINCT ue.userid) n
+        FROM mdl_user_enrolments ue JOIN mdl_enrol e ON e.id = ue.enrolid JOIN mdl_course c ON c.id = e.courseid
+        WHERE c.id > 1 GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 6");
+    while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $courses[] = [(string) $cr['nm'], (int) $cr['n']]; }
     $stages = [];
     if ($enrolled !== null) { $stages[] = ['Enrolled', $enrolled]; }
     if ($done !== null) { $stages[] = [$doneLabel, min((int) $done, (int) ($enrolled ?? $done))]; }
-    if (!empty($stages)) { $lms = ['stages' => $stages, 'active' => $active, 'enrolled' => $enrolled, 'completed' => $done, 'doneLabel' => $doneLabel]; }
+    if (!empty($stages)) { $lms = ['stages' => $stages, 'active' => $active, 'enrolled' => $enrolled, 'completed' => $done, 'doneLabel' => $doneLabel,
+        'enrMonth' => $enrMonth, 'doneMonth' => $doneMonth, 'monthLabel' => date('F', strtotime($ceo_to)), 'courses' => $courses]; }
     @mysqli_close($mconn);
 }
 
@@ -784,8 +798,12 @@ try {
         if(!stages.length) return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip slate">LMS</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Live learner-journey data from the eLearning platform isn't reachable right now.</p></div>`;
         const dropped=Math.max(0,stages[0][1]-stages[stages.length-1][1]);const max=Math.max(1,stages[0][1]);
         const active=(+L.active)||0;const enr=stages[0][1]||0;
-        const activeLine=(L.active!=null)?`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>Active in the last 30 days</span><b class="num" style="color:var(--ink)">${nf.format(active)}${enr?` · ${Math.round(active/Math.max(1,enr)*100)}% of enrolled`:""}</b></div>`:"";
-        return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip coral">${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,stages[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div>${activeLine}<div style="font-size:11px;color:var(--muted);margin-top:8px">Live from the eLearning platform. ${stages.length&&stages[stages.length-1][0].indexOf("Certified")===0?"Course-completion tracking is off in Moodle, so certificates issued are used as the completion signal.":""}</div></div>`;
+        const rowL='display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--muted);padding:6px 0';
+        const monthLine=(L.enrMonth!=null||L.doneMonth!=null)?`<div style="${rowL};border-top:1px solid var(--line);margin-top:10px;padding-top:10px"><span>This ${esc(L.monthLabel||"month")}</span><b class="num" style="color:var(--ink)">${nf.format((+L.enrMonth)||0)} new · ${nf.format((+L.doneMonth)||0)} completed</b></div>`:"";
+        const activeLine=(L.active!=null)?`<div style="${rowL}"><span>Active in the last 30 days</span><b class="num" style="color:var(--ink)">${nf.format(active)}${enr?` · ${Math.round(active/Math.max(1,enr)*100)}% of enrolled`:""}</b></div>`:"";
+        const courses=L.courses||[];const cmax=Math.max(1,...courses.map(c=>c[1]));
+        const courseBlock=courses.length?`<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:8px">Top courses by enrolment</div>${courses.map(([nm,n])=>`<div class="src"><label style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</label><div class="sb"><div style="width:${n/cmax*100}%"></div></div><b>${nf.format(n)}</b></div>`).join("")}</div>`:"";
+        return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip slate">Lifetime · ${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,stages[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div>${monthLine}${activeLine}${courseBlock}<div style="font-size:11px;color:var(--muted);margin-top:10px">Lifetime cohort from the eLearning platform. ${stages.length&&stages[stages.length-1][0].indexOf("Certified")===0?"Course-completion tracking is off in Moodle, so certificates issued are used as the completion signal.":""}</div></div>`;
       }
 
       function vCommand(){
