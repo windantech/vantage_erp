@@ -1291,7 +1291,7 @@ try {
         const n=labels.length,gw=iw/n,ns=series.length,bw=Math.max(12,Math.min(56,(gw*0.72)/ns));
         let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="${g===4?1.5:1}"/><text x="${padL-10}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:12px;fill:var(--muted);font-weight:600">${fmt(val)}</text>`;}
         let hiband="";
-        if(hi!=null&&hi>=0&&hi<labels.length){const hx=padL+gw*hi;hiband=`<rect x="${hx.toFixed(1)}" y="${padT.toFixed(1)}" width="${gw.toFixed(1)}" height="${ih.toFixed(1)}" fill="var(--brand)" opacity=".08" rx="4"/>`;}
+        if(hi!=null&&hi>=0&&hi<labels.length){const hx=padL+gw*hi;hiband=`<rect x="${hx.toFixed(1)}" y="${padT.toFixed(1)}" width="${gw.toFixed(1)}" height="${ih.toFixed(1)}" fill="var(--brand)" opacity=".045" rx="4"/>`;}
         let bars="",xl="";
         labels.forEach((lab,i)=>{const cx=padL+gw*i+gw/2,groupW=bw*ns;const cur=(i===hi);
           series.forEach((s,si)=>{const v=Math.max(0,s.vals[i]||0),x=cx-groupW/2+si*bw,h=(v/niceMax)*ih,y=padT+ih-h,bx=x+(bw-4)/2;
@@ -1307,9 +1307,8 @@ try {
         const vm=V.months||[],im=I.months||[],cm=C.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
         const cur=vm.length-1;const ytd=vm.length?vm[0].label+"–"+vm[vm.length-1].label:"YTD";
         const chart=(title,chip,series,vals,fmt,legend,empty,hi)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt,empty,hi)}</div>`;
-        const p0=v=>pct(v,0);
         const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]),"No enquiries this year.",cur);
-        const vConv=chart("Virtual · conversion rate","",[{name:"Paid ÷ enquiries",color:"var(--violet)",vals:vm.map(m=>m.enq>0?m.cli/m.enq:0)}],vm.map(m=>m.label),p0,repLegend([{name:"Paid clients ÷ enquiries",color:"var(--violet)"}]),"No enquiries to convert this year.",cur);
+        const vRev=chart("Virtual · fee collected","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads this year.",cur);
         const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
@@ -1322,7 +1321,7 @@ try {
             <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
           </div><div class="rule" style="margin:0 0 4px"></div>
           <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment, Jan–${vm.length?vm[vm.length-1].label:"now"}</span><div class="rule"></div></div>
-          <section class="grid-2">${vEnq}${vConv}</section>
+          <section class="grid-2">${vEnq}${vRev}</section>
           <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees (this year) &amp; geographic spread (all-time)</span><div class="rule"></div></div>
           <section class="grid-2">${iEnq}${iMon}</section>
           <section class="grid-2">${iRev}${iBal}</section>
