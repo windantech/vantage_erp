@@ -63,6 +63,7 @@ require_once __DIR__ . '/includes/wa_voice.php';         // wa_voice_e164()
 require_once __DIR__ . '/includes/wa_voice_secrets.php';
 require_once __DIR__ . '/includes/wa_voice_api_lib.php';
 require_once __DIR__ . '/includes/wa_voice_context.php';
+require_once __DIR__ . '/includes/wa_voice_calls.php';   // Phase 2.2 call memory
 
 // =====================================================================
 // Output
@@ -145,11 +146,16 @@ if (strpos($ctype, 'application/json') !== 0) {
 // Size cap, checked twice: the declared length first so an oversized body is
 // refused before it is read, then the bytes actually read, because Content-Length
 // is a claim and not a fact.
-if ((int)($server['CONTENT_LENGTH'] ?? 0) > WA_VOICE_MAX_BODY) {
+// Reads are capped at 16 KB. A completed call carries a summary and a
+// programme list, so the write action gets 32 KB — and not a byte more, because
+// the only thing a larger body could contain is something this endpoint has no
+// field for.
+$bodyCap = WA_VOICE_WRITE_MAX_BODY;
+if ((int)($server['CONTENT_LENGTH'] ?? 0) > $bodyCap) {
     wa_voice_fail(413, 'request_too_large');
 }
-$rawBody = (string)file_get_contents('php://input', false, null, 0, WA_VOICE_MAX_BODY + 1);
-if (strlen($rawBody) > WA_VOICE_MAX_BODY) {
+$rawBody = (string)file_get_contents('php://input', false, null, 0, $bodyCap + 1);
+if (strlen($rawBody) > $bodyCap) {
     wa_voice_fail(413, 'request_too_large');
 }
 
@@ -339,6 +345,99 @@ try {
                                 'truncated' => !empty($result['truncated']) ? '1' : '0']);
             wa_voice_gc($conn, $now);
             wa_voice_out(200, $result);
+            break;
+
+        // ---- 4. Record a completed call --------------------------------
+        // The ONLY write action. It writes to the three Phase 2.2 tables and
+        // nothing else: a confirmed interest change is queued as a pending
+        // action for the privileged cron, never applied here. The database
+        // account this endpoint connects as could not apply it if the code
+        // tried — it holds no write on wa_conversations at all.
+        case 'complete_call':
+            if (!wa_voice_calls_schema_available($conn)) {
+                wa_voice_log('schema_unavailable', ['key' => $keyId, 'action' => $action]);
+                wa_voice_fail(503, 'schema_unavailable');
+            }
+
+            $valid = wa_voice_validate_call($payload, $now);
+            if (empty($valid['ok'])) {
+                wa_voice_log('bad_request', ['key' => $keyId, 'action' => $action,
+                                             'call' => $callId, 'why' => $valid['error']]);
+                wa_voice_fail(400, 'bad_request');
+            }
+            $data = $valid['data'];
+
+            // Match the caller through the same normaliser every other action
+            // uses. No match is normal: the call is recorded with contact_id
+            // NULL. A wa_contacts row is NEVER created here — a person who has
+            // never sent a WhatsApp message does not belong in the triage pool,
+            // the inbox counts or a broadcast audience.
+            $phoneIn = $payload['phone'] ?? '';
+            $e164 = (is_string($phoneIn) || is_int($phoneIn)) ? wa_voice_e164((string)$phoneIn) : '';
+            $contact = $e164 !== '' ? wa_voice_contact_by_e164($conn, $e164) : null;
+            $data['contact_id'] = $contact ? (int)$contact['id'] : null;
+            $data['caller_masked'] = wa_voice_mask_phone($e164);
+
+            $conv = $data['contact_id'] ? wa_voice_conversation($conn, $data['contact_id']) : null;
+            $data['conversation_id'] = $conv ? (int)$conv['id'] : null;
+
+            // Drop any programme reference that does not resolve to a live
+            // record. A summary naming a course that no longer exists is worth
+            // keeping; a ROW pointing at one is a dangling reference the thread
+            // card would have to apologise for.
+            $kept = [];
+            foreach ($data['programmes'] as $p) {
+                if (wa_voice_ref_name_active($conn, $p['ref_type'], $p['ref_id']) !== '') {
+                    $kept[] = $p;
+                }
+            }
+            $data['programmes'] = $kept;
+
+            // An interest action needs a matched contact, a surviving reference,
+            // and the in-call confirmation. Any one missing and the interest is
+            // recorded as discussed only.
+            $data['interest_action'] = null;
+            if ($data['confirmed_interest'] && $data['contact_id']) {
+                $ci = $data['confirmed_interest'];
+                $stillValid = false;
+                foreach ($kept as $p) {
+                    if ($p['ref_type'] === $ci['to_ref_type']
+                        && (int)$p['ref_id'] === (int)$ci['to_ref_id']
+                        && $p['relation'] === 'confirmed_interest') { $stillValid = true; break; }
+                }
+                if ($stillValid) {
+                    $data['interest_action'] = [
+                        'contact_id'      => $data['contact_id'],
+                        'conversation_id' => $data['conversation_id'],
+                        'from_ref_type'   => $conv ? (string)($conv['ref_type'] ?? 'unknown') : null,
+                        'from_ref_id'     => $conv ? (int)($conv['ref_id'] ?? 0) : null,
+                        'to_ref_type'     => $ci['to_ref_type'],
+                        'to_ref_id'       => (int)$ci['to_ref_id'],
+                        // One action per call, whatever happens upstream.
+                        'idempotency_key' => 'call:' . $data['call_id'],
+                    ];
+                }
+            }
+
+            $written = wa_voice_call_record($conn, $data);
+            if ($written['status'] === 'error') {
+                wa_voice_log('crm_unavailable', ['key' => $keyId, 'action' => $action,
+                                                 'call' => $callId, 'why' => 'write']);
+                wa_voice_fail(503, 'crm_unavailable');
+            }
+
+            wa_voice_log('ok', ['key' => $keyId, 'action' => $action, 'call' => $callId,
+                                'to' => $data['caller_masked'],
+                                'result' => $written['status'],
+                                'matched' => $data['contact_id'] ? '1' : '0',
+                                'queued' => !empty($written['action_queued']) ? '1' : '0']);
+            wa_voice_gc($conn, $now);
+            wa_voice_out(200, [
+                'ok'            => true,
+                'status'        => $written['status'],      // created | duplicate
+                'matched'       => (bool)$data['contact_id'],
+                'action_queued' => (bool)$written['action_queued'],
+            ]);
             break;
 
         default:

@@ -560,6 +560,163 @@ function wa_voice_shape_details(array $in, $maxChars = null) {
     return $out;
 }
 
+// =====================================================================
+// Phase 2.2 — completed-call payload
+// =====================================================================
+
+if (!defined('WA_VOICE_WRITE_MAX_BODY')) { define('WA_VOICE_WRITE_MAX_BODY', 32 * 1024); }
+
+/** The outcomes a call can end in. */
+function wa_voice_outcomes() { return ['completed', 'transferred', 'disconnected', 'failed']; }
+
+/** How a summary came to exist. */
+function wa_voice_summary_sources() { return ['model', 'fallback', 'none']; }
+
+/** How a programme relates to a call. */
+function wa_voice_relations() { return ['discussed', 'previous_interest', 'confirmed_interest']; }
+
+/** Follow-up urgency. */
+function wa_voice_priorities() { return ['low', 'normal', 'high']; }
+
+/** A unix timestamp we are willing to treat as a call time. Pure. */
+function wa_voice_clean_epoch($v, $now, $slackFuture = 3600, $slackPast = 172800) {
+    if (is_string($v) && preg_match('/^[0-9]{1,12}$/', $v)) { $v = (int)$v; }
+    if (!is_int($v) || $v <= 0) { return 0; }
+    if ($v > (int)$now + $slackFuture) { return 0; }        // a call cannot end tomorrow
+    if ($v < (int)$now - $slackPast)   { return 0; }        // nor two days ago via a spool
+    return $v;
+}
+
+/**
+ * Validate and cap a complete_call payload. PURE — no database, no clock beyond
+ * the $now handed in, so every branch is reachable from a test.
+ *
+ * Over-length text is TRUNCATED rather than rejected. Losing the whole record of
+ * a conversation because a summary ran forty characters long is the wrong
+ * failure; the cap exists to bound what is stored, not to police the caller.
+ *
+ * Structure, by contrast, is rejected outright. An unknown outcome, a
+ * non-integer id or a free-text programme reference means the sender and this
+ * endpoint disagree about the contract, and guessing which of them is right is
+ * how a call gets filed against the wrong course.
+ *
+ * @return array {ok, data|error}
+ */
+function wa_voice_validate_call($payload, $now) {
+    $fail = function ($why) { return ['ok' => false, 'error' => $why]; };
+
+    if (!is_array($payload)) { return $fail('not_object'); }
+
+    $callId = $payload['call_id'] ?? '';
+    if (!is_string($callId) || !preg_match('/^[A-Za-z0-9._:-]{8,128}$/', $callId)) {
+        return $fail('call_id');
+    }
+
+    $startedAt = wa_voice_clean_epoch($payload['started_at'] ?? 0, $now);
+    if ($startedAt === 0) { return $fail('started_at'); }
+
+    $endedAt = wa_voice_clean_epoch($payload['ended_at'] ?? 0, $now);
+    if ($endedAt !== 0 && $endedAt < $startedAt) { $endedAt = 0; }
+
+    $duration = null;
+    if ($endedAt !== 0) {
+        $duration = min(86400, max(0, $endedAt - $startedAt));
+    }
+
+    $outcome = $payload['outcome'] ?? '';
+    if (!in_array($outcome, wa_voice_outcomes(), true)) { return $fail('outcome'); }
+
+    $source = $payload['summary_source'] ?? 'none';
+    if (!in_array($source, wa_voice_summary_sources(), true)) { return $fail('summary_source'); }
+
+    $followUp = is_array($payload['follow_up'] ?? null) ? $payload['follow_up'] : [];
+    $priority = $followUp['priority'] ?? 'normal';
+    if (!in_array($priority, wa_voice_priorities(), true)) { return $fail('follow_up_priority'); }
+
+    $callbackAt = wa_voice_clean_epoch($followUp['callback_at'] ?? 0, $now, 90 * 86400, 0);
+
+    $transfer = is_array($payload['transfer'] ?? null) ? $payload['transfer'] : [];
+
+    // ---- programmes ---------------------------------------------------------
+    $programmes = [];
+    $seen = [];
+    $raw = is_array($payload['programmes'] ?? null) ? $payload['programmes'] : [];
+    foreach ($raw as $item) {
+        if (count($programmes) >= WA_VOICE_PROGRAMME_MAX) { break; }
+        if (!is_array($item)) { continue; }
+        $type = $item['type'] ?? '';
+        if (!wa_voice_valid_ref_type($type)) { return $fail('programme_type'); }
+        $id = wa_voice_clean_id($item['id'] ?? 0);
+        if ($id < 1) { return $fail('programme_id'); }
+        $relation = $item['relation'] ?? 'discussed';
+        if (!in_array($relation, wa_voice_relations(), true)) { return $fail('programme_relation'); }
+        $key = $type . ':' . $id . ':' . $relation;
+        if (isset($seen[$key])) { continue; }
+        $seen[$key] = true;
+        $programmes[] = ['ref_type' => $type, 'ref_id' => $id, 'relation' => $relation];
+    }
+
+    // ---- the confirmed interest --------------------------------------------
+    // Two independent things must both be true, and the second cannot be
+    // produced by a summariser: the payload names a reference, AND the in-call
+    // confirmation state machine recorded that the caller plainly agreed. A
+    // model that decides on its own that somebody changed their mind gets as far
+    // as `confirmed` and no further.
+    $interest = null;
+    $ci = is_array($payload['confirmed_interest'] ?? null) ? $payload['confirmed_interest'] : null;
+    if ($ci !== null) {
+        $type = $ci['type'] ?? '';
+        $id   = wa_voice_clean_id($ci['id'] ?? 0);
+        $recorded = ($ci['confirmation_recorded'] ?? false) === true;
+        if (!wa_voice_valid_ref_type($type) || $id < 1) { return $fail('confirmed_interest_ref'); }
+        if ($recorded) {
+            // It must also appear as a programme this call actually handled. The
+            // endpoint cannot see what a lookup returned mid-call, so this is the
+            // strongest cross-check available server-side: a reference that was
+            // never discussed cannot have been confirmed.
+            $present = false;
+            foreach ($programmes as $p) {
+                if ($p['ref_type'] === $type && (int)$p['ref_id'] === $id) { $present = true; break; }
+            }
+            if ($present) {
+                $interest = ['to_ref_type' => $type, 'to_ref_id' => $id];
+                if (!isset($seen[$type . ':' . $id . ':confirmed_interest'])
+                    && count($programmes) < WA_VOICE_PROGRAMME_MAX) {
+                    $programmes[] = ['ref_type' => $type, 'ref_id' => $id,
+                                     'relation' => 'confirmed_interest'];
+                }
+            }
+        }
+    }
+
+    $text = function ($v, $max) {
+        $s = wa_voice_flatten($v, $max);
+        return $s === '' ? null : $s;
+    };
+
+    return ['ok' => true, 'data' => [
+        'call_id'               => $callId,
+        'started_at'            => gmdate('Y-m-d H:i:s', $startedAt),
+        'started_epoch'         => $startedAt,
+        'ended_at'              => $endedAt ? gmdate('Y-m-d H:i:s', $endedAt) : null,
+        'duration_seconds'      => $duration,
+        'outcome'               => $outcome,
+        'summary'               => $text($payload['summary'] ?? '', WA_VOICE_SUMMARY_MAX),
+        'questions_answered'    => $text($payload['questions_answered'] ?? '', WA_VOICE_FIELD_MAX),
+        'unresolved_questions'  => $text($payload['unresolved_questions'] ?? '', WA_VOICE_FIELD_MAX),
+        'objections_or_concerns' => $text($payload['objections_or_concerns'] ?? '', WA_VOICE_FIELD_MAX),
+        'requested_next_step'   => $text($payload['requested_next_step'] ?? '', WA_VOICE_STEP_MAX),
+        'follow_up_required'    => !empty($followUp['required']) ? 1 : 0,
+        'follow_up_priority'    => $priority,
+        'requested_callback_at' => $callbackAt ? gmdate('Y-m-d H:i:s', $callbackAt) : null,
+        'transfer_requested'    => !empty($transfer['requested']) ? 1 : 0,
+        'transfer_completed'    => !empty($transfer['completed']) ? 1 : 0,
+        'summary_source'        => $source,
+        'programmes'            => $programmes,
+        'confirmed_interest'    => $interest,
+    ]];
+}
+
 /**
  * Score active programmes against free text.
  *
