@@ -271,7 +271,7 @@ try {
         (SELECT COUNT(*) FROM `register` r WHERE r.intake_id=i.intake_id) registered,
         (SELECT COUNT(DISTINCT r2.entry_id) FROM `register` r2 JOIN `dpo_payment` d ON d.app_id=r2.entry_id AND d.status=2 WHERE r2.intake_id=i.intake_id) paying
       FROM `intake` i LEFT JOIN `course` c ON i.course_id=c.course_id LEFT JOIN `registered_users` ru ON i.assigned_to=ru.id
-      WHERE i.status=1 AND i.start_date >= '$monthStart' ORDER BY i.start_date DESC LIMIT 40");
+      WHERE i.status=1 ORDER BY i.start_date DESC LIMIT 40");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         $configured = ((int) $row['minimum_clients'] > 0 && (float) $row['commission_rate'] > 0);
         $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_date']) ? date('M j, Y', strtotime((string) $row['start_date'])) : '', 'ts' => !empty($row['start_date']) ? (int) strtotime((string) $row['start_date']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
@@ -1251,14 +1251,14 @@ try {
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
-        const intakeRows=A.intakes.length?A.intakes.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(it=>`<tr><td><b>${esc(it.name)}</b></td><td class="num">${esc(it.date||'—')}</td><td>${esc(it.assignee||'—')}</td><td class="num">${nf.format(it.registered)}</td><td class="num">${nf.format(it.paying)}</td><td>${stateChip(it.state)}</td></tr>`).join(""):`<tr><td colspan="6" style="text-align:center;color:var(--muted)">No new intakes started in ${esc(A.monthLabel||'this month')}.</td></tr>`;
+        const intakeRows=A.intakes.length?A.intakes.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(it=>`<tr><td><b>${esc(it.name)}</b></td><td class="num">${esc(it.date||'—')}</td><td>${esc(it.assignee||'—')}</td><td class="num">${nf.format(it.registered)}</td><td class="num">${nf.format(it.paying)}</td><td>${stateChip(it.state)}</td></tr>`).join(""):'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No open intakes enrolling right now.</td></tr>';
         const ml=esc(A.monthLabel||'this month');
         return `
           <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests and course intakes — ${ml}</span><div class="rule"></div></div>
           <section class="grid-2">${pendCard}${reqDonut}</section>
           <div class="section-tag"><h3>Requests</h3><span>${ml} · open queue on top</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
-          <div class="section-tag"><h3>Course intake assignments</h3><span>Virtual intakes starting in ${ml}</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Course intake assignments</h3><span>Open virtual intakes still enrolling · newest start first</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Intake</th><th>Starts</th><th>Assignee</th><th>Registered</th><th>Paying</th><th>Setup</th></tr></thead><tbody>${intakeRows}</tbody></table></div></div>`;
       }
 
