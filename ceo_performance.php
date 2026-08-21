@@ -1261,19 +1261,18 @@ try {
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
         const abi=A.assignById||{};
-        const prodName=n=>{let s=String(n||"");s=s.replace(/\([^)]*\)/g,"");s=s.split(/\s+in\s+/i)[0];s=s.replace(/\b(Training|Course|Programme|Program|Services|Development Program)\b[\s\S]*$/i,"$1");return s.trim().replace(/[\s,–—-]+$/,"");};
-        const asgBody=(B.sbus||[]).filter(s=>!s.placeholder).map(s=>{
-          const reps=(s.reps||[]).filter(r=>r.id&&!r.manager);
+        const asgCols=["var(--brand)","var(--jade)","var(--violet)","var(--gold)","var(--slate)","#2f8f88"];
+        const asgBody=(B.sbus||[]).filter(s=>!s.placeholder).map((s,si)=>{
+          const reps=(s.reps||[]).filter(r=>r.id&&!r.manager).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
           if(!reps.length)return "";
-          const mem=reps.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(r=>{
+          const acc=asgCols[si%asgCols.length];
+          const cards=reps.map(r=>{
             const items=abi[r.id]||[];
-            const byP={};items.forEach(it=>{const p=prodName(it)||it;byP[p]=(byP[p]||0)+1;});
-            const prods=Object.keys(byP).sort();
-            const cell=prods.length?prods.map(p=>`<span style="display:inline-block;margin:2px 0"><span style="color:var(--ink)">${esc(p)}</span>${byP[p]>1?` <span style="color:var(--muted);font-weight:700">×${byP[p]}</span>`:""}</span>`).join('<span style="color:var(--line)"> &nbsp;·&nbsp; </span>'):'<span style="color:var(--muted)">No active assignment</span>';
-            return `<tr><td style="vertical-align:top;white-space:nowrap;padding-right:20px"><b>${esc(r.name)}</b>${items.length?`<div style="font-size:10.5px;color:var(--muted);font-weight:700;margin-top:2px">${items.length} session${items.length===1?"":"s"}</div>`:""}</td><td style="font-size:12.5px;line-height:1.8">${cell}</td></tr>`;
+            const list=items.length?items.map(it=>`<div style="font-size:12px;color:var(--ink);padding:5px 0;border-top:1px solid var(--line);line-height:1.45">${esc(it)}</div>`).join(""):'<div style="font-size:12px;color:var(--muted);padding:6px 0;border-top:1px solid var(--line)">No active assignment</div>';
+            return `<div class="card" style="--acc:${acc};padding:13px 15px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px"><b style="font-size:13.5px">${esc(r.name)}</b><span class="chip slate" style="flex:0 0 auto">${nf.format(items.length)}</span></div>${list}</div>`;
           }).join("");
-          return `<tr><td colspan="2" style="background:var(--surface2);font-weight:800;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${esc(s.name)} · ${reps.length} ${reps.length===1?'person':'people'}</td></tr>${mem}`;
-        }).filter(Boolean).join("")||'<tr><td colspan="2" style="text-align:center;color:var(--muted)">No team assignments.</td></tr>';
+          return `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:${acc};margin:16px 2px 9px;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:2px;background:${acc}"></span>${esc(s.name)} · ${reps.length} ${reps.length===1?'person':'people'}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">${cards}</div>`;
+        }).filter(Boolean).join("")||'<p style="color:var(--muted);font-size:12.5px;text-align:center;padding:20px">No team assignments.</p>';
         const ml=esc(A.monthLabel||'this month');
         return `
           <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests and course intakes — ${ml}</span><div class="rule"></div></div>
@@ -1281,7 +1280,7 @@ try {
           <div class="section-tag"><h3>Requests</h3><span>${ml} · open queue on top</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
           <div class="section-tag"><h3>Team assignments</h3><span>Each BDE and their active courses / upcoming events, by department</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Team member</th><th>Assigned to</th></tr></thead><tbody>${asgBody}</tbody></table></div></div>`;
+          ${asgBody}`;
       }
 
       /* ---------- detail modals (attendance clock-ins, payroll payslips) ---------- */
