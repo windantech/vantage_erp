@@ -123,6 +123,30 @@ if (!function_exists('bde_daily_revenue')) {
         }
         return $out;
     }
+
+    /** Sum daily cleared revenue (KES) across many people → ['Y-m-d' => kes]. */
+    function bde_daily_revenue_multi($conn, $ids, $from, $to)
+    {
+        $out = [];
+        foreach ((array) $ids as $id) {
+            foreach (bde_daily_revenue($conn, (int) $id, $from, $to) as $d => $amt) { $out[$d] = ($out[$d] ?? 0) + $amt; }
+        }
+        return $out;
+    }
+
+    /** Turn a daily map into month-to-date series for the chart: cumulative, per-day, labels, day counts. */
+    function bde_daily_series($daily, $to)
+    {
+        $ref = strtotime($to); $pMonth = (int) date('n', $ref); $pYear = (int) date('Y', $ref);
+        $dim = (int) date('t', $ref); $dom = min((int) date('j', $ref), $dim);
+        $cum = []; $amt = []; $dates = []; $run = 0.0;
+        for ($d = 1; $d <= max(1, $dom); $d++) {
+            $dt = sprintf('%04d-%02d-%02d', $pYear, $pMonth, $d);
+            $day = (float) ($daily[$dt] ?? 0); $run += $day;
+            $amt[] = round($day); $cum[] = round($run); $dates[] = date('M j', mktime(0, 0, 0, $pMonth, $d, $pYear));
+        }
+        return ['cum' => $cum, 'amt' => $amt, 'dates' => $dates, 'dim' => $dim, 'dom' => max(1, $dom)];
+    }
 }
 
 if (!function_exists('bde_fetch_metrics')) {
@@ -896,6 +920,7 @@ if (!function_exists('bdo_rollup')) {
         $out['actual'] = $out['metric'] === 'participants' ? (float) $deptClients : $deptRevenue;
         $out['clearedKes'] = $deptRevenue;   // dept cleared revenue in KES, always (even for client-based depts)
         $out['collectedUsd'] = $collN; $out['expectedUsd'] = $collD;   // raw collected/expected, for a true org roll-up
+        $out['daily'] = bde_daily_revenue_multi($conn, $bdeIds, $from, $to);   // real month-to-date daily cleared KES
         $out['clients'] = $deptClients;
         $out['pipeline'] = $deptPipe;
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
@@ -960,7 +985,7 @@ if (!function_exists('bdo_rollup')) {
         $rate = bde_usd_to_kes($conn);
         $working = (int) date('t', strtotime($to));
         $elapsed = max(1, min((int) date('j', strtotime($to)), $working));
-        $srcAgg = []; $leads = 0; $paid = 0; $collN = 0.0; $collD = 0.0;
+        $srcAgg = []; $leads = 0; $paid = 0; $collN = 0.0; $collD = 0.0; $dailyAgg = [];
 
         foreach ($sbuDefs as $sd) {
             if (!empty($sd['placeholder']) || (int) $sd['bdoId'] <= 0) {
@@ -1010,7 +1035,9 @@ if (!function_exists('bdo_rollup')) {
             foreach (($r['sources'] ?? []) as $s) { if (is_array($s) && count($s) >= 2) { $srcAgg[(string) $s[0]] = ($srcAgg[(string) $s[0]] ?? 0) + (int) $s[1]; } }
             foreach (($r['deptAlerts'] ?? []) as $al) { $al['sbu'] = $sd['name']; $out['alerts'][] = $al; }
             foreach (($r['crossSbu'] ?? []) as $x) { $out['crossSbu'][] = $x; }
+            foreach (($r['daily'] ?? []) as $d => $amt) { $dailyAgg[$d] = ($dailyAgg[$d] ?? 0) + $amt; }
         }
+        $out['daily'] = $dailyAgg;
 
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
         $out['totalLeads'] = $leads; $out['clients'] = $paid;

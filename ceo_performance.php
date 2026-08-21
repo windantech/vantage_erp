@@ -16,6 +16,7 @@ if (function_exists('mysqli_report')) { @mysqli_report(MYSQLI_REPORT_OFF); }
 $ceo_from = date('Y-m-01');
 $ceo_to   = date('Y-m-d');
 $ceo = bdm_rollup($conn, $ceo_from, $ceo_to);
+$ceo_series = bde_daily_series($ceo['daily'] ?? [], $ceo_to);   // real month-to-date daily cleared KES
 
 // ---- Learner journey: real counts from the Moodle LMS (separate DB vantage_elearning, mdl_ tables). ----
 $lms = null;
@@ -555,6 +556,10 @@ try {
         alerts:<?php echo json_encode($ceo['alerts'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         crossSbu:<?php echo json_encode($ceo['crossSbu'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
         lms:<?php echo json_encode($lms, JSON_INVALID_UTF8_SUBSTITUTE) ?: 'null'; ?>,
+        dailyCum:<?php echo json_encode($ceo_series['cum'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        dailyAmt:<?php echo json_encode($ceo_series['amt'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        dailyDates:<?php echo json_encode($ceo_series['dates'], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>,
+        daysInMonth:<?php echo (int) $ceo_series['dim']; ?>, dayToday:<?php echo (int) $ceo_series['dom']; ?>,
         dailyRhythm:[
           ["8:00–8:30","Review consolidated revenue, the weakest SBU, strategic accounts, RFPs, collections and overdue actions."],
           ["8:30–9:00","Set the day's SBU recovery, strategic-account and personal-revenue outcomes."],
@@ -658,19 +663,24 @@ try {
       }
 
       function trendSVG(){
-        const target=B.target,actual=B.actual,forecast=B.forecast;const p=period();const frac=p.elapsed/p.working;const N=9;
-        const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);pts.push(x<=frac?actual*(x/Math.max(.01,frac)):actual+(forecast-actual)*((x-frac)/Math.max(.01,1-frac)));}
-        const max=Math.max(target,forecast,...pts)*1.1;const w=560,h=200,pd=30;
-        const P=pts.map((v,i)=>[pd+i*(w-2*pd)/(N-1),h-pd-v/max*(h-2*pd)]);
-        const line=P.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
-        const area=`M${P[0][0]},${h-pd} `+P.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${P[N-1][0]},${h-pd} Z`;
-        const ty=h-pd-target/max*(h-2*pd);const tx=pd+frac*(w-2*pd);
-        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Revenue pace and forecast">
+        // Real month-to-date cleared revenue, built day-by-day from actual payments (hover a day for its amount).
+        const series=(B.dailyCum&&B.dailyCum.length)?B.dailyCum:[0];
+        const dim=Math.max(2,B.daysInMonth||30);const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
+        const target=B.target||0;const cur=series[series.length-1]||0;const w=560,h=200,pd=34;
+        const max=Math.max(target,cur,...series,1)*1.12;
+        const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);const Y=v=>h-pd-(v/max)*(h-2*pd);
+        const A=series.map((v,i)=>[X(i+1),Y(v)]);
+        const aLine=A.map((q,i)=>(i?"L":"M")+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ");
+        const aArea=`M${A[0][0].toFixed(1)},${(h-pd).toFixed(1)} `+A.map(q=>"L"+q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")+` L${A[A.length-1][0].toFixed(1)},${(h-pd).toFixed(1)} Z`;
+        const ty=Y(target),tx=X(dayT);
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Month-to-date cleared revenue vs target">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
           <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
-          <path class="area" d="${area}"/><path class="line" d="${line}"/>${P.map(q=>`<circle class="dot" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5"/>`).join("")}
-          <text x="${pd}" y="${h-8}">Start</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
+          <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
+          ${A.map((q,i)=>{const dAmt=(B.dailyAmt&&B.dailyAmt[i])||0;const dLbl=(B.dailyDates&&B.dailyDates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="10" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
+          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4.5" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+10,Y(cur)-9).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
+          <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (day ${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
 
       function actionsCard(){
@@ -780,7 +790,7 @@ try {
           +`<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</div><div style="font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(sub)}</div><div style="height:4px;border-radius:99px;background:var(--surface3);margin-top:6px;overflow:hidden"><div style="width:${clamp(a*100,3,100)}%;height:100%;background:${c}"></div></div></div>`
           +`<b class="num" style="flex:0 0 auto;font-size:13.5px;color:${c}">${pct(a,0)}</b></div>`;};
         const sbuList=behind.length?behind.map((d,i)=>icItem(d.name,d.leader,(+d.attn)||0,avPal[i%avPal.length])).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">Every SBU is at or above required pace.</div>`;
-        const pplList=lowPeople.length?lowPeople.map((p)=>icItem(p.name,p.sbu,rAttn(p),avColor(p.name)))).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">No staff below 80% of target.</div>`;
+        const pplList=lowPeople.length?lowPeople.map((p)=>icItem(p.name,p.sbu,rAttn(p),avColor(p.name))).join(""):`<div style="color:var(--muted);font-size:12.5px;padding:10px 0">No staff below 80% of target.</div>`;
         const head='display:flex;align-items:center;gap:7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:10px';
         return `<div class="card"><div class="chead"><h4>Intervention Centre</h4><span class="chip coral">What needs you</span></div>
           <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">${ans.map(([l,v,sub,a])=>`<div style="background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${a};border-radius:11px;padding:14px 16px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">${l}</span><b class="num" style="display:block;font-size:19px;margin:6px 0 3px;color:var(--ink);line-height:1.15">${v}</b><div style="font-size:11px;color:var(--muted)">${sub}</div></div>`).join("")}</div>
