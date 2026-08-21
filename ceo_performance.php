@@ -1227,11 +1227,12 @@ try {
         const alerts=(B.alerts||[]);
         const total=alerts.reduce((a,x)=>a+((+x.n)||0),0);
         if(!alerts.length){openOpsModal("WhatsApp chats awaiting reply",`<p style="color:var(--muted);padding:14px">No unread escalated chats across the SBUs right now.</p>`);return;}
+        const avPal=["var(--slate)","var(--violet)","#2f8f88","var(--brand)","var(--gold)","#4d8bd6","var(--coral)"];let ai=0;
         const bySbu={};alerts.forEach(a=>{const s=a.sbu||"—";(bySbu[s]=bySbu[s]||[]).push(a);});
         const order=Object.keys(bySbu).sort((a,b)=>bySbu[b].reduce((s,x)=>s+((+x.n)||0),0)-bySbu[a].reduce((s,x)=>s+((+x.n)||0),0));
         const body=order.map(sbu=>{const g=bySbu[sbu].slice().sort((a,b)=>((+b.n)||0)-((+a.n)||0));const sub=g.reduce((s,x)=>s+((+x.n)||0),0);
           return `<tr style="background:var(--surface2)"><td colspan="2"><b>${esc(sbu)}</b></td><td class="num"><b>${nf.format(sub)}</b></td></tr>`
-            +g.map(p=>`<tr><td style="width:26px"></td><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(p.name||"—"))}</span><div><b>${esc(p.name||"—")}</b></div></div></td><td class="num">${nf.format((+p.n)||0)}</td></tr>`).join("");
+            +g.map(p=>`<tr><td style="width:26px"></td><td><div class="prow"><span class="a" style="background:${avPal[ai++%avPal.length]}">${esc(pInitials(p.name||"—"))}</span><div><b>${esc(p.name||"—")}</b></div></div></td><td class="num">${nf.format((+p.n)||0)}</td></tr>`).join("");
         }).join("");
         openOpsModal("WhatsApp chats awaiting reply · "+nf.format(total)+" unread",`<div class="table-wrap"><table><thead><tr><th>SBU</th><th>Person</th><th>Unread</th></tr></thead><tbody>${body}</tbody></table></div><p style="font-size:11.5px;color:var(--muted);margin:12px 4px 0">Open WhatsApp conversations escalated to each person with an unanswered message.</p>`);
       }
