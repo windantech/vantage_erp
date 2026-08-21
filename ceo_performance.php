@@ -579,7 +579,7 @@ try {
         sbus:<?php echo json_encode($ceo['sbus'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>
       };
       const periods=[{label:<?php echo json_encode(date('F Y', strtotime($ceo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($ceo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($ceo_to)), (int) date('t', strtotime($ceo_to)))); ?>}];
-      const state={p:0,view:"command",role:"ceo",dept:0,emp:0,finYear:"month",finCur:"USD"};
+      const state={p:0,view:"command",role:"ceo",dept:0,emp:0,finYear:"month",finCur:"KES"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -1096,7 +1096,8 @@ try {
         const total=segments.reduce((a,s)=>a+s[1],0)||1;
         const cx=68,cy=68,R=52,sw=20,C=2*Math.PI*R;let off=0;
         const arcs=segments.map(s=>{const dash=s[1]/total*C;const el=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s[2]}" stroke-width="${sw}" stroke-dasharray="${dash.toFixed(2)} ${(C-dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="butt"/>`;off+=dash;return el;}).join("");
-        return `<svg viewBox="0 0 136 136" style="width:132px;height:132px;display:block">${arcs||`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--surface3)" stroke-width="${sw}"/>`}<text x="${cx}" y="${cy-1}" text-anchor="middle" style="font-size:32px;font-weight:850;fill:var(--ink)">${centerTop}</text><text x="${cx}" y="${cy+18}" text-anchor="middle" style="font-size:9.5px;fill:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:800">${centerBot}</text></svg>`;
+        const tS=String(centerTop).trim(),L=tS.length;const topFs=L<=3?30:L<=4?26:L<=5?22:L<=6?19:L<=7?17:15;
+        return `<svg viewBox="0 0 136 136" style="width:132px;height:132px;display:block">${arcs||`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--surface3)" stroke-width="${sw}"/>`}<text x="${cx}" y="${cy-1}" text-anchor="middle" style="font-size:${topFs}px;font-weight:850;fill:var(--ink)">${centerTop}</text><text x="${cx}" y="${cy+18}" text-anchor="middle" style="font-size:9.5px;fill:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:800">${centerBot}</text></svg>`;
       }
       function vHR(){
         const totalActive=HR.stats.active||HR.staff.length||0;
@@ -1127,7 +1128,7 @@ try {
       const pctOf=(a,b)=>b>0?Math.round(a/b*100):0;
       // aggregate the revenue series for the selected year
       function finNow(){const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1};}
-      function finMatch(x){const yr=state.finYear;if(yr==="all")return true;if(yr==="month"){const n=finNow();return +x.y===n.y&&+x.m===n.m;}return String(x.y)===String(yr);}
+      function finMatch(x){const yr=state.finYear;if(yr==="all")return true;if(yr==="month"){const n=finNow();return +x.y===n.y&&+x.m===n.m;}const mm=/^(\d{4})-(\d{2})$/.exec(yr);if(mm)return +x.y===+mm[1]&&+x.m===+mm[2];return String(x.y)===String(yr);}
       function revAgg(){
         const ms=FIN.rev.months.filter(finMatch);
         let v=0,i=0,c=0,vexp=0,iexp=0,vn=0,ic=0;
@@ -1161,15 +1162,25 @@ try {
         const F=FIN,exp=F.expenses,fee=F.fees,rem=F.remit,com=F.commission,pay=F.payroll,st=F.statutory,dis=F.disburse;
         const r=revAgg();
         const fn=finNow();
-        const yrLabel=state.finYear==="all"?"All time":state.finYear==="month"?(MON[fn.m-1]+" "+fn.y):state.finYear;
-        // ---- controls ----
-        const yopts=['<option value="month"'+(state.finYear==="month"?" selected":"")+'>This month</option>','<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
-        const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
+        const mm=/^(\d{4})-(\d{2})$/.exec(state.finYear);
+        const yrLabel=state.finYear==="all"?"All time":state.finYear==="month"?(MON[fn.m-1]+" "+fn.y):mm?(MON[+mm[2]-1]+" "+mm[1]):state.finYear;
+        // ---- controls: month picker (defaults to current) + year picker ----
+        const isMonthScope=state.finYear==="month"||!!mm;
+        const isYearScope=state.finYear==="all"||/^\d{4}$/.test(state.finYear);
+        const recent=(F.rev.months||[]).slice(-13).reverse().filter(m=>!(+m.y===fn.y&&+m.m===fn.m));
+        const monthOpts=['<option value="" disabled hidden'+(isMonthScope?"":" selected")+'>By month…</option>',
+          '<option value="month"'+(state.finYear==="month"?" selected":"")+'>This month · '+MON[fn.m-1]+' '+fn.y+'</option>']
+          .concat(recent.map(m=>{const tok=m.y+'-'+String(m.m).padStart(2,'0');return `<option value="${tok}"${state.finYear===tok?" selected":""}>${MON[m.m-1]} ${m.y}</option>`;})).join("");
+        const yopts=['<option value="" disabled hidden'+(isYearScope?"":" selected")+'>By year…</option>',
+          '<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>']
+          .concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
+        const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:2px">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <div class="curtoggle"><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button></div>
+            <select id="finMonth" class="finsel">${monthOpts}</select>
             <select id="finYear" class="finsel">${yopts}</select>
-          </div></div><div class="rule" style="margin:0 0 4px"></div>`;
+          </div></div><div class="rule" style="margin:0"></div>`;
         // ---- KPI row ----
         const kIco={rev:'<svg viewBox="0 0 24 24"><path d="M3 7l3-3h12l3 3v12H3z"/><path d="M3 7h18"/><path d="M15 12h3"/></svg>',virt:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>',intl:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>',txn:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>'};
         const kpi=(l,v,m,a,ic)=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a};background:var(--surface3)">${ic}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
@@ -1183,8 +1194,9 @@ try {
         const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
         const dlegend=(r.total>0?[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]):[]).map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${s[2]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${s[0]}</span><b class="num" style="font-size:12.5px">${fmoney(s[1])}</b><span style="font-size:11px;color:var(--muted);width:38px;text-align:right">${pctOf(s[1],r.total)}%</span></div>`).join("")||'<p style="color:var(--muted);font-size:12.5px;margin:0">No revenue.</p>';
         const distCard=`<div class="card"><div class="chead"><h4>Revenue distribution</h4><span class="chip slate">${esc(yrLabel)}</span></div><div style="display:flex;flex-direction:column;align-items:center;gap:14px"><div>${hrDonut(dsegs,fmoney(r.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" total")}</div><div style="width:100%">${dlegend}</div></div></div>`;
-        const trendMonths=state.finYear==="month"?FIN.rev.months.filter(m=>+m.y===fn.y):r.months;
-        const trendTag=state.finYear==="month"?`<span class="chip slate" style="margin-left:8px">${fn.y}</span>`:"";
+        const scopeYear=state.finYear==="month"?fn.y:(mm?+mm[1]:null);
+        const trendMonths=scopeYear?FIN.rev.months.filter(m=>+m.y===scopeYear):r.months;
+        const trendTag=scopeYear?`<span class="chip slate" style="margin-left:8px">${scopeYear}</span>`:"";
         const trendCard=`<div class="card"><div class="chead"><h4>Monthly revenue trend${trendTag}</h4><div style="display:flex;gap:14px;font-size:11px"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--jade);border-radius:2px"></span>Virtual</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--brand);border-radius:2px"></span>International</span></div></div>${revTrendSVG(trendMonths)}</div>`;
         // ---- top courses / events ----
         const tc=revTop(F.rev.courses,"name"),te=revTop(F.rev.events,"loc");
@@ -1342,6 +1354,7 @@ try {
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
         root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();else if(m==="waescal")showWaEscal();}));
         const fySel=el("finYear");if(fySel)fySel.addEventListener("change",e=>{state.finYear=e.target.value;render();});
+        const fmSel=el("finMonth");if(fmSel)fmSel.addEventListener("change",e=>{state.finYear=e.target.value;render();});
         root.querySelectorAll("[data-fincur]").forEach(x=>x.addEventListener("click",()=>{state.finCur=x.getAttribute("data-fincur");render();}));
         try{history.replaceState(null,"","#"+navHash());}catch(e){}
       }
