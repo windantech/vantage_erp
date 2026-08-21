@@ -87,6 +87,11 @@ class FakeDb {
     public $sql = [];              // every statement, in order
     public $rows = [];             // queued SELECT results
     public $failOn = null;         // substring: a statement to fail
+    public $throwOn = null;        // substring: a statement that THROWS, as
+                                   // mysqli does on PHP 8.1+ for a missing
+                                   // table. `@` suppresses warnings, not
+                                   // exceptions, which is the whole reason a
+                                   // missing table blanked the page.
     public $affected = 1;
     public $insertId = 101;
     public $began = 0;
@@ -119,6 +124,9 @@ class FakeStmt {
 
 function mysqli_prepare($db, $sql) {
     $db->sql[] = $sql;
+    if ($db->throwOn !== null && strpos($sql, $db->throwOn) !== false) {
+        throw new RuntimeException("Table 'x.wa_voice_calls' doesn't exist");
+    }
     if ($db->failOn !== null && strpos($sql, $db->failOn) !== false) { return false; }
     return new FakeStmt($db, $sql);
 }
@@ -647,6 +655,68 @@ ok('the visibility helper grants supervisors everything',
            'if ($isSupervisor) { return true; }') !== false);
 ok('the voice card has no visibility rule of its own to get wrong',
     strpos(code('wa_thread.php'), 'wa_voice_calls_for_contact($conn, (int)$conv[') !== false);
+
+// =====================================================================
+echo "\n-- the page survives the tables not existing --\n";
+
+// The bug this section exists for: Phase 2.2 was deployed before
+// db_schema/wa_voice_phase22.sql was run. wa_thread.php called
+// wa_voice_calls_for_contact(), mysqli threw on the missing table (the `@` in
+// wa_voice_stmt suppresses warnings, not exceptions), nothing caught it, and
+// every conversation rendered as a blank page with the sidebar already drawn.
+//
+// wa_voice_recent_summaries() was guarded and degraded correctly. The thread
+// card was not. The asymmetry is the whole lesson: a guard on one reader is not
+// a guard on the feature.
+
+// The tables are absent, so information_schema returns nothing AND any query
+// against them throws. Both are true on a server that has the code but not the
+// migration, and the second is what actually blanked the page.
+$absent = new FakeDb();
+$absent->rows = [];                                  // probe finds no TABLE_NAME rows
+$absent->throwOn = '`wa_voice_calls`';               // and querying them throws
+
+check('the schema probe reports the tables absent', false,
+    wa_voice_calls_schema_available($absent));
+
+// Each of these would have raised an uncaught exception before the guard, which
+// mid-page is a blank screen. Reaching the assertion at all IS the test.
+check('the thread card returns an empty list rather than throwing', [],
+    wa_voice_calls_for_contact($absent, 4821, 20));
+check('the programme lookup does the same', [],
+    wa_voice_programmes_for_calls($absent, [1, 2, 3]));
+check('the AI context reader was already safe', [],
+    wa_voice_recent_summaries($absent, 4821));
+
+// And prove the stub can bite: an UNGUARDED read against the same connection
+// must still throw, or the three checks above prove nothing.
+$threw = false;
+try {
+    wa_voice_calls_for_contact_unguarded($absent, 4821, 20);
+} catch (Throwable $e) {
+    $threw = true;
+}
+ok('the same query without the guard still throws, so the guard is what saved it',
+    $threw);
+
+// Source-level: EVERY reader a page render can reach must carry the guard, so
+// the next one added does not repeat this.
+$calls = code('includes/wa_voice_calls.php');
+foreach (['wa_voice_calls_for_contact', 'wa_voice_programmes_for_calls',
+          'wa_voice_recent_summaries'] as $reader) {
+    $start = strpos($calls, 'function ' . $reader . '(');
+    ok($reader . ' checks the schema before it queries',
+        $start !== false
+        && strpos($calls, 'wa_voice_calls_schema_available($conn)', $start) !== false
+        && strpos($calls, 'wa_voice_calls_schema_available($conn)', $start) - $start < 700);
+}
+
+ok('the thread card also catches anything the probe let through',
+    strpos($calls, "error_log('[wa-voice] thread card unavailable: '") !== false);
+
+// wa_thread.php must not assume the function exists either.
+ok('the thread guards on function_exists as well',
+    strpos(code('wa_thread.php'), "function_exists('wa_voice_calls_for_contact')") !== false);
 
 // =====================================================================
 printf("\n%d checks, %d failure%s\n", $checks, $failures, $failures === 1 ? '' : 's');
