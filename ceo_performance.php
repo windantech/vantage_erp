@@ -680,12 +680,12 @@ try {
         if((+B.collection)<0.7) list.push(["amber","Lift collections — "+pct(B.collection,0)+" collected","Follow up the fees clients committed to and convert those promises into cleared revenue — the fastest lift this month.","This week"]);
         if(s.below80>0) list.push(["amber","Support "+s.below80+" staff below 80%","of "+s.total+" BDEs are under target — coach the recoverable ones, reassign or replace the rest.","This week"]);
         if(s.commNow>0) list.push(["blue","Clear "+kMoney(s.commNow)+" commission owed","Pending + approved marketer commission is due — approve for payroll.","Before payroll"]);
-        if(alertN>0) list.push(["blue",alertN+" WhatsApp chats awaiting reply","Escalated conversations across the SBUs need a human response.","Today"]);
+        if(alertN>0) list.push(["blue",alertN+" WhatsApp chats awaiting reply","Escalated conversations across the SBUs need a human response.","Today","waescal"]);
         if(behind.length===0) list.push(["green","Protect balanced performance","Every SBU is at or above required pace — protect collections, quality and stretch.","Ongoing"]);
         if(list.length===0) list.push(["green","No critical interventions","The organization is on pace with collections and staffing healthy.","—"]);
         const riskLabel={red:"Critical",amber:"High",blue:"Watch",green:"Positive"};
         const riskChip={red:"coral",amber:"amber",blue:"slate",green:"jade"};
-        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip ${list.some(x=>x[0]==="red")?"coral":"slate"}">Interventions</span></div><div class="list">${list.slice(0,6).map(([c,b,p,d])=>`<div class="arow"><span class="pd ${c}"></span><div><b>${esc(b)}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
+        return `<div class="card"><div class="chead"><h4>Risk → action</h4><span class="chip ${list.some(x=>x[0]==="red")?"coral":"slate"}">Interventions</span></div><div class="list">${list.slice(0,6).map(([c,b,p,d,mk])=>`<div class="arow"${mk?` data-modal="${mk}" style="cursor:pointer"`:""}><span class="pd ${c}"></span><div><b>${esc(b)}${mk?' <span style="color:var(--brand);font-weight:800">→</span>':''}</b><p>${esc(p)} · <b style="font-weight:800">${esc(d)}</b></p></div><span class="chip ${riskChip[c]}">${riskLabel[c]}</span></div>`).join("")}</div></div>`;
       }
       function decisionsCard(){
         // Executive-decision tracking isn't captured in the CRM yet — no fabricated items.
@@ -1222,6 +1222,18 @@ try {
         const rows=ADM.req.list.length?ADM.req.list.map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}${r.priority?' · '+esc(r.priority):''}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         openOpsModal("Service requests · "+nf.format(ADM.req.list.length)+" shown",`<div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
+      function showWaEscal(){
+        const alerts=(B.alerts||[]);
+        const total=alerts.reduce((a,x)=>a+((+x.n)||0),0);
+        if(!alerts.length){openOpsModal("WhatsApp chats awaiting reply",`<p style="color:var(--muted);padding:14px">No unread escalated chats across the SBUs right now.</p>`);return;}
+        const bySbu={};alerts.forEach(a=>{const s=a.sbu||"—";(bySbu[s]=bySbu[s]||[]).push(a);});
+        const order=Object.keys(bySbu).sort((a,b)=>bySbu[b].reduce((s,x)=>s+((+x.n)||0),0)-bySbu[a].reduce((s,x)=>s+((+x.n)||0),0));
+        const body=order.map(sbu=>{const g=bySbu[sbu].slice().sort((a,b)=>((+b.n)||0)-((+a.n)||0));const sub=g.reduce((s,x)=>s+((+x.n)||0),0);
+          return `<tr style="background:var(--surface2)"><td colspan="2"><b>${esc(sbu)}</b></td><td class="num"><b>${nf.format(sub)}</b></td></tr>`
+            +g.map(p=>`<tr><td style="width:26px"></td><td><div class="prow"><span class="a" style="background:var(--slate)">${esc(pInitials(p.name||"—"))}</span><div><b>${esc(p.name||"—")}</b></div></div></td><td class="num">${nf.format((+p.n)||0)}</td></tr>`).join("");
+        }).join("");
+        openOpsModal("WhatsApp chats awaiting reply · "+nf.format(total)+" unread",`<div class="table-wrap"><table><thead><tr><th>SBU</th><th>Person</th><th>Unread</th></tr></thead><tbody>${body}</tbody></table></div><p style="font-size:11.5px;color:var(--muted);margin:12px 4px 0">Open WhatsApp conversations escalated to each person with an unanswered message.</p>`);
+      }
 
       /* ---------- Reports tab: native grouped-bar charts (virtual + international) ---------- */
       function barsSVG(labels,series,fmt,empty){
@@ -1272,7 +1284,7 @@ try {
         else{el("workspace").innerHTML=roleView();}
         syncControls();
         root.querySelectorAll("[data-scope]").forEach(x=>x.addEventListener("click",()=>{applyScope(x.getAttribute("data-scope"));render();window.scrollTo({top:0,behavior:"smooth"});}));
-        root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();}));
+        root.querySelectorAll("[data-modal]").forEach(x=>x.addEventListener("click",()=>{const m=x.getAttribute("data-modal");if(m==="clockins")showClockins();else if(m==="payslips")showPayslips();else if(m==="expcat")showExpcat();else if(m==="requests")showRequests();else if(m==="waescal")showWaEscal();}));
         const fySel=el("finYear");if(fySel)fySel.addEventListener("change",e=>{state.finYear=e.target.value;render();});
         root.querySelectorAll("[data-fincur]").forEach(x=>x.addEventListener("click",()=>{state.finCur=x.getAttribute("data-fincur");render();}));
       }
