@@ -113,7 +113,7 @@ $finance = [
     'rate' => 129.0,
     'years' => [],
     'rev' => ['months' => [], 'courses' => [], 'events' => []],
-    'expenses' => ['total' => 0, 'count' => 0, 'by_cat' => []],
+    'expenses' => ['total' => 0, 'count' => 0, 'by_cat' => [], 'rows' => []],
     'fees' => ['expected' => 0, 'collected' => 0, 'outstanding' => 0, 'clients' => 0, 'paid' => 0, 'partial' => 0],
     'payroll' => null,
     'statutory' => ['paye' => 0, 'nssf_emp' => 0, 'nssf_er' => 0, 'shif' => 0, 'housing' => 0],
@@ -184,6 +184,12 @@ try {
         $finance['expenses']['by_cat'][] = ['name' => (string) (($row['category'] ?? '') !== '' ? $row['category'] : 'Uncategorised'), 'amount' => (float) $row['t'], 'count' => (int) $row['c']];
         $finance['expenses']['total'] += (float) $row['t'];
         $finance['expenses']['count'] += (int) $row['c'];
+    }
+    // period-aware rows (JS filters by the selected month/year, same as revenue)
+    $res = $q("SELECT YEAR(expense_date) y, MONTH(expense_date) m, category, SUM(amount) t, COUNT(*) c FROM `expenses` WHERE amount>0 GROUP BY YEAR(expense_date), MONTH(expense_date), category");
+    while ($res && ($row = mysqli_fetch_assoc($res))) {
+        if (!$row['y']) { continue; }
+        $finance['expenses']['rows'][] = ['y' => (int) $row['y'], 'm' => (int) $row['m'], 'name' => (string) (($row['category'] ?? '') !== '' ? $row['category'] : 'Uncategorised'), 'amount' => (float) $row['t'], 'count' => (int) $row['c']];
     }
 
     // ===== Fee collection (virtual + international), USD =====
@@ -1206,15 +1212,17 @@ try {
         const topCourses=`<div class="card tight"><div class="chead" style="padding:14px 16px 0"><h4>Top virtual courses</h4><span class="chip slate">Top 5</span></div><div class="table-wrap"><table><thead><tr><th>Course</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${courseRows}</tbody></table></div></div>`;
         const topEvents=`<div class="card tight"><div class="chead" style="padding:14px 16px 0"><h4>Top international events</h4><span class="chip slate">Top 5</span></div><div class="table-wrap"><table><thead><tr><th>Location</th><th>Txns</th><th>Revenue</th></tr></thead><tbody>${eventRows}</tbody></table></div></div>`;
         // ---- collection (income.php) ----
-        const collRate=r.exp>0?Math.round(r.coll/r.exp*100):0,uncoll=Math.max(0,r.exp-r.coll);
-        const collCard=`<div class="card"><div class="chead"><h4>Collection — collected vs expected</h4><span class="chip ${collRate>=80?'jade':collRate>=50?'amber':'coral'}">${collRate}% collected</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(r.coll)}</b></div><div class="cm"><span>Expected</span><b class="num">${fmoney(r.exp)}</b></div><div class="cm"><span>Uncollected</span><b class="num" style="color:${uncoll>0?'var(--amber)':'var(--ink)'}">${fmoney(uncoll)}</b></div></div><div style="margin-top:16px"><div style="height:11px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(collRate,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Course fees vs price · event tickets vs early-bird · ${esc(yrLabel)}</div></div>`;
-        // ---- expenses donut + net position ----
-        const totalMul=1;
-        const esegs=exp.by_cat.slice(0,8).map((d,i)=>[d.name,d.amount,finPalette[i%finPalette.length]]);
-        const elegend=exp.by_cat.length?exp.by_cat.slice(0,8).map((d,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${finPalette[i%finPalette.length]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${esc(d.name)}</span><b class="num" style="font-size:12.5px">${fmoney(d.amount)}</b></div>`).join(""):'<p style="color:var(--muted);font-size:12.5px;margin:0">No expenses recorded.</p>';
-        const expDonut=`<div class="card" ${exp.by_cat.length?'style="cursor:pointer" data-modal="expcat"':''}><div class="chead"><h4>Expenses by category</h4>${exp.by_cat.length?'<span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">All →</span>':'<span class="chip slate">Live</span>'}</div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(esegs,fmoney(exp.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" spent")}</div><div style="flex:1;min-width:180px">${elegend}</div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">${nf.format(exp.count)} transactions across ${nf.format(exp.by_cat.length)} categories (all-time)</div></div>`;
-        const netAll=r.total-exp.total,inOutMax=Math.max(r.total,exp.total,1);
-        const posCard=`<div class="card"><div class="chead"><h4>Net position</h4><span class="chip ${netAll>=0?'jade':'coral'}">${netAll>=0?'Surplus':'Deficit'}</span></div><div style="font-size:28px;font-weight:850;line-height:1.1;color:${netAll>=0?'var(--jade)':'var(--coral)'}">${fmoney(netAll)}</div><div style="font-size:11px;color:var(--muted);margin:4px 0 14px">Revenue (${esc(yrLabel)}) minus expenses (all-time)</div><div style="display:flex;flex-direction:column;gap:10px">${fbar("Revenue",r.total,inOutMax,"var(--jade)")}${fbar("Expenses",exp.total,inOutMax,"var(--coral)")}</div></div>`;
+        const collRate=r.exp>0?Math.round(r.coll/r.exp*100):0,collShow=Math.min(collRate,100),uncoll=Math.max(0,r.exp-r.coll);
+        const collCard=`<div class="card"><div class="chead"><h4>Collection — collected vs expected</h4><span class="chip ${collShow>=80?'jade':collShow>=50?'amber':'coral'}">${collShow}% collected</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(r.coll)}</b></div><div class="cm"><span>Expected (est.)</span><b class="num">${fmoney(r.exp)}</b></div><div class="cm"><span>Uncollected</span><b class="num" style="color:${uncoll>0?'var(--amber)':'var(--ink)'}">${fmoney(uncoll)}</b></div></div><div style="margin-top:16px"><div style="height:11px;border-radius:99px;background:var(--surface3);overflow:hidden;display:flex"><div style="width:${clamp(collShow,0,100)}%;background:var(--jade)"></div><div style="flex:1;background:var(--amber)"></div></div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">Cleared vs list-price estimate (course price · event early-bird) · ${esc(yrLabel)}</div></div>`;
+        // ---- expenses donut + net position (period-aware, same filter as revenue) ----
+        const exRows=(exp.rows||[]).filter(finMatch);const exAgg={};let exTotal=0,exCount=0;
+        exRows.forEach(x=>{exAgg[x.name]=(exAgg[x.name]||0)+x.amount;exTotal+=x.amount;exCount+=(x.count||0);});
+        const exCats=Object.keys(exAgg).map(k=>({name:k,amount:exAgg[k]})).sort((a,b)=>b.amount-a.amount);
+        const esegs=exCats.slice(0,8).map((d,i)=>[d.name,d.amount,finPalette[i%finPalette.length]]);
+        const elegend=exCats.length?exCats.slice(0,8).map((d,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${finPalette[i%finPalette.length]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${esc(d.name)}</span><b class="num" style="font-size:12.5px">${fmoney(d.amount)}</b></div>`).join(""):`<p style="color:var(--muted);font-size:12.5px;margin:0">No expenses in ${esc(yrLabel)}.</p>`;
+        const expDonut=`<div class="card" ${exCats.length?'style="cursor:pointer" data-modal="expcat"':''}><div class="chead"><h4>Expenses by category</h4><span class="chip slate">${esc(yrLabel)}</span></div><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap"><div style="flex:0 0 auto;margin:0 auto">${hrDonut(esegs,fmoney(exTotal).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" spent")}</div><div style="flex:1;min-width:180px">${elegend}</div></div><div style="font-size:11px;color:var(--muted);margin-top:10px">${nf.format(exCount)} transactions across ${nf.format(exCats.length)} categories · ${esc(yrLabel)}</div></div>`;
+        const netAll=r.total-exTotal,inOutMax=Math.max(r.total,exTotal,1);
+        const posCard=`<div class="card"><div class="chead"><h4>Net position</h4><span class="chip ${netAll>=0?'jade':'coral'}">${netAll>=0?'Surplus':'Deficit'}</span></div><div style="font-size:28px;font-weight:850;line-height:1.1;color:${netAll>=0?'var(--jade)':'var(--coral)'}">${fmoney(netAll)}</div><div style="font-size:11px;color:var(--muted);margin:4px 0 14px">Revenue minus expenses · ${esc(yrLabel)}</div><div style="display:flex;flex-direction:column;gap:10px">${fbar("Revenue",r.total,inOutMax,"var(--jade)")}${fbar("Expenses",exTotal,inOutMax,"var(--coral)")}</div></div>`;
         // ---- payroll + statutory + disbursement ----
         const payCard=pay?`<div class="card" style="cursor:pointer" data-modal="payslips"><div class="chead"><h4>Payroll — latest</h4><span class="chip" style="background:var(--brand);color:#fff;cursor:pointer">Payslips →</span></div><div class="mini3"><div class="cm"><span>Gross</span><b class="num">${fmoney(pay.gross)}</b></div><div class="cm"><span>Net</span><b class="num" style="color:var(--jade)">${fmoney(pay.net)}</b></div><div class="cm"><span>Staff</span><b class="num">${nf.format(pay.employees)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Period ${pay.month}/${pay.year} · ${esc(String(pay.status||'—').replace(/_/g,' '))}</div></div>`:`<div class="card"><div class="chead"><h4>Payroll — latest</h4><span class="chip slate">—</span></div><p style="color:var(--muted);font-size:12.5px;margin:0">No payroll period yet.</p></div>`;
         const statTotal=st.paye+st.nssf_emp+st.nssf_er+st.shif+st.housing;
@@ -1224,9 +1232,9 @@ try {
         // ---- remittance aging + commissions ----
         const remOut=rem.pending_amt+rem.overdue_amt;
         const remCard=`<div class="card"><div class="chead"><h4>Remittance aging</h4>${rem.overdue?`<span class="chip coral">${nf.format(rem.overdue)} overdue</span>`:'<span class="chip jade">On track</span>'}</div><div class="mini3"><div class="cm"><span>Overdue</span><b class="num" style="color:${rem.overdue?'var(--coral)':'var(--ink)'}">${nf.format(rem.overdue)}</b></div><div class="cm"><span>Pending</span><b class="num">${nf.format(rem.pending)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${nf.format(rem.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Outstanding: <b style="color:${remOut>0?'var(--amber)':'var(--ink)'}">${fmoney(remOut)}</b> · overdue ${fmoney(rem.overdue_amt)}</div></div>`;
-        const feeR=fee.expected?Math.round(fee.collected/fee.expected*100):0;
-        const feeCard=`<div class="card"><div class="chead"><h4>Client fee balances</h4><span class="chip slate">${nf.format(fee.clients)} clients</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(fee.collected)}</b></div><div class="cm"><span>Expected</span><b class="num">${fmoney(fee.expected)}</b></div><div class="cm"><span>Outstanding</span><b class="num" style="color:${fee.outstanding>0?'var(--amber)':'var(--ink)'}">${fmoney(fee.outstanding)}</b></div></div><div style="display:flex;gap:8px;margin-top:12px"><span class="chip jade">${nf.format(fee.paid)} fully paid</span><span class="chip amber">${nf.format(fee.partial)} partial</span><span class="chip slate">${feeR}% collected</span></div></div>`;
-        const comCard=`<div class="card"><div class="chead"><h4>Sales commissions</h4><span class="chip slate">Eligible ${fmoney(com.eligible)}</span></div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${fmoney(com.pending)}</b></div><div class="cm"><span>Approved</span><b class="num">${fmoney(com.approved)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${fmoney(com.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Marketer commissions on cleared revenue</div></div>`;
+        const feeR=fee.expected?Math.min(Math.round(fee.collected/fee.expected*100),100):0;
+        const feeCard=`<div class="card"><div class="chead"><h4>Client fee balances</h4><span class="chip slate">${nf.format(fee.clients)} clients · all-time</span></div><div class="mini3"><div class="cm"><span>Collected</span><b class="num" style="color:var(--jade)">${fmoney(fee.collected)}</b></div><div class="cm"><span>Expected (est.)</span><b class="num">${fmoney(fee.expected)}</b></div><div class="cm"><span>Outstanding</span><b class="num" style="color:${fee.outstanding>0?'var(--amber)':'var(--ink)'}">${fmoney(fee.outstanding)}</b></div></div><div style="display:flex;gap:8px;margin-top:12px"><span class="chip jade">${nf.format(fee.paid)} fully paid</span><span class="chip amber">${nf.format(fee.partial)} partial</span><span class="chip slate">${feeR}% collected</span></div></div>`;
+        const comCard=`<div class="card"><div class="chead"><h4>Sales commissions</h4><span class="chip slate">Eligible ${fmoney(com.eligible)}</span></div><div class="mini3"><div class="cm"><span>Pending</span><b class="num" style="color:var(--amber)">${fmoney(com.pending)}</b></div><div class="cm"><span>Approved</span><b class="num">${fmoney(com.approved)}</b></div><div class="cm"><span>Paid</span><b class="num" style="color:var(--jade)">${fmoney(com.paid)}</b></div></div><div style="font-size:11px;color:var(--muted);margin-top:12px">Marketer commissions on cleared revenue · all-time</div></div>`;
         return `
           ${controls}
           ${kpiRowRev}
@@ -1234,13 +1242,13 @@ try {
           <section class="grid-rev">${distCard}${trendCard}</section>
           <div class="section-tag"><h3>Top earners</h3><span>Highest-grossing courses and events — ${esc(yrLabel)}</span><div class="rule"></div></div>
           <section class="grid-2">${topCourses}${topEvents}</section>
-          <div class="section-tag"><h3>Collection &amp; balances</h3><span>Collected against expected, and outstanding client fees</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Collection &amp; balances</h3><span>Cleared vs list-price estimate (${esc(yrLabel)}) · client fee balances all-time</span><div class="rule"></div></div>
           <section class="grid-2">${collCard}${feeCard}</section>
-          <div class="section-tag"><h3>Spend &amp; net position</h3><span>Expenses by category and the bottom line</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Spend &amp; net position</h3><span>Expenses and the bottom line — ${esc(yrLabel)}</span><div class="rule"></div></div>
           <section class="grid-2">${expDonut}${posCard}</section>
-          <div class="section-tag"><h3>Payroll &amp; statutory</h3><span>Staff cost, statutory deductions and disbursement status</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Payroll &amp; statutory</h3><span>Staff cost, statutory deductions and disbursement — latest payroll period</span><div class="rule"></div></div>
           <section class="grid-3">${payCard}${statCard}${disCard}</section>
-          <div class="section-tag"><h3>Obligations &amp; commissions</h3><span>Statutory remittance aging and sales commissions</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Obligations &amp; commissions</h3><span>Statutory remittance aging and sales commissions — all-time</span><div class="rule"></div></div>
           <section class="grid-2">${remCard}${comCard}</section>`;
       }
       function vAdmin(){
@@ -1279,8 +1287,12 @@ try {
         openOpsModal("Payslips"+per+" · "+nf.format(HR.payslips.length)+" staff",`<div class="table-wrap"><table><thead><tr><th>Staff</th><th>Department</th><th>Gross</th><th>Net</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showExpcat(){
-        const rows=FIN.expenses.by_cat.length?FIN.expenses.by_cat.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${fmoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses.</td></tr>';
-        openOpsModal("Expenses by category · "+fmoney(FIN.expenses.total),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+        const fn=finNow();const mm=/^(\d{4})-(\d{2})$/.exec(state.finYear);
+        const lbl=state.finYear==="all"?"All time":state.finYear==="month"?(MON[fn.m-1]+" "+fn.y):mm?(MON[+mm[2]-1]+" "+mm[1]):state.finYear;
+        const agg={};let tot=0;((FIN.expenses.rows)||[]).filter(finMatch).forEach(x=>{if(!agg[x.name])agg[x.name]={name:x.name,count:0,amount:0};agg[x.name].count+=(x.count||0);agg[x.name].amount+=x.amount;tot+=x.amount;});
+        const list=Object.values(agg).sort((a,b)=>b.amount-a.amount);
+        const rows=list.length?list.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td class="num">${nf.format(c.count)}</td><td class="num">${fmoney(c.amount)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No expenses in this period.</td></tr>';
+        openOpsModal("Expenses by category · "+esc(lbl)+" · "+fmoney(tot),`<div class="table-wrap"><table><thead><tr><th>Category</th><th>Txns</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`);
       }
       function showRequests(){
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
