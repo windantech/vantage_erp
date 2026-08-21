@@ -677,7 +677,7 @@ try {
         const alertN=(B.alerts||[]).reduce((a,x)=>a+((+x.n)||0),0);
         const list=[];
         behind.slice(0,2).forEach(d=>list.push(["red","Recover "+d.name+" — "+pct((+d.attn)||0,0)+" attained","Weakest SBU under pace. Require a 7-day recovery forecast and a named opportunity list from "+(d.leader||"the HOD")+".","Today"]));
-        if((+B.collection)<0.7) list.push(["amber","Lift collections — "+pct(B.collection,0)+" collected","A large expected pipeline is still uncollected; chase outstanding fees to convert it.","This week"]);
+        if((+B.collection)<0.7) list.push(["amber","Lift collections — "+pct(B.collection,0)+" collected","Follow up the fees clients committed to and convert those promises into cleared revenue — the fastest lift this month.","This week"]);
         if(s.below80>0) list.push(["amber","Support "+s.below80+" staff below 80%","of "+s.total+" BDEs are under target — coach the recoverable ones, reassign or replace the rest.","This week"]);
         if(s.commNow>0) list.push(["blue","Clear "+kMoney(s.commNow)+" commission owed","Pending + approved marketer commission is due — approve for payroll.","Before payroll"]);
         if(alertN>0) list.push(["blue",alertN+" WhatsApp chats awaiting reply","Escalated conversations across the SBUs need a human response.","Today"]);
