@@ -1307,7 +1307,9 @@ try {
         const vm=V.months||[],im=I.months||[],cm=C.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
         const cur=vm.length-1;const ytd=vm.length?vm[0].label+"–"+vm[vm.length-1].label:"YTD";
         const chart=(title,chip,series,vals,fmt,legend,empty,hi)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt,empty,hi)}</div>`;
+        const p0=v=>pct(v,0);
         const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]),"No enquiries this year.",cur);
+        const vConv=chart("Virtual · conversion rate","",[{name:"Paid ÷ enquiries",color:"var(--violet)",vals:vm.map(m=>m.enq>0?m.cli/m.enq:0)}],vm.map(m=>m.label),p0,repLegend([{name:"Paid clients ÷ enquiries",color:"var(--violet)"}]),"No enquiries to convert this year.",cur);
         const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads this year.",cur);
         const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
@@ -1320,7 +1322,7 @@ try {
             <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
           </div><div class="rule" style="margin:0 0 4px"></div>
           <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment, Jan–${vm.length?vm[vm.length-1].label:"now"}</span><div class="rule"></div></div>
-          ${vEnq}
+          <section class="grid-2">${vEnq}${vConv}</section>
           <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees (this year) &amp; geographic spread (all-time)</span><div class="rule"></div></div>
           <section class="grid-2">${iEnq}${iMon}</section>
           <section class="grid-2">${iRev}${iBal}</section>
