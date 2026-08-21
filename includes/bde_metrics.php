@@ -134,6 +134,44 @@ if (!function_exists('bde_daily_revenue')) {
         return $out;
     }
 
+    /** Paid clients per calendar day for a person (registrations + event tickets) → ['Y-m-d' => count]. */
+    function bde_daily_clients($conn, $ruId, $from, $to)
+    {
+        $ruId = (int) $ruId; $out = [];
+        if ($ruId <= 0) { return $out; }
+        $s = mysqli_real_escape_string($conn, $from); $e = mysqli_real_escape_string($conn, $to);
+        $intakeIds = [];
+        $iq = @mysqli_query($conn, "SELECT intake_id FROM intake WHERE assigned_to = $ruId");
+        while ($iq && ($ir = mysqli_fetch_assoc($iq))) { $intakeIds[(string) $ir['intake_id']] = true; }
+        if (!empty($intakeIds)) {
+            $in = implode(',', array_map(function ($x) use ($conn) { return "'" . mysqli_real_escape_string($conn, $x) . "'"; }, array_keys($intakeIds)));
+            $q = @mysqli_query($conn, "SELECT DATE(dp.datee) d, COUNT(DISTINCT dp.app_id) n
+                FROM dpo_payment dp JOIN register r ON r.entry_id = dp.app_id
+                WHERE dp.status = 2 AND r.intake_id IN ($in) AND dp.datee BETWEEN '$s' AND '$e 23:59:59' GROUP BY DATE(dp.datee)");
+            while ($q && ($r = mysqli_fetch_assoc($q))) { $out[(string) $r['d']] = ($out[(string) $r['d']] ?? 0) + (int) $r['n']; }
+        }
+        $evIds = [];
+        $evq = @mysqli_query($conn, "SELECT event_id FROM Event WHERE FIND_IN_SET('$ruId', REPLACE(assigned_to,' ','')) > 0");
+        while ($evq && ($er = mysqli_fetch_assoc($evq))) { $evIds[] = (int) $er['event_id']; }
+        if (!empty($evIds)) {
+            $ein = implode(',', $evIds);
+            $q = @mysqli_query($conn, "SELECT DATE(date_sent) d, SUM(CASE WHEN status = 2 AND amount > 0 THEN 1 ELSE 0 END) n
+                FROM ticket_congress WHERE event_id IN ($ein) AND date_sent BETWEEN '$s' AND '$e 23:59:59' GROUP BY DATE(date_sent)");
+            while ($q && ($r = mysqli_fetch_assoc($q))) { $out[(string) $r['d']] = ($out[(string) $r['d']] ?? 0) + (int) $r['n']; }
+        }
+        return $out;
+    }
+
+    /** Sum daily paid clients across many people → ['Y-m-d' => count]. */
+    function bde_daily_clients_multi($conn, $ids, $from, $to)
+    {
+        $out = [];
+        foreach ((array) $ids as $id) {
+            foreach (bde_daily_clients($conn, (int) $id, $from, $to) as $d => $n) { $out[$d] = ($out[$d] ?? 0) + $n; }
+        }
+        return $out;
+    }
+
     /** Turn a daily map into month-to-date series for the chart: cumulative, per-day, labels, day counts. */
     function bde_daily_series($daily, $to)
     {
@@ -921,6 +959,7 @@ if (!function_exists('bdo_rollup')) {
         $out['clearedKes'] = $deptRevenue;   // dept cleared revenue in KES, always (even for client-based depts)
         $out['collectedUsd'] = $collN; $out['expectedUsd'] = $collD;   // raw collected/expected, for a true org roll-up
         $out['daily'] = bde_daily_revenue_multi($conn, $bdeIds, $from, $to);   // real month-to-date daily cleared KES
+        if (($out['metric'] ?? '') === 'participants') { $out['dailyCount'] = bde_daily_clients_multi($conn, $bdeIds, $from, $to); }   // daily paid clients (client-based depts)
         $out['clients'] = $deptClients;
         $out['pipeline'] = $deptPipe;
         $out['collection'] = $collD > 0 ? $collN / $collD : 0.0;
@@ -1018,7 +1057,7 @@ if (!function_exists('bdo_rollup')) {
                 'pipeline' => (float) ($r['pipeline'] ?? 0), 'collection' => (float) ($r['collection'] ?? 0),
                 'attn' => $tgt > 0 ? $act / $tgt : 0.0, 'metric' => (string) ($r['metric'] ?? 'revenue'),
                 'kes' => !$isClient, 'clients' => (int) ($r['clients'] ?? 0), 'members' => (int) ($r['members'] ?? 0),
-                'reps' => $reps, 'daily' => ($r['daily'] ?? [])];
+                'reps' => $reps, 'daily' => ($r['daily'] ?? []), 'dailyCount' => ($r['dailyCount'] ?? [])];
             $out['sbus'][] = $sbu;
 
             if ($isClient) {

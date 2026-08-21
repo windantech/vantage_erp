@@ -29,6 +29,8 @@ if (!empty($bdm['sbus']) && is_array($bdm['sbus'])) {
     foreach ($bdm['sbus'] as $i => $sb) {
         $ser = bde_daily_series(($sb['daily'] ?? []), $bdm_to);
         $bdm['sbus'][$i]['cum'] = $ser['cum']; $bdm['sbus'][$i]['amt'] = $ser['amt']; $bdm['sbus'][$i]['dates'] = $ser['dates'];
+        $serC = bde_daily_series(($sb['dailyCount'] ?? []), $bdm_to);   // clients series (client-based SBUs)
+        $bdm['sbus'][$i]['cumC'] = $serC['cum']; $bdm['sbus'][$i]['amtC'] = $serC['amt'];
     }
 }
 
@@ -386,8 +388,10 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
       // Per-SBU chart: real month-to-date daily cleared KES for revenue SBUs; synthetic pace for
       // International (client-based) or when there's no daily data.
       function sbuTrend(d){
-        if(!(d.kes&&d.cum&&d.cum.length)) return trendSVGFor(d.target,d.actual,d.forecast,d.kes);
-        const series=d.cum;const dim=Math.max(2,B.daysInMonth||30);const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
+        // KES SBUs use the cleared-revenue series; client-based (International) uses the paid-clients series.
+        const series=d.kes?d.cum:d.cumC;const amt=d.kes?d.amt:d.amtC;const fmt=d.kes?kMoney:(v=>nf.format(Math.round(v||0))+" clients");
+        if(!(series&&series.length)) return trendSVGFor(d.target,d.actual,d.forecast,d.kes);
+        const dim=Math.max(2,B.daysInMonth||30);const dayT=Math.max(1,Math.min(dim,B.dayToday||series.length));
         const target=d.target||0;const cur=series[series.length-1]||0;const w=520,h=188,pd=28;
         const max=Math.max(target,cur,...series,1)*1.12;
         const X=day=>pd+(day-1)/(dim-1)*(w-2*pd);const Y=v=>h-pd-(v/max)*(h-2*pd);
@@ -397,11 +401,11 @@ $bdm_people = [['id' => 127, 'name' => 'Michael Obworo Mongere', 'role' => 'BDM'
         const ty=Y(target),tx=X(dayT);
         return `<svg class="chart" viewBox="0 0 ${w} ${h}" style="height:188px" role="img" aria-label="Month-to-date cleared revenue vs target">
           ${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*(h-2*pd)).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*(h-2*pd)).toFixed(1)}"/>`).join("")}
-          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${kMoney(target)}</text>
+          <line class="tline" x1="${pd}" y1="${ty.toFixed(1)}" x2="${w-pd}" y2="${ty.toFixed(1)}"/><text x="${w-pd}" y="${(ty-6).toFixed(1)}" text-anchor="end">Target ${fmt(target)}</text>
           <line x1="${tx.toFixed(1)}" y1="${pd}" x2="${tx.toFixed(1)}" y2="${h-pd}" stroke="var(--faint)" stroke-dasharray="3 3"/>
           <path class="area" d="${aArea}"/><path class="line" d="${aLine}"/>
-          ${A.map((q,i)=>{const dAmt=(d.amt&&d.amt[i])||0;const dLbl=(d.dates&&d.dates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.4" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="9" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${kMoney(dAmt)} cleared that day  (${kMoney(series[i])} so far)</title></circle>`;}).join("")}
-          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+9,Y(cur)-8).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${kMoney(cur)}</text>
+          ${A.map((q,i)=>{const dAmt=(amt&&amt[i])||0;const dLbl=(d.dates&&d.dates[i])||("Day "+(i+1));return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.4" fill="var(--brand)"/><circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="9" fill="transparent" style="cursor:pointer"><title>${esc(dLbl)}: ${fmt(dAmt)} that day  (${fmt(series[i])} so far)</title></circle>`;}).join("")}
+          <circle cx="${tx.toFixed(1)}" cy="${Y(cur).toFixed(1)}" r="4" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/><text x="${tx.toFixed(1)}" y="${Math.max(pd+9,Y(cur)-8).toFixed(1)}" text-anchor="middle" style="font-weight:800;fill:var(--ink)">Now ${fmt(cur)}</text>
           <text x="${pd}" y="${h-8}">Day 1</text><text x="${tx.toFixed(1)}" y="${h-8}" text-anchor="middle">Today (${dayT})</text><text x="${w-pd}" y="${h-8}" text-anchor="end">Month end</text></svg>`;
       }
       function sbuForecasts(){
