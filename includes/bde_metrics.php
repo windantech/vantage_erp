@@ -1045,6 +1045,7 @@ if (!function_exists('bdo_rollup')) {
             foreach (($r['team'] ?? []) as $t) {
                 if (!empty($t['me'])) { continue; }
                 $reps[] = [
+                    'id' => (int) ($t['id'] ?? 0),
                     'name' => (string) $t['name'], 'title' => (string) ($t['title'] ?? ''),
                     'target' => $isClient ? (float) ($t['clientsTarget'] ?? 0) : (float) ($t['target'] ?? 0),
                     'actual' => $isClient ? (float) ($t['clients'] ?? 0) : (float) ($t['actual'] ?? 0),

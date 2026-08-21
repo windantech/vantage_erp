@@ -955,7 +955,7 @@ try {
         B.sbus.forEach((s,si)=>{
           if(s.placeholder)return;
           list.push({key:"bdo-"+si,role:"BDO",name:s.leader,ini:pInitials(s.leader),sbu:s.name,target:s.target,actual:s.actual,pipeline:s.pipeline,collection:s.collection,forecast:s.forecast,sbuIndex:si,kes:s.kes});
-          (s.reps||[]).forEach((r,ri)=>list.push({key:"bde-"+si+"-"+ri,role:"BDE",name:r.name,ini:pInitials(r.name),sbu:s.name,title:r.title,target:r.target,actual:r.actual,pipeline:r.pipeline,collection:r.collection,units:r.clients,kes:r.kes}));
+          (s.reps||[]).forEach((r,ri)=>list.push({key:"bde-"+si+"-"+ri,role:"BDE",id:r.id,name:r.name,ini:pInitials(r.name),sbu:s.name,title:r.title,target:r.target,actual:r.actual,pipeline:r.pipeline,collection:r.collection,units:r.clients,kes:r.kes}));
         });
         return list;
       }
@@ -987,7 +987,7 @@ try {
         let extra="";
         if(p.role==="BDM"){extra=`<div class="section-tag"><h3>SBU performance</h3><span>Consolidated across all departments</span><div class="rule"></div></div>${teamTable()}`;}
         else if(p.role==="BDO"&&p.sbuIndex!=null){const reps=(B.sbus[p.sbuIndex].reps||[]);const rows=reps.map((r,ri)=>{const ra=rAttn(r);const rp=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:${avCols[ri%avCols.length]}">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${p.sbuIndex}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${repTarget(r)}</td><td class="num">${repActual(r)}</td><td><span class="mini-track"><div style="width:${clamp(ra*100,0,100)}%;background:${scol(rp.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(ra,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td><span class="sbadge s${rp.st[0]}"><span class="dot"></span>${rp.label}</span></td></tr>`;}).join("");extra=`<div class="section-tag"><h3>${esc(p.sbu)} team</h3><span>Executives reporting to ${esc(p.name)} — click to drill in</span><div class="rule"></div></div><div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
-        else{extra=`<div class="card"><div class="chead"><h4>Notes</h4><span class="chip slate">Prototype</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Individual field activity, deals and daily reports appear here once live data is wired. For now this shows ${esc(p.name)}'s headline numbers scoped from the organization dataset.</p></div>`;}
+        else{extra=`<div class="card"><div class="chead"><h4>Full dashboard</h4><span class="chip jade">Live</span></div><p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55">Open ${esc(p.name)}'s own dashboard for their field visits, funnel, daily report and full detail.</p>${p.id?`<a class="tbtn solid" href="bde_dashboard.php?as=${p.id}" target="_blank" rel="noopener">Open ${esc(p.name)}'s dashboard ↗</a>`:`<span style="color:var(--muted);font-size:12px">No individual dashboard link available.</span>`}</div>`;}
         return `
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
             <button class="tbtn" data-scope="org" type="button">← Back to organization</button>
@@ -1000,7 +1000,9 @@ try {
 
       /* ---------- role view: CEO opens any role's full dashboard (like the prototype) ---------- */
       function applyScope(key){
-        if(key==="org"||key==="ceo"){state.role="ceo";state.view="command";}
+        // Entering a drill from a CEO tab: remember which tab to return to.
+        if(state.role==="ceo"&&key!=="org"&&key!=="ceo"){state.returnView=state.view;}
+        if(key==="org"||key==="ceo"){state.role="ceo";state.view=state.returnView||"command";}
         else if(key==="bdm"){state.role="bdm";}
         else if(key.indexOf("bdo-")===0){state.role="bdo";state.dept=+key.split("-")[1]||0;}
         else if(key.indexOf("bde-")===0){const a=key.split("-");state.role="bde";state.dept=+a[1]||0;state.emp=+a[2]||0;}
@@ -1065,7 +1067,7 @@ try {
         return roleBanner(pInitials(r.name),r.name,(r.title||"BDE")+" · "+d.name,pc)
           +kpiRow(kpis)
           +`<div class="section-tag"><h3>Today's priorities</h3><span>For ${esc(r.name)}</span><div class="rule"></div></div>${repActionsCard(r)}`
-          +`<div class="card" style="margin-top:2px"><div class="chead"><h4>Notes</h4><span class="chip slate">Prototype</span></div><p style="font-size:12.5px;color:var(--muted);margin:0;line-height:1.55">Field activity, deals and the daily report for ${esc(r.name)} appear here once live data is wired. Figures shown are scoped from the organization dataset.</p></div>`;
+          +`<div class="card" style="margin-top:2px"><div class="chead"><h4>Full dashboard</h4><span class="chip jade">Live</span></div><p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.55">Open ${esc(r.name)}'s own dashboard for their field visits, funnel, daily report and full detail.</p>${r.id?`<a class="tbtn solid" href="bde_dashboard.php?as=${r.id}" target="_blank" rel="noopener">Open ${esc(r.name)}'s dashboard ↗</a>`:`<span style="color:var(--muted);font-size:12px">No individual dashboard link available.</span>`}</div>`;
       }
       function roleView(){return state.role==="bdm"?viewBDM():state.role==="bdo"?viewBDO():viewBDE();}
 
