@@ -991,7 +991,7 @@ try {
         return `
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
             <button class="tbtn" data-scope="org" type="button">← Back to organization</button>
-            <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(p.ini)}</span><div><b>${esc(p.name)}</b><span>${p.role} · ${esc(p.sbu)}</span></div></div>
+            <div class="prow"><span class="a" style="background:linear-gradient(150deg,#3f5080,#26314f)">${esc(p.ini)}</span><div><b>${esc(p.name)}</b><span>${p.role} · ${esc(p.sbu)}</span></div></div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
               ${dashLink?`<a class="tbtn solid" href="${dashLink}" target="_blank" rel="noopener" style="white-space:nowrap;box-shadow:0 4px 16px -3px rgba(236,110,45,.6)">View full dashboard ↗</a>`:""}
@@ -1013,7 +1013,7 @@ try {
       function roleBanner(ini,name,sub,pc,link){
         return `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
           <button class="tbtn" data-scope="org" type="button">← Back to CEO view</button>
-          <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(ini)}</span><div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>
+          <div class="prow"><span class="a" style="background:linear-gradient(150deg,#3f5080,#26314f)">${esc(ini)}</span><div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>
           <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
             ${link?`<a class="tbtn solid" href="${link}" target="_blank" rel="noopener" style="white-space:nowrap;box-shadow:0 4px 16px -3px rgba(236,110,45,.6)">View full dashboard ↗</a>`:""}
