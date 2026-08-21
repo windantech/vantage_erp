@@ -5926,11 +5926,29 @@ function wa_run_payment_confirms($conn, $limit = 20) {
     if (wa_setting_get($conn, 'payment_confirm_enabled', '0') !== '1') { return ['ok' => true, 'skipped' => 'disabled']; }
     wa_payment_confirm_schema_ensure($conn);
     $limit = (int)$limit;
+    // The two email columns do not share a collation, so they cannot be compared
+    // directly. wa_contacts.email was added by an ALTER that inherited the
+    // table's utf8mb4_unicode_ci; dpo_payment is an older ERP table whose email
+    // is utf8mb4_general_ci. MySQL answers an illegal-mix-of-collations error,
+    // which took the whole payments step of wa_cron.php down on every run — and
+    // because each cron step is isolated, it did so silently: everything else
+    // carried on and only the log said anything.
+    //
+    // CONVERT fixes it without touching a payments table. It does give up the
+    // index on dp.email, which is acceptable for a cron with a LIMIT; the
+    // permanent fix is to align the column itself:
+    //
+    //   ALTER TABLE `dpo_payment` MODIFY `email`
+    //     VARCHAR(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL;
+    //
+    // after which this CONVERT can go and the index comes back.
     $res = mysqli_query($conn,
         "SELECT c.id AS contact_id, c.wa_id, c.profile_name, c.last_inbound_at,
                 dp.token AS ref, dp.TransactionAmount AS amount
            FROM wa_contacts c
-           JOIN dpo_payment dp ON dp.email = c.email AND dp.status = 2
+           JOIN dpo_payment dp
+             ON CONVERT(dp.email USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.email
+            AND dp.status = 2
           WHERE c.email IS NOT NULL AND c.email <> '' AND c.opted_out = 0 AND dp.token <> ''
             AND NOT EXISTS (SELECT 1 FROM wa_payment_confirms w WHERE w.payment_ref = dp.token)
           ORDER BY c.id ASC
