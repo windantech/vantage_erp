@@ -983,16 +983,19 @@ try {
         ];
         if(p.role==="BDE"&&p.units!=null)kpis.push(["Volume",nf.format(p.units),"units this period","var(--slate)"]);
         else kpis.push(["Month-end forecast",kMoney(p.forecast||p.actual),"projected","var(--gold)"]);
-        const kpiRow=`<div class="kpis">${kpis.map(([l,v,m,ac])=>`<div class="kpi" style="--acc:${ac}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;
+        const kpiRow=`<div class="card" style="padding:14px"><div class="kpis">${kpis.map(([l,v,m,ac])=>`<div class="kpi" style="--acc:${ac}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div></div>`;
+        const dashLink=(p.role==="BDE"&&p.id)?`bde_dashboard.php?as=${p.id}`:"";
         let extra="";
         if(p.role==="BDM"){extra=`<div class="section-tag"><h3>SBU performance</h3><span>Consolidated across all departments</span><div class="rule"></div></div>${teamTable()}`;}
         else if(p.role==="BDO"&&p.sbuIndex!=null){const reps=(B.sbus[p.sbuIndex].reps||[]);const rows=reps.map((r,ri)=>{const ra=rAttn(r);const rp=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:${avCols[ri%avCols.length]}">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${p.sbuIndex}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${repTarget(r)}</td><td class="num">${repActual(r)}</td><td><span class="mini-track"><div style="width:${clamp(ra*100,0,100)}%;background:${scol(rp.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(ra,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td><span class="sbadge s${rp.st[0]}"><span class="dot"></span>${rp.label}</span></td></tr>`;}).join("");extra=`<div class="section-tag"><h3>${esc(p.sbu)} team</h3><span>Executives reporting to ${esc(p.name)} — click to drill in</span><div class="rule"></div></div><div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
-        else{extra=`<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px;min-width:0"><span class="a" style="flex:0 0 auto;background:${avColor(p.name)}">${esc(pInitials(p.name))}</span><div style="min-width:0"><b style="font-size:13.5px">${esc(p.name)}'s full dashboard</b><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Field visits, funnel, daily report and full detail</p></div></div>${p.id?`<a class="tbtn" href="bde_dashboard.php?as=${p.id}" target="_blank" rel="noopener" style="flex:0 0 auto;white-space:nowrap">Open dashboard ↗</a>`:`<span style="color:var(--muted);font-size:11.5px;flex:0 0 auto">No dashboard link</span>`}</div>`;}
         return `
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
             <button class="tbtn" data-scope="org" type="button">← Back to organization</button>
             <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(p.ini)}</span><div><b>${esc(p.name)}</b><span>${p.role} · ${esc(p.sbu)}</span></div></div>
-            <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}" style="margin-left:auto"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
+              ${dashLink?`<a class="tbtn" href="${dashLink}" target="_blank" rel="noopener" style="white-space:nowrap">Open dashboard ↗</a>`:""}
+            </div>
           </div>
           ${kpiRow}
           ${extra}`;
@@ -1007,14 +1010,18 @@ try {
         else if(key.indexOf("bdo-")===0){state.role="bdo";state.dept=+key.split("-")[1]||0;}
         else if(key.indexOf("bde-")===0){const a=key.split("-");state.role="bde";state.dept=+a[1]||0;state.emp=+a[2]||0;}
       }
-      function roleBanner(ini,name,sub,pc){
+      function roleBanner(ini,name,sub,pc,link){
         return `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
           <button class="tbtn" data-scope="org" type="button">← Back to CEO view</button>
           <div class="prow"><span class="a" style="background:linear-gradient(150deg,var(--brand),var(--gold))">${esc(ini)}</span><div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>
-          <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}" style="margin-left:auto"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="pace-pill ${pc.st==="green"?"pg":pc.st==="amber"?"pa":"pr"}"><span class="dot"></span>${pc.label} · pace ${pct(pc.ratio,0)}</span>
+            ${link?`<a class="tbtn" href="${link}" target="_blank" rel="noopener" style="white-space:nowrap">Open dashboard ↗</a>`:""}
+          </div>
         </div>`;
       }
-      function kpiRow(items){return `<div class="kpis">${items.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;}
+      function kpiRow(items){return `<div class="card" style="padding:14px">${kpiGrid(items)}</div>`;}
+      function kpiGrid(items){return `<div class="kpis">${items.map(([l,v,m,a])=>`<div class="kpi" style="--acc:${a}"><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`).join("")}</div>`;}
       function repsTable(d,si){
         return `<div class="card tight"><div class="table-wrap"><table><thead><tr><th>Executive</th><th>Target</th><th>Cleared</th><th>Attainment</th><th>Pipeline</th><th>Collection</th><th>Status</th></tr></thead><tbody>${(d.reps||[]).map((r,ri)=>{const a=rAttn(r);const pc=paceOf(r);return `<tr><td><div class="prow"><span class="a" style="background:${avCols[ri%avCols.length]}">${esc(pInitials(r.name))}</span><div><b><span data-scope="bde-${si}-${ri}" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px">${esc(r.name)}</span></b><span>${esc(r.title||"BDE")}</span></div></div></td><td class="num">${repTarget(r)}</td><td class="num">${repActual(r)}</td><td><span class="mini-track"><div style="width:${clamp(a*100,0,100)}%;background:${scol(pc.st)}"></div></span> <b class="num" style="font-size:11.5px">${pct(a,0)}</b></td><td class="num">${kMoney(r.pipeline)}</td><td class="num">${pct(r.collection,0)}</td><td><span class="sbadge s${pc.st[0]}"><span class="dot"></span>${pc.label}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
       }
@@ -1047,11 +1054,10 @@ try {
           ["Team at 80%+",team80+" / "+reps.length,"Balanced performance","var(--gold)"],
           ["Collection",pct(d.collection,0),"Finance-cleared","var(--brand)"]
         ];
-        return roleBanner(pInitials(d.leader),d.leader,"BDO · "+d.name+" department",pc)
+        return roleBanner(pInitials(d.leader),d.leader,"BDO · "+d.name+" department",pc,d.bdoId?`bdo_dashboard.php?as=${d.bdoId}`:"")
           +kpiRow(kpis)
           +`<div class="section-tag"><h3>Team performance</h3><span>Executives in ${esc(d.name)} — click to open a person</span><div class="rule"></div></div>${repsTable(d,si)}`
-          +`<div class="section-tag"><h3>Where to focus today</h3><span>${esc(d.name)} interventions</span><div class="rule"></div></div>${deptActionsCard(d)}`
-          +`<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:2px"><div style="display:flex;align-items:center;gap:12px;min-width:0"><span class="a" style="flex:0 0 auto;background:${avColor(d.leader)}">${esc(pInitials(d.leader))}</span><div style="min-width:0"><b style="font-size:13.5px">${esc(d.name)} department dashboard</b><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">${esc(d.leader)}'s full view — team, pipeline, field visits and daily report</p></div></div>${d.bdoId?`<a class="tbtn" href="bdo_dashboard.php?as=${d.bdoId}" target="_blank" rel="noopener" style="flex:0 0 auto;white-space:nowrap">Open dashboard ↗</a>`:`<span style="color:var(--muted);font-size:11.5px;flex:0 0 auto">No dashboard link</span>`}</div>`;
+          +`<div class="section-tag"><h3>Where to focus today</h3><span>${esc(d.name)} interventions</span><div class="rule"></div></div>${deptActionsCard(d)}`;
       }
       function viewBDE(){
         const d=B.sbus[state.dept]||B.sbus[0];const reps=d.reps||[];
@@ -1065,10 +1071,9 @@ try {
           ["Collection",pct(r.collection,0),"cleared vs invoiced","var(--brand)"],
           ["Daily pace needed",kMoney(daysLeft?Math.max(0,(r.target-r.actual)/daysLeft):0),daysLeft+" working days left","var(--amber)"]
         ];
-        return roleBanner(pInitials(r.name),r.name,(r.title||"BDE")+" · "+d.name,pc)
+        return roleBanner(pInitials(r.name),r.name,(r.title||"BDE")+" · "+d.name,pc,r.id?`bde_dashboard.php?as=${r.id}`:"")
           +kpiRow(kpis)
-          +`<div class="section-tag"><h3>Today's priorities</h3><span>For ${esc(r.name)}</span><div class="rule"></div></div>${repActionsCard(r)}`
-          +`<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:2px"><div style="display:flex;align-items:center;gap:12px;min-width:0"><span class="a" style="flex:0 0 auto;background:${avColor(r.name)}">${esc(pInitials(r.name))}</span><div style="min-width:0"><b style="font-size:13.5px">${esc(r.name)}'s full dashboard</b><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Field visits, funnel, daily report and full detail</p></div></div>${r.id?`<a class="tbtn" href="bde_dashboard.php?as=${r.id}" target="_blank" rel="noopener" style="flex:0 0 auto;white-space:nowrap">Open dashboard ↗</a>`:`<span style="color:var(--muted);font-size:11.5px;flex:0 0 auto">No dashboard link</span>`}</div>`;
+          +`<div class="section-tag"><h3>Today's priorities</h3><span>For ${esc(r.name)}</span><div class="rule"></div></div>${repActionsCard(r)}`;
       }
       function roleView(){return state.role==="bdm"?viewBDM():state.role==="bdo"?viewBDO():viewBDE();}
 
