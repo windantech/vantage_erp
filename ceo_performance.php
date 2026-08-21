@@ -1176,7 +1176,7 @@ try {
           .concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
         const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:2px">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;box-shadow:var(--shadow-sm)">
             <div class="curtoggle"><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button></div>
             <select id="finMonth" class="finsel">${monthOpts}</select>
             <select id="finYear" class="finsel">${yopts}</select>
