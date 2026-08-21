@@ -40,7 +40,7 @@ if ($mconn) {
         FROM mdl_user_enrolments ue JOIN mdl_enrol e ON e.id = ue.enrolid JOIN mdl_course c ON c.id = e.courseid
         JOIN mdl_user u ON u.id = ue.userid
         WHERE c.id > 1 AND u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU
-        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 8");
+        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 5");
     while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $courses[] = [(string) $cr['nm'], (int) $cr['n']]; }
     if ($enrMonth !== null || $certMonth !== null || !empty($courses)) {
         $lms = ['enrMonth' => $enrMonth, 'certMonth' => $certMonth, 'active' => $active, 'enrolledAll' => $enrolled,
@@ -786,9 +786,17 @@ try {
       }
       function productMix(){
         const cols=["#4d8bd6","var(--jade)","var(--brand)","var(--violet)","var(--gold)","var(--slate)"];
-        const lines=liveSbus().map((d,i)=>[d.name,(d.kes?d.actual:(d.kesActual||0)),cols[i%cols.length]]);
+        const live=liveSbus();
+        const lines=live.map((d,i)=>[d.name,(d.kes?d.actual:(d.kesActual||0)),cols[i%cols.length]]);
         const total=lines.reduce((a,l)=>a+l[1],0)||1;
-        return `<div class="card"><div class="chead"><h4>Revenue mix by SBU</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Cleared revenue share by SBU this period (International in its own metric excluded from the KES split).</div></div>`;
+        const cli=live.map((d,i)=>[d.name,(+d.clients)||0,cols[i%cols.length]]);const cliMax=Math.max(1,...cli.map(c=>c[1]));const cliTotal=cli.reduce((a,l)=>a+l[1],0);
+        const mini=(l,v,c)=>`<div style="flex:1;background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${c};border-radius:10px;padding:10px 12px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800">${l}</div><b class="num" style="display:block;font-size:17px;margin-top:2px;color:var(--ink)">${v}</b></div>`;
+        const subHead='font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin:14px 0 8px';
+        return `<div class="card"><div class="chead"><div><h4>Revenue &amp; clients by SBU</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Where the cleared revenue and paying clients came from this period</p></div></div>
+          <div style="display:flex;gap:10px;margin-bottom:6px">${mini("Cleared revenue",kMoney(B.actual),"var(--jade)")}${mini("Open pipeline",kMoney(B.pipeline),"#4d8bd6")}${mini("Paid clients",nf.format(cliTotal),"var(--brand)")}</div>
+          <div style="${subHead}">Cleared revenue share</div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}
+          <div style="${subHead}">Paid clients by SBU</div>${cli.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/cliMax*100}%;background:${c}"></div></div><b>${nf.format(v)}</b></div>`).join("")}
+          <div style="font-size:11px;color:var(--muted);margin-top:10px">International contributes clients, not KES, so it's excluded from the revenue split.</div></div>`;
       }
       function learnerJourney(){
         const L=B.lms||{};const courses=L.courses||[];
