@@ -1174,13 +1174,14 @@ try {
         const yopts=['<option value="" disabled hidden'+(isYearScope?"":" selected")+'>By year…</option>',
           '<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>']
           .concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
-        const controls=`<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:0 0 2px">
+        const controls=`<div style="margin:-6px 0 -8px">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 9px;box-shadow:var(--shadow-sm)">
             <div class="curtoggle"><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button></div>
             <select id="finMonth" class="finsel">${monthOpts}</select>
             <select id="finYear" class="finsel">${yopts}</select>
-          </div></div><div class="rule" style="margin:0"></div>`;
+          </div></div><div class="rule" style="margin:8px 0 0"></div></div>`;
         // ---- KPI row ----
         const kIco={rev:'<svg viewBox="0 0 24 24"><path d="M3 7l3-3h12l3 3v12H3z"/><path d="M3 7h18"/><path d="M15 12h3"/></svg>',virt:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>',intl:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>',txn:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>'};
         const kpi=(l,v,m,a,ic)=>`<div class="kpi" style="--acc:${a}"><span class="kicon" style="color:${a};background:var(--surface3)">${ic}</span><div class="lab">${l}</div><div class="val num">${v}</div><div class="meta">${m}</div></div>`;
