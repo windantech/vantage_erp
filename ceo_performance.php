@@ -251,7 +251,7 @@ try {
 } catch (\Throwable $e) { error_log('CEO Finance fetch: ' . $e->getMessage()); }
 
 // ---- Admin tab: native analytics (service requests + intake/event assignments) ----
-$admin = ['req' => ['pending' => 0, 'progress' => 0, 'completed' => 0, 'rejected' => 0, 'pending_amt' => 0, 'list' => []], 'intakes' => [], 'assignById' => [], 'monthLabel' => date('M Y')];
+$admin = ['req' => ['pending' => 0, 'progress' => 0, 'completed' => 0, 'rejected' => 0, 'pending_amt' => 0, 'list' => []], 'intakes' => [], 'assignCat' => [], 'monthLabel' => date('M Y')];
 $monthStart = date('Y-m-01');   // current month — admin focuses on live/current activity
 try {
     $res = $q("SELECT SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) pending,
@@ -277,14 +277,24 @@ try {
         $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'course' => (string) ($row['course'] ?? ''), 'aid' => (int) ($row['assigned_to'] ?? 0), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_date']) ? date('M j, Y', strtotime((string) $row['start_date'])) : '', 'ts' => !empty($row['start_date']) ? (int) strtotime((string) $row['start_date']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
     }
 
-    // ===== Course/event assignments keyed by user id (from assigned_to comma-list). The CEO view maps these onto our known BDE roster per department. =====
-    $assignById = [];
-    $res = $q("SELECT ru.id uid, c.course nm FROM `course` c JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(c.assigned_to,' ',''))>0 WHERE c.status=1 AND c.assigned_to<>''");
-    while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
-    $res = $q("SELECT ru.id uid, e.event_title nm FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0 WHERE e.status=1 AND e.assigned_to<>'' AND (e.start_on >= CURDATE() OR e.location LIKE 'ACADEMIC#%' OR e.location LIKE 'CORPORATE#%')");
-    while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
-    foreach ($assignById as $k => $v) { $u = array_values(array_unique(array_filter($v, function ($x) { return $x !== null && $x !== ''; }))); sort($u); $assignById[$k] = $u; }
-    $admin['assignById'] = $assignById;
+    // ===== Course/event assignments by category, per person (from assigned_to comma-list; upcoming events only) =====
+    $catAcc = ['virtual' => [], 'international' => [], 'corporate' => [], 'academic' => []];
+    $pushA = function ($cat, $uid, $nm, $item) use (&$catAcc) {
+        $uid = (int) $uid; $nm = trim((string) $nm); $item = (string) $item;
+        if ($nm === '' || $item === '') { return; }
+        if (!isset($catAcc[$cat][$uid])) { $catAcc[$cat][$uid] = ['id' => $uid, 'name' => $nm, 'items' => []]; }
+        $catAcc[$cat][$uid]['items'][] = $item;
+    };
+    $res = $q("SELECT ru.id uid, COALESCE(NULLIF(s.full_name,''), ru.fullname) nm, c.course item FROM `course` c JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(c.assigned_to,' ',''))>0 LEFT JOIN `staff` s ON s.system_user_id=ru.id WHERE c.status=1 AND c.assigned_to<>''");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $pushA('virtual', $row['uid'], $row['nm'], $row['item']); }
+    $res = $q("SELECT ru.id uid, COALESCE(NULLIF(s.full_name,''), ru.fullname) nm, e.event_title item, e.location loc FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0 LEFT JOIN `staff` s ON s.system_user_id=ru.id WHERE e.status=1 AND e.assigned_to<>'' AND (e.start_on >= CURDATE() OR e.location LIKE 'ACADEMIC#%' OR e.location LIKE 'CORPORATE#%')");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $loc = ltrim((string) ($row['loc'] ?? '')); $cat = (stripos($loc, 'CORPORATE#') === 0) ? 'corporate' : ((stripos($loc, 'ACADEMIC#') === 0) ? 'academic' : 'international'); $pushA($cat, $row['uid'], $row['nm'], $row['item']); }
+    $admin['assignCat'] = [];
+    foreach (['virtual', 'international', 'corporate', 'academic'] as $k) {
+        $people = [];
+        foreach ($catAcc[$k] as $p) { $p['items'] = array_values(array_unique($p['items'])); sort($p['items']); $people[] = $p; }
+        $admin['assignCat'][$k] = $people;
+    }
 } catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
 
 // ---- Reports tab: monthly trends (virtual + international) + per-location breakdown. Money stored USD. ----
@@ -1260,19 +1270,27 @@ try {
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
-        const abi=A.assignById||{};
-        const asgCols=["var(--brand)","var(--jade)","var(--violet)","var(--gold)","var(--slate)","#2f8f88"];
-        const asgBody=(B.sbus||[]).filter(s=>!s.placeholder).map((s,si)=>{
-          const reps=(s.reps||[]).filter(r=>r.id&&!r.manager).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-          if(!reps.length)return "";
-          const acc=asgCols[si%asgCols.length];
-          const cards=reps.map(r=>{
-            const items=abi[r.id]||[];
-            const list=items.length?items.map(it=>`<div style="font-size:12px;color:var(--ink);padding:5px 0;border-top:1px solid var(--line);line-height:1.45">${esc(it)}</div>`).join(""):'<div style="font-size:12px;color:var(--muted);padding:6px 0;border-top:1px solid var(--line)">No active assignment</div>';
-            return `<div class="card" style="--acc:${acc};padding:13px 15px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px"><b style="font-size:13.5px">${esc(r.name)}</b><span class="chip slate" style="flex:0 0 auto">${nf.format(items.length)}</span></div>${list}</div>`;
+        const AC=A.assignCat||{};
+        const bdoIds={};(B.sbus||[]).forEach(s=>{if(s.bdoId)bdoIds[s.bdoId]=1;});
+        function asgSection(label,acc,people){
+          if(!people.length)return "";
+          const cards=people.map(p=>{
+            const items=p.items||[];
+            const list=items.length?items.map(it=>`<div style="font-size:12px;color:var(--ink);padding:5px 0;border-top:1px solid var(--line);line-height:1.45">${esc(it)}</div>`).join(""):'<div style="font-size:12px;color:var(--muted);padding:6px 0;border-top:1px solid var(--line)">Assignment pending</div>';
+            return `<div class="card" style="--acc:${acc};padding:13px 15px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px"><b style="font-size:13.5px">${esc(p.name)}</b><span class="chip slate" style="flex:0 0 auto">${nf.format(items.length)}</span></div>${list}</div>`;
           }).join("");
-          return `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:${acc};margin:16px 2px 9px;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:2px;background:${acc}"></span>${esc(s.name)} · ${reps.length} ${reps.length===1?'person':'people'}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">${cards}</div>`;
-        }).filter(Boolean).join("")||'<p style="color:var(--muted);font-size:12.5px;text-align:center;padding:20px">No team assignments.</p>';
+          return `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:${acc};margin:18px 2px 9px;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:2px;background:${acc}"></span>${esc(label)} · ${people.length} ${people.length===1?'person':'people'}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${cards}</div>`;
+        }
+        const prep=arr=>(arr||[]).filter(p=>!bdoIds[p.id]).sort((a,b)=>(b.items||[]).length-(a.items||[]).length||String(a.name).localeCompare(String(b.name)));
+        const digSbu=(B.sbus||[]).find(s=>/digital/i.test(s.name));
+        const digPeople=digSbu?(digSbu.reps||[]).filter(r=>!r.manager).map(r=>{let items=[];if(/austin/i.test(r.name))items=["Eval360"];else if(/ruth/i.test(r.name))items=["360 Appraisal"];return {name:r.name,items};}).sort((a,b)=>b.items.length-a.items.length):[];
+        const asgBody=[
+          asgSection("Virtual","var(--jade)",prep(AC.virtual)),
+          asgSection("International","var(--brand)",prep(AC.international)),
+          asgSection("Corporate","var(--violet)",prep(AC.corporate)),
+          asgSection("Digital Solutions","var(--gold)",digPeople),
+          asgSection("Academic","var(--slate)",prep(AC.academic))
+        ].filter(Boolean).join("")||'<p style="color:var(--muted);font-size:12.5px;text-align:center;padding:20px">No team assignments.</p>';
         const ml=esc(A.monthLabel||'this month');
         return `
           <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests and course intakes — ${ml}</span><div class="rule"></div></div>
