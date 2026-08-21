@@ -281,7 +281,7 @@ try {
     $assignById = [];
     $res = $q("SELECT ru.id uid, c.course nm FROM `course` c JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(c.assigned_to,' ',''))>0 WHERE c.status=1 AND c.assigned_to<>''");
     while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
-    $res = $q("SELECT ru.id uid, e.event_title nm FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0 WHERE e.status=1 AND e.assigned_to<>''");
+    $res = $q("SELECT ru.id uid, e.event_title nm FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0 WHERE e.status=1 AND e.assigned_to<>'' AND (e.start_on >= CURDATE() OR e.location LIKE 'ACADEMIC#%' OR e.location LIKE 'CORPORATE#%')");
     while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
     foreach ($assignById as $k => $v) { $u = array_values(array_unique(array_filter($v, function ($x) { return $x !== null && $x !== ''; }))); sort($u); $assignById[$k] = $u; }
     $admin['assignById'] = $assignById;
@@ -1261,12 +1261,16 @@ try {
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
         const abi=A.assignById||{};
+        const prodName=n=>{let s=String(n||"");s=s.replace(/\([^)]*\)/g,"");s=s.split(/\s+in\s+/i)[0];s=s.replace(/\b(Training|Course|Programme|Program|Services|Development Program)\b[\s\S]*$/i,"$1");return s.trim().replace(/[\s,–—-]+$/,"");};
         const asgBody=(B.sbus||[]).filter(s=>!s.placeholder).map(s=>{
           const reps=(s.reps||[]).filter(r=>r.id&&!r.manager);
           if(!reps.length)return "";
           const mem=reps.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(r=>{
             const items=abi[r.id]||[];
-            return `<tr><td style="vertical-align:top;white-space:nowrap;padding-right:18px"><b>${esc(r.name)}</b></td><td style="color:var(--ink);font-size:12.5px;line-height:1.7">${items.length?items.map(esc).join(" · "):'<span style="color:var(--muted)">No active assignment</span>'}</td></tr>`;
+            const byP={};items.forEach(it=>{const p=prodName(it)||it;byP[p]=(byP[p]||0)+1;});
+            const prods=Object.keys(byP).sort();
+            const cell=prods.length?prods.map(p=>`<span style="display:inline-block;margin:2px 0"><span style="color:var(--ink)">${esc(p)}</span>${byP[p]>1?` <span style="color:var(--muted);font-weight:700">×${byP[p]}</span>`:""}</span>`).join('<span style="color:var(--line)"> &nbsp;·&nbsp; </span>'):'<span style="color:var(--muted)">No active assignment</span>';
+            return `<tr><td style="vertical-align:top;white-space:nowrap;padding-right:20px"><b>${esc(r.name)}</b>${items.length?`<div style="font-size:10.5px;color:var(--muted);font-weight:700;margin-top:2px">${items.length} session${items.length===1?"":"s"}</div>`:""}</td><td style="font-size:12.5px;line-height:1.8">${cell}</td></tr>`;
           }).join("");
           return `<tr><td colspan="2" style="background:var(--surface2);font-weight:800;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${esc(s.name)} · ${reps.length} ${reps.length===1?'person':'people'}</td></tr>${mem}`;
         }).filter(Boolean).join("")||'<tr><td colspan="2" style="text-align:center;color:var(--muted)">No team assignments.</td></tr>';
@@ -1276,7 +1280,7 @@ try {
           <section class="grid-2">${pendCard}${reqDonut}</section>
           <div class="section-tag"><h3>Requests</h3><span>${ml} · open queue on top</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
-          <div class="section-tag"><h3>Team assignments</h3><span>Each BDE and the courses/events they're assigned to, by department</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Team assignments</h3><span>Each BDE and their active courses / upcoming events, by department</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Team member</th><th>Assigned to</th></tr></thead><tbody>${asgBody}</tbody></table></div></div>`;
       }
 
