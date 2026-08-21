@@ -897,7 +897,7 @@ try {
             <div class="card"><div class="chead"><h4>Acquisition &amp; conversion funnel</h4><span class="chip slate">Live · all SBUs</span></div><div class="funnel">${B.funnel.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/fmax*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,B.funnel[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Consolidated leads → paid clients across every SBU.</div></div>
             <div class="card"><div class="chead"><h4>Lead-source contribution</h4><span class="chip slate">Leads by source</span></div>${sHTML}</div>
           </section>
-          <div class="card"><div class="chead"><h4>Unread WhatsApp chats awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} ${alerts.length===1?"person":"people"}</span></div><div class="list">${aHTML}</div><div style="font-size:11px;color:var(--muted);margin-top:8px">Open WhatsApp conversations assigned to each rep with an unanswered message.</div></div>`;
+          <div class="card"><div class="chead"><h4>Unread WhatsApp chats awaiting reply</h4><span class="chip ${alerts.length?"coral":"jade"}">${alerts.length} ${alerts.length===1?"person":"people"}</span></div><div class="list">${aHTML}</div></div>`;
       }
 
       function vReport(){
