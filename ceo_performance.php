@@ -40,7 +40,7 @@ if ($mconn) {
         FROM mdl_user_enrolments ue JOIN mdl_enrol e ON e.id = ue.enrolid JOIN mdl_course c ON c.id = e.courseid
         JOIN mdl_user u ON u.id = ue.userid
         WHERE c.id > 1 AND u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU
-        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 5");
+        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 8");
     while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $courses[] = [(string) $cr['nm'], (int) $cr['n']]; }
     if ($enrMonth !== null || $certMonth !== null || !empty($courses)) {
         $lms = ['enrMonth' => $enrMonth, 'certMonth' => $certMonth, 'active' => $active, 'enrolledAll' => $enrolled,
