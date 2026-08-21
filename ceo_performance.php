@@ -26,12 +26,15 @@ if ($mconn) {
     $active    = $mq("SELECT COUNT(DISTINCT ue.userid) FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0 AND u.lastaccess > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 30 DAY))");
     $completed = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_course_completions WHERE timecompleted IS NOT NULL AND timecompleted > 0");
     $certified = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_customcert_issues");
+    // Completion signal: course-completion tracking is often off (mdl_course_completions empty), while
+    // certificates ARE issued — so use whichever is populated as the single "Completed" stage. Keep the
+    // funnel all-time & monotonic (Enrolled → Completed); Active (30d) is a separate engagement stat.
+    $done = ($completed !== null && $completed > 0) ? $completed : $certified;
+    $doneLabel = ($completed !== null && $completed > 0) ? 'Completed' : 'Certified / completed';
     $stages = [];
-    if ($enrolled  !== null) { $stages[] = ['Enrolled', $enrolled]; }
-    if ($active    !== null) { $stages[] = ['Active (30d)', $active]; }
-    if ($completed !== null) { $stages[] = ['Completed', $completed]; }
-    if ($certified !== null && $certified > 0) { $stages[] = ['Certified', $certified]; }
-    if (!empty($stages)) { $lms = ['stages' => $stages]; }
+    if ($enrolled !== null) { $stages[] = ['Enrolled', $enrolled]; }
+    if ($done !== null) { $stages[] = [$doneLabel, min((int) $done, (int) ($enrolled ?? $done))]; }
+    if (!empty($stages)) { $lms = ['stages' => $stages, 'active' => $active, 'enrolled' => $enrolled, 'completed' => $done, 'doneLabel' => $doneLabel]; }
     @mysqli_close($mconn);
 }
 
@@ -777,10 +780,12 @@ try {
         return `<div class="card"><div class="chead"><h4>Revenue mix by SBU</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Cleared revenue share by SBU this period (International in its own metric excluded from the KES split).</div></div>`;
       }
       function learnerJourney(){
-        const stages=(B.lms&&B.lms.stages)||[];
+        const L=B.lms||{};const stages=L.stages||[];
         if(!stages.length) return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip slate">LMS</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Live learner-journey data from the eLearning platform isn't reachable right now.</p></div>`;
         const dropped=Math.max(0,stages[0][1]-stages[stages.length-1][1]);const max=Math.max(1,stages[0][1]);
-        return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip coral">${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/stages[i-1][1]*100)+"%":"100%"}</span></div>`).join("")}</div></div>`;
+        const active=(+L.active)||0;const enr=stages[0][1]||0;
+        const activeLine=(L.active!=null)?`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>Active in the last 30 days</span><b class="num" style="color:var(--ink)">${nf.format(active)}${enr?` · ${Math.round(active/Math.max(1,enr)*100)}% of enrolled`:""}</b></div>`:"";
+        return `<div class="card"><div class="chead"><h4>Learner journey</h4><span class="chip coral">${nf.format(dropped)} dropped off</span></div><div class="funnel">${stages.map(([l,n],i)=>`<div class="fr"><label>${esc(l)}</label><div class="fbar"><div style="width:${Math.max(9,n/max*100)}%">${nf.format(n)}</div></div><span class="cv">${i?Math.round(n/Math.max(1,stages[i-1][1])*100)+"%":"100%"}</span></div>`).join("")}</div>${activeLine}<div style="font-size:11px;color:var(--muted);margin-top:8px">Live from the eLearning platform. ${stages.length&&stages[stages.length-1][0].indexOf("Certified")===0?"Course-completion tracking is off in Moodle, so certificates issued are used as the completion signal.":""}</div></div>`;
       }
 
       function vCommand(){
