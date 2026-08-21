@@ -282,8 +282,9 @@ try {
 $reports = ['virtual' => ['months' => []], 'international' => ['months' => [], 'loc' => []], 'corporate' => ['months' => []]];
 try {
     $seed = [];
-    for ($i = 5; $i >= 0; $i--) { $t = strtotime(date('Y-m-01') . " -$i month"); $seed[date('Y-m', $t)] = ['label' => date('M', $t), 'enq' => 0, 'cli' => 0, 'collected' => 0, 'due' => 0]; }
-    $since = date('Y-m-01', strtotime(date('Y-m-01') . ' -5 month'));
+    $curM = (int) date('n');
+    for ($m = 1; $m <= $curM; $m++) { $t = mktime(0, 0, 0, $m, 1, (int) date('Y')); $seed[date('Y-m', $t)] = ['label' => date('M', $t), 'enq' => 0, 'cli' => 0, 'collected' => 0, 'due' => 0]; }
+    $since = date('Y-01-01');
 
     // ---- VIRTUAL months ----
     $vm = $seed;
@@ -1282,43 +1283,45 @@ try {
       }
 
       /* ---------- Reports tab: native grouped-bar charts (virtual + international) ---------- */
-      function barsSVG(labels,series,fmt,empty){
+      function barsSVG(labels,series,fmt,empty,hi){
         if(!labels.length||!series.some(s=>s.vals.some(v=>v))) return `<div style="display:flex;align-items:center;justify-content:center;min-height:180px;color:var(--muted);font-size:13.5px;font-weight:500;text-align:center;padding:20px">${esc(empty||"No data in this period.")}</div>`;
         const W=920,H=340,padL=74,padR=18,padT=34,padB=54,iw=W-padL-padR,ih=H-padT-padB;
         const rawMax=Math.max(1,...series.flatMap(s=>s.vals.map(v=>Math.abs(v||0))));
         const niceMax=(function(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const u=x/p;const f=u<=1?1:u<=2?2:u<=5?5:10;return f*p;})(rawMax);
         const n=labels.length,gw=iw/n,ns=series.length,bw=Math.max(12,Math.min(56,(gw*0.72)/ns));
         let grid="";for(let g=0;g<=4;g++){const yy=padT+ih*g/4,val=niceMax*(1-g/4);grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="${g===4?1.5:1}"/><text x="${padL-10}" y="${(yy+4).toFixed(1)}" text-anchor="end" style="font-size:12px;fill:var(--muted);font-weight:600">${fmt(val)}</text>`;}
+        let hiband="";
+        if(hi!=null&&hi>=0&&hi<labels.length){const hx=padL+gw*hi;hiband=`<rect x="${hx.toFixed(1)}" y="${padT.toFixed(1)}" width="${gw.toFixed(1)}" height="${ih.toFixed(1)}" fill="var(--brand)" opacity=".08" rx="4"/>`;}
         let bars="",xl="";
-        labels.forEach((lab,i)=>{const cx=padL+gw*i+gw/2,groupW=bw*ns;
+        labels.forEach((lab,i)=>{const cx=padL+gw*i+gw/2,groupW=bw*ns;const cur=(i===hi);
           series.forEach((s,si)=>{const v=Math.max(0,s.vals[i]||0),x=cx-groupW/2+si*bw,h=(v/niceMax)*ih,y=padT+ih-h,bx=x+(bw-4)/2;
             bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="3" fill="${s.color}"><title>${esc(lab)} · ${esc(s.name)}: ${fmt(v)}</title></rect>`;
             if(v>0)bars+=`<text x="${bx.toFixed(1)}" y="${(y-7).toFixed(1)}" text-anchor="middle" style="font-size:11.5px;font-weight:800;fill:${s.color}">${fmt(v)}</text>`;});
-          xl+=`<text x="${cx.toFixed(1)}" y="${H-padB+22}" text-anchor="middle" style="font-size:12.5px;font-weight:700;fill:var(--ink)">${esc(lab)}</text>`;});
-        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}${xl}</svg>`;
+          xl+=`<text x="${cx.toFixed(1)}" y="${H-padB+22}" text-anchor="middle" style="font-size:12.5px;font-weight:${cur?800:700};fill:${cur?"var(--brand)":"var(--ink)"}">${esc(lab)}${cur?" • now":""}</text>`;});
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${hiband}${bars}${xl}</svg>`;
       }
       function repLegend(series){return `<div style="display:flex;gap:16px;font-size:12.5px;font-weight:600;flex-wrap:wrap">${series.map(s=>`<span style="display:flex;align-items:center;gap:7px"><span style="width:13px;height:13px;border-radius:3px;background:${s.color}"></span>${esc(s.name)}</span>`).join("")}</div>`;}
       function vReports(){
         const V=REP.virtual||{months:[]},I=REP.international||{months:[],loc:[]},C=REP.corporate||{months:[]};
         const cnt=v=>nf.format(Math.round(v||0));
         const vm=V.months||[],im=I.months||[],cm=C.months||[],locs=(I.loc||[]).slice(0,8),short=s=>{s=String(s||"—");return s.length>12?s.slice(0,11)+"…":s;};
-        const chart=(title,chip,series,vals,fmt,legend,empty)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt,empty)}</div>`;
-        const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]),"No enquiries in this period.");
-        const vMon=chart("Virtual · fee collected vs balance","",[{name:"Collected",color:"var(--jade)",vals:vm.map(m=>m.collected)},{name:"Balance",color:"var(--amber)",vals:vm.map(m=>Math.max(0,(m.due||0)-(m.collected||0)))}],vm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"},{name:"Balance",color:"var(--amber)"}]),"No fee collected in this period.");
-        const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads in this period.");
-        const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected in this period.");
-        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
-        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length}</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"","No outstanding balances.");
-        const cEnq=chart("Corporate · enquiries vs won","",[{name:"Enquiries",color:"var(--brand)",vals:cm.map(m=>m.enq)},{name:"Won",color:"var(--jade)",vals:cm.map(m=>m.cli)}],cm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Won",color:"var(--jade)"}]),"No corporate enquiries in this period.");
-        const cMon=chart("Corporate · fee collected","",[{name:"Collected",color:"var(--jade)",vals:cm.map(m=>m.collected)}],cm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected in this period.");
+        const cur=vm.length-1;const ytd=vm.length?vm[0].label+"–"+vm[vm.length-1].label:"YTD";
+        const chart=(title,chip,series,vals,fmt,legend,empty,hi)=>`<div class="card"><div class="chead"><h4>${title}</h4>${chip}</div>${legend}${barsSVG(vals,series,fmt,empty,hi)}</div>`;
+        const vEnq=chart("Virtual · enquiries vs clients","",[{name:"Enquiries",color:"var(--brand)",vals:vm.map(m=>m.enq)},{name:"Clients (paid)",color:"var(--jade)",vals:vm.map(m=>m.cli)}],vm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Clients (paid)",color:"var(--jade)"}]),"No enquiries this year.",cur);
+        const iEnq=chart("International · leads vs customers","",[{name:"Leads",color:"var(--brand)",vals:im.map(m=>m.enq)},{name:"Customers",color:"var(--jade)",vals:im.map(m=>m.cli)}],im.map(m=>m.label),cnt,repLegend([{name:"Leads",color:"var(--brand)"},{name:"Customers",color:"var(--jade)"}]),"No leads this year.",cur);
+        const iMon=chart("International · fee collected","",[{name:"Collected",color:"var(--jade)",vals:im.map(m=>m.collected)}],im.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
+        const iRev=chart("International · revenue by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Revenue",color:"var(--brand)",vals:locs.map(l=>l.revenue)}],locs.map(l=>short(l.label)),fmoney,"","No revenue by location yet.");
+        const iBal=chart("International · fee balance by location",`<span class="chip slate">Top ${locs.length} · all-time</span>`,[{name:"Balance",color:"var(--amber)",vals:locs.map(l=>l.balance)}],locs.map(l=>short(l.label)),fmoney,"","No outstanding balances.");
+        const cEnq=chart("Corporate · enquiries vs won","",[{name:"Enquiries",color:"var(--brand)",vals:cm.map(m=>m.enq)},{name:"Won",color:"var(--jade)",vals:cm.map(m=>m.cli)}],cm.map(m=>m.label),cnt,repLegend([{name:"Enquiries",color:"var(--brand)"},{name:"Won",color:"var(--jade)"}]),"No corporate enquiries this year.",cur);
+        const cMon=chart("Corporate · fee collected","",[{name:"Collected",color:"var(--jade)",vals:cm.map(m=>m.collected)}],cm.map(m=>m.label),fmoney,repLegend([{name:"Collected",color:"var(--jade)"}]),"No fee collected this year.",cur);
         return `
           <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Analytics</h3><span>Enrolment &amp; revenue trends by department — last 6 months</span></div>
+            <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Analytics</h3><span>Enrolment &amp; revenue trends — this year (${ytd}) · current month highlighted</span></div>
             <div class="curtoggle"><button data-fincur="USD" class="${state.finCur==="USD"?"on":""}">USD $</button><button data-fincur="KES" class="${state.finCur==="KES"?"on":""}">KES</button></div>
           </div><div class="rule" style="margin:0 0 4px"></div>
-          <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment and fees</span><div class="rule"></div></div>
-          <section class="grid-2">${vEnq}${vMon}</section>
-          <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees and geographic spread</span><div class="rule"></div></div>
+          <div class="section-tag"><h3>Virtual (courses)</h3><span>Online course enrolment, Jan–${vm.length?vm[vm.length-1].label:"now"}</span><div class="rule"></div></div>
+          ${vEnq}
+          <div class="section-tag"><h3>International (events)</h3><span>Event leads, customers, fees (this year) &amp; geographic spread (all-time)</span><div class="rule"></div></div>
           <section class="grid-2">${iEnq}${iMon}</section>
           <section class="grid-2">${iRev}${iBal}</section>
           <div class="section-tag"><h3>Corporate (trainings)</h3><span>Corporate proposals, wins and training fees</span><div class="rule"></div></div>
