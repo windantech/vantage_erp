@@ -34,23 +34,17 @@ if ($mconn) {
     $toU   = "UNIX_TIMESTAMP('" . mysqli_real_escape_string($mconn, $ceo_to) . " 23:59:59')";
     $enrMonth  = $mq("SELECT COUNT(DISTINCT ue.userid) FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU");
     $certMonth = $mq("SELECT COUNT(DISTINCT userid) FROM mdl_customcert_issues WHERE timecreated BETWEEN $fromU AND $toU");
-    // Enrolments + certificates BY MONTH, last 6 months (0-filled so every month shows).
-    $months = [];
-    for ($i = 5; $i >= 0; $i--) { $k = date('Y-m', strtotime("first day of -$i month", strtotime($ceo_to))); $months[$k] = ['label' => date('M', strtotime($k . '-01')), 'enr' => 0, 'cert' => 0]; }
-    $eq = @mysqli_query($mconn, "SELECT DATE_FORMAT(FROM_UNIXTIME(ue.timecreated),'%Y-%m') ym, COUNT(DISTINCT ue.userid) n FROM mdl_user_enrolments ue JOIN mdl_user u ON u.id = ue.userid WHERE u.deleted = 0 AND ue.timecreated > 0 GROUP BY ym");
-    while ($eq && ($r = mysqli_fetch_assoc($eq))) { if (isset($months[$r['ym']])) { $months[$r['ym']]['enr'] = (int) $r['n']; } }
-    $cq2 = @mysqli_query($mconn, "SELECT DATE_FORMAT(FROM_UNIXTIME(timecreated),'%Y-%m') ym, COUNT(DISTINCT userid) n FROM mdl_customcert_issues WHERE timecreated > 0 GROUP BY ym");
-    while ($cq2 && ($r = mysqli_fetch_assoc($cq2))) { if (isset($months[$r['ym']])) { $months[$r['ym']]['cert'] = (int) $r['n']; } }
-    $monthsOut = []; foreach ($months as $m) { $monthsOut[] = [$m['label'], $m['enr'], $m['cert']]; }
-    // top courses by enrolment (all-time) — course names from the LMS
+    // Top courses by enrolment THIS MONTH — course names from the LMS, scoped to the month filter.
     $courses = [];
     $cq = @mysqli_query($mconn, "SELECT c.fullname nm, COUNT(DISTINCT ue.userid) n
         FROM mdl_user_enrolments ue JOIN mdl_enrol e ON e.id = ue.enrolid JOIN mdl_course c ON c.id = e.courseid
-        WHERE c.id > 1 GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 6");
+        JOIN mdl_user u ON u.id = ue.userid
+        WHERE c.id > 1 AND u.deleted = 0 AND ue.timecreated BETWEEN $fromU AND $toU
+        GROUP BY c.id, c.fullname ORDER BY n DESC LIMIT 8");
     while ($cq && ($cr = mysqli_fetch_assoc($cq))) { $courses[] = [(string) $cr['nm'], (int) $cr['n']]; }
-    if ($enrMonth !== null || $certMonth !== null || !empty($courses) || array_sum(array_map(function ($m) { return $m[1] + $m[2]; }, $monthsOut)) > 0) {
+    if ($enrMonth !== null || $certMonth !== null || !empty($courses)) {
         $lms = ['enrMonth' => $enrMonth, 'certMonth' => $certMonth, 'active' => $active, 'enrolledAll' => $enrolled,
-            'monthLabel' => date('F Y', strtotime($ceo_to)), 'months' => $monthsOut, 'courses' => $courses];
+            'monthLabel' => date('F Y', strtotime($ceo_to)), 'courses' => $courses];
     }
     @mysqli_close($mconn);
 }
@@ -797,22 +791,13 @@ try {
         return `<div class="card"><div class="chead"><h4>Revenue mix by SBU</h4><span class="chip slate">${kMoney(total)}</span></div>${lines.map(([n,v,c])=>`<div class="src"><label>${esc(n)}</label><div class="sb"><div style="width:${v/total*100}%;background:${c}"></div></div><b>${pct(v/total,0)}</b></div>`).join("")}<div style="font-size:11px;color:var(--muted);margin-top:8px">Cleared revenue share by SBU this period (International in its own metric excluded from the KES split).</div></div>`;
       }
       function learnerJourney(){
-        const L=B.lms||{};const months=L.months||[];
-        if(!months.length&&L.enrMonth==null) return `<div class="card"><div class="chead"><h4>Learning · eLearning platform</h4><span class="chip slate">LMS</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Live data from the eLearning platform isn't reachable right now.</p></div>`;
-        const stat=(l,v,c)=>`<div style="flex:1;background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${c};border-radius:10px;padding:11px 13px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800">${l}</div><b class="num" style="display:block;font-size:20px;margin-top:3px;color:var(--ink)">${v}</b></div>`;
-        const stats=`<div style="display:flex;gap:10px;margin-bottom:14px">${stat("New enrolments",nf.format((+L.enrMonth)||0),"var(--brand)")}${stat("Certificates issued",nf.format((+L.certMonth)||0),"var(--jade)")}${stat("Active (30d)",nf.format((+L.active)||0),"var(--slate)")}</div>`;
-        // grouped bars: enrolments (brand) vs certificates (jade) per month
-        let chart="";
-        if(months.length){const max=Math.max(1,...months.flatMap(m=>[m[1],m[2]]));const w=520,h=190,pd=30,base=h-pd-16,plot=base-pd,step=(w-2*pd)/months.length,bw=13,gap=4;
-          const bars=months.map((m,i)=>{const cx=pd+step*i+step/2;const xE=cx-bw-gap/2,xC=cx+gap/2;const eh=Math.max(0,m[1]/max*plot),ch=Math.max(0,m[2]/max*plot);return `<g>`
-            +`<rect x="${xE.toFixed(1)}" y="${(base-eh).toFixed(1)}" width="${bw}" height="${eh.toFixed(1)}" rx="2.5" fill="var(--brand)"><title>${esc(m[0])} · ${nf.format(m[1])} enrolled</title></rect>`
-            +`<rect x="${xC.toFixed(1)}" y="${(base-ch).toFixed(1)}" width="${bw}" height="${ch.toFixed(1)}" rx="2.5" fill="var(--jade)"><title>${esc(m[0])} · ${nf.format(m[2])} certified</title></rect>`
-            +`<text x="${cx.toFixed(1)}" y="${(base+14).toFixed(1)}" text-anchor="middle">${esc(m[0])}</text></g>`;}).join("");
-          chart=`<svg class="chart" viewBox="0 0 ${w} ${h}" style="height:190px" role="img" aria-label="Enrolments and certificates by month">${[0,.25,.5,.75,1].map(t=>`<line class="grid" x1="${pd}" y1="${(pd+t*plot).toFixed(1)}" x2="${w-pd}" y2="${(pd+t*plot).toFixed(1)}"/>`).join("")}${bars}</svg><div class="legend"><span class="lg"><i style="background:var(--brand)"></i>Enrolments</span><span class="lg"><i style="background:var(--jade)"></i>Certificates</span></div>`;
-        }
-        const courses=L.courses||[];const cmax=Math.max(1,...courses.map(c=>c[1]));
-        const courseBlock=courses.length?`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:8px">Top courses by enrolment</div>${courses.map(([nm,n])=>`<div class="src"><label style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</label><div class="sb"><div style="width:${n/cmax*100}%"></div></div><b>${nf.format(n)}</b></div>`).join("")}</div>`:"";
-        return `<div class="card"><div class="chead"><div><h4>Learning · eLearning platform</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">This ${esc(L.monthLabel||"month")}${L.enrolledAll!=null?" · "+nf.format(L.enrolledAll)+" enrolled all-time":""}</p></div><span class="chip slate">Live</span></div>${stats}${chart}${courseBlock}</div>`;
+        const L=B.lms||{};const courses=L.courses||[];
+        if(courses.length===0&&L.enrMonth==null) return `<div class="card"><div class="chead"><h4>Learning · eLearning platform</h4><span class="chip slate">LMS</span></div><p style="color:var(--muted);font-size:12.5px;margin:0;line-height:1.6">Live data from the eLearning platform isn't reachable right now.</p></div>`;
+        const stat=(l,v,c,tip)=>`<div title="${esc(tip||"")}" style="flex:1;background:var(--surface2);border:1px solid var(--line);border-left:3px solid ${c};border-radius:10px;padding:11px 13px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800">${l}</div><b class="num" style="display:block;font-size:20px;margin-top:3px;color:var(--ink)">${v}</b></div>`;
+        const stats=`<div style="display:flex;gap:10px;margin-bottom:14px">${stat("New enrolments",nf.format((+L.enrMonth)||0),"var(--brand)","New course enrolments this month")}${stat("Certificates issued",nf.format((+L.certMonth)||0),"var(--jade)","Certificates issued this month")}${stat("Active learners",nf.format((+L.active)||0),"var(--slate)","Learners who accessed the LMS in the last 30 days")}</div>`;
+        const cmax=Math.max(1,...courses.map(c=>c[1]));
+        const courseBlock=courses.length?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:8px">Courses enrolled this month</div>${courses.map(([nm,n])=>`<div class="src"><label style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</label><div class="sb"><div style="width:${n/cmax*100}%"></div></div><b>${nf.format(n)}</b></div>`).join("")}`:`<p style="color:var(--muted);font-size:12.5px;margin:0">No new course enrolments this month.</p>`;
+        return `<div class="card"><div class="chead"><div><h4>Learning · eLearning platform</h4><p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">This ${esc(L.monthLabel||"month")}${L.enrolledAll!=null?" · "+nf.format(L.enrolledAll)+" enrolled all-time":""}</p></div><span class="chip slate">Live</span></div>${stats}${courseBlock}</div>`;
       }
 
       function vCommand(){
