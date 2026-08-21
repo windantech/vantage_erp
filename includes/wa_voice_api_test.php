@@ -1121,8 +1121,16 @@ if ($rc !== 0) {
     }
     check('no protected WhatsApp file was touched', [], $touched);
 
+    // -c core.whitespace=cr-at-eol, because several files in this repository are
+    // committed with CRLF endings and there is no .gitattributes. Without the
+    // flag git counts the CR as trailing whitespace on every ADDED line, so any
+    // edit to footer.php or a CRLF asset fails this check for doing nothing
+    // wrong — commit bd842c72 added eight lines and produced eight warnings.
+    // The flag suppresses exactly that and still catches real trailing spaces
+    // and tabs, which is what the check is for.
     $whitespace = [];
-    @exec('cd ' . escapeshellarg($root) . ' && git diff --check 2>&1', $whitespace);
+    @exec('cd ' . escapeshellarg($root)
+          . ' && git -c core.whitespace=cr-at-eol diff --check 2>&1', $whitespace);
     check('git diff --check reports nothing', [], $whitespace);
 }
 

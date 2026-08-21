@@ -1,24 +1,38 @@
 </div>
 
 <!-- Wrapper End -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+<!-- jQuery. ONE copy, first, from our own server.
+
+     There used to be three: 3.2.1 here, 3.6.0 from code.jquery.com below, and
+     the local 3.6.0 further down again. Each reload REPLACES window.jQuery and
+     with it every plugin registered against the old one, so the DataTables
+     loaded a few lines below was silently wiped by the next jQuery and only
+     worked because a later copy re-registered it. That is the kind of thing
+     that works until the day a CDN is slow, and then fails in a way nobody
+     can reproduce. -->
+<script src="assets/vendor/jquery/jquery.min.js?v=<?php echo date('his'); ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js" integrity="sha384-BBtl+eGJRgqQAUMxJ7pMwbEyER4l1g+O15P+16Ep7Q9Q+zqX6gSbd85u4mG4QzX+" crossorigin="anonymous"></script>
 
 <script src="https://canvasjs.com/assets/script/canvasjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<!-- second jQuery and a third DataTables removed; see the note above -->
 
 
-<script src="assets/vendor/jquery/jquery.min.js?v=<?php echo date('his'); ?>"></script>
+<!-- Bootstrap 4's bundle stays. It looks redundant next to the Bootstrap 5
+     loaded above and it is NOT: assets/js/scripts.js calls
+     $('.sidebar .collapse').collapse('hide'), which is the jQuery plugin API
+     that Bootstrap 5 removed, and thirteen pages including top_nav.php still
+     use data-toggle= rather than data-bs-toggle=. The two coexist because
+     they listen for different attributes. Removing this line breaks the
+     sidebar and the top navigation on every page. -->
 <script src="assets/vendor/bootstrap/js/bootstrap.bundle.min.js?v=<?php echo date('his'); ?>"></script>
 <script src="assets/vendor/jquery-easing/jquery.easing.min.js?v=<?php echo date('his'); ?>"></script>
 <script src="assets/js/scripts.js?v=<?php echo date('his'); ?>"></script>
 <script src="assets/vendor/chart.js/Chart.min.js?v=<?php echo date('his'); ?>"></script>
-<script src="assets/js/demo/chart-area-demo.js?v=<?php echo date('his'); ?>"></script>
-<script src="assets/js/demo/chart-pie-demo.js?v=<?php echo date('his'); ?>"></script>
+<!-- chart-area-demo.js and chart-pie-demo.js were sample files from the admin
+     template that were never copied into this repository. Two more 404s. -->
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
 <script src="assets/js/datatables.js?v=<?php echo date('his'); ?>"></script>
@@ -37,7 +51,7 @@
 <!--<script src="assets/js/upd_system_email.js?v=<?php echo date('his'); ?>"></script>-->
 <script src="assets/js/delete_email.js?v=<?php echo date('his'); ?>"></script>
 <script src="assets/js/config_email.js?v=<?php echo date('his'); ?>"></script>
-<script src="assets/js/export.js?v=<?php echo date('his'); ?>"></script>
+<!-- export.js: another reference to a file that does not exist here. -->
 <!-- Select2 -->
 <script src="assets/js/select2.full.min.js?v=<?php echo date('his'); ?>"></script>
 

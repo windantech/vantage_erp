@@ -36,8 +36,10 @@ if (!headers_sent()) {
     <link href="assets/css/bootstrap.css?v=<?php echo date('his'); ?>" rel="stylesheet">
     <link href="assets/css/main.css?v=<?php echo date('his'); ?>" rel="stylesheet">
     <link href="assets/css/summernote.css?v=<?php echo date('his'); ?>" rel="stylesheet">
-    <link href="assets/summernote/summernote-bs4.min.css?v=<?php echo date('his'); ?>" rel="stylesheet">
-    <link href="assets/dropzone/min/dropzone.min.css?v=<?php echo date('his'); ?>" rel="stylesheet">
+    <!-- summernote-bs4.min.css and dropzone.min.css used to be requested here.
+         Neither file has ever existed in this repository, so every page in the
+         admin fetched two 404s. assets/css/summernote.css above is the one that
+         is actually present and is what styles the editor. -->
     <link href="assets/css/lead_forms.css?v=<?php echo date('his'); ?>" rel="stylesheet">
 
     <link rel="stylesheet" href="assets/css/select2.min.css?v=<?php echo date('his'); ?>">
@@ -50,12 +52,14 @@ if (!headers_sent()) {
     <!-- table -->
     
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+    <!-- The DataTables SCRIPTS that used to sit here have moved to footer.php.
 
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+         DataTables is a jQuery plugin and jQuery is not loaded until the footer,
+         so both files threw "jQuery is not defined" the moment the browser
+         parsed them — on every page in the admin, and twice over, because the
+         whole block was duplicated. They contributed nothing but console errors
+         and two wasted round trips; footer.php loads DataTables properly, after
+         jQuery, and that is the copy every .DataTable() call has always used. -->
 </head>
 
 <body class="overflow">

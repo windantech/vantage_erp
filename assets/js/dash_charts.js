@@ -1,6 +1,15 @@
 $(document).ready(function () {
     // Function to create a chart with Ajax data
     function createChart(container, title, color, dataUrl, fontColor, backgroundColor) {
+        // Nothing to draw on. This file is loaded by footer.php on EVERY admin
+        // page, so on all but the dashboards these containers do not exist and
+        // CanvasJS threw "Chart Container with id ... was not found", followed
+        // by a TypeError that stopped the rest of this file running.
+        //
+        // Checked before the request, not after: four AJAX calls per page whose
+        // results can never be displayed is bandwidth nobody asked for.
+        if (!document.getElementById(container)) { return; }
+
         $.ajax({
           url: dataUrl,
           dataType: "json",
