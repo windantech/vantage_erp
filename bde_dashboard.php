@@ -877,7 +877,7 @@ if ($bde_is_admin) {
           ["Total leads",nf.format(B.totalLeads||0),"Enquiries assigned to you"],
           ["Paid clients",nf.format(B.paidClients||0),(B.totalLeads?pct((B.paidClients||0)/B.totalLeads,0)+" of leads converted":"cleared & paid")],
           ["Collection rate",(B.collection!=null?pct(B.collection,0):"—"),"Fees settled vs expected"],
-          ["WhatsApp to reply",nf.format(B.waUnread||0),(B.waOpen?"unread · of "+nf.format(B.waOpen)+" open chats":"unread chats")],
+          ["WhatsApp to reply",nf.format(B.waUnread||0),(B.waOpen?"unread · of "+nf.format(B.waOpen)+" escalated to you":"escalated chats to reply")],
           ["Commission (eligible)",(B.commissionKes?kMoney(B.commissionKes):"KES 0"),"From the commission engine"]
         ];
         return `<div class="card"><div class="chead"><h4>Execution drivers</h4><span class="chip slate">${esc(B.dept||"")}</span></div><div class="drivers">${drivers.map(([l,v,s],i)=>`<div class="driver" style="--dacc:${dAcc[i%dAcc.length]}"><div class="dtop"><span class="dicon">${dIcons[i%dIcons.length]}</span><span class="live">Live</span></div><div class="n num">${v}</div><b>${esc(l)}</b><small>${esc(s)}</small></div>`).join("")}</div></div>`;

@@ -273,11 +273,12 @@ if (!function_exists('bde_fetch_metrics')) {
             WHERE assigned_user_id = $ruId AND escalated = 1 AND created_at BETWEEN '$s' AND '$e 23:59:59'");
         if ($waq && ($war = mysqli_fetch_assoc($waq)) && (int) $war['n'] > 0) { $sources['WhatsApp'] = ($sources['WhatsApp'] ?? 0) + (int) $war['n']; }
 
-        // WhatsApp follow-ups: open conversations assigned to this BDE with an unread message
-        // (opened vs not = last_message_at newer than last_read_at, or never read).
+        // WhatsApp follow-ups: only chats ESCALATED to this person for a human reply count here — not
+        // every AI-handled conversation assigned to them. 'unread' = a new message they haven't opened
+        // (last_message_at newer than last_read_at, or never read). Matches the "escalated to you" alert.
         $wq = @mysqli_query($conn, "SELECT COUNT(*) open_chats,
             SUM(CASE WHEN last_read_at IS NULL OR last_message_at > last_read_at THEN 1 ELSE 0 END) unread
-            FROM wa_conversations WHERE assigned_user_id = $ruId AND status = 'open'");
+            FROM wa_conversations WHERE assigned_user_id = $ruId AND status = 'open' AND escalated = 1");
         if ($wq && ($wr = mysqli_fetch_assoc($wq))) { $out['wa_open'] = (int) $wr['open_chats']; $out['wa_unread'] = (int) $wr['unread']; }
 
         // --- roll-ups (register + enquiries combined) ---
