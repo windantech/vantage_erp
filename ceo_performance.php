@@ -251,7 +251,7 @@ try {
 } catch (\Throwable $e) { error_log('CEO Finance fetch: ' . $e->getMessage()); }
 
 // ---- Admin tab: native analytics (service requests + intake/event assignments) ----
-$admin = ['req' => ['pending' => 0, 'progress' => 0, 'completed' => 0, 'rejected' => 0, 'pending_amt' => 0, 'list' => []], 'intakes' => [], 'assign' => [], 'monthLabel' => date('M Y')];
+$admin = ['req' => ['pending' => 0, 'progress' => 0, 'completed' => 0, 'rejected' => 0, 'pending_amt' => 0, 'list' => []], 'intakes' => [], 'assignById' => [], 'monthLabel' => date('M Y')];
 $monthStart = date('Y-m-01');   // current month — admin focuses on live/current activity
 try {
     $res = $q("SELECT SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) pending,
@@ -277,36 +277,14 @@ try {
         $admin['intakes'][] = ['name' => (string) (($row['description'] ?? '') !== '' ? $row['description'] : ($row['course'] ?? 'Intake')), 'course' => (string) ($row['course'] ?? ''), 'aid' => (int) ($row['assigned_to'] ?? 0), 'assignee' => (string) ($row['assignee'] ?? ''), 'registered' => (int) $row['registered'], 'paying' => (int) $row['paying'], 'date' => !empty($row['start_date']) ? date('M j, Y', strtotime((string) $row['start_date'])) : '', 'ts' => !empty($row['start_date']) ? (int) strtotime((string) $row['start_date']) : 0, 'state' => $configured ? 'ready' : (!empty($row['assigned_to']) ? 'config' : 'unassigned')];
     }
 
-    // ===== Team → course/event assignments (authoritative: course/Event.assigned_to comma-list, same source as wa_assignments.php) =====
-    $assignAcc = ['virtual' => [], 'corporate' => [], 'international' => [], 'academic' => []];
-    $res = $q("SELECT c.course nm_item, COALESCE(NULLIF(s.full_name,''), ru.fullname) nm
-               FROM `course` c JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(c.assigned_to,' ',''))>0
-               LEFT JOIN `staff` s ON s.system_user_id=ru.id
-               WHERE c.status=1 AND c.assigned_to<>''");
-    while ($res && ($row = mysqli_fetch_assoc($res))) { $nm = trim((string) $row['nm']); if ($nm === '') { continue; } $assignAcc['virtual'][$nm][] = (string) $row['nm_item']; }
-    $res = $q("SELECT e.event_title nm_item, e.location loc, COALESCE(NULLIF(s.full_name,''), ru.fullname) nm
-               FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0
-               LEFT JOIN `staff` s ON s.system_user_id=ru.id
-               WHERE e.status=1 AND e.assigned_to<>''");
-    while ($res && ($row = mysqli_fetch_assoc($res))) {
-        $nm = trim((string) $row['nm']); if ($nm === '') { continue; }
-        $loc = ltrim((string) ($row['loc'] ?? ''));
-        $cat = (stripos($loc, 'CORPORATE#') === 0) ? 'corporate' : ((stripos($loc, 'ACADEMIC#') === 0) ? 'academic' : 'international');
-        $assignAcc[$cat][$nm][] = (string) $row['nm_item'];
-    }
-    $catLabels = ['virtual' => 'Virtual Courses', 'corporate' => 'Corporate Trainings', 'international' => 'International Events', 'academic' => 'Academic Programmes'];
-    $admin['assign'] = [];
-    foreach ($catLabels as $key => $label) {
-        if (empty($assignAcc[$key])) { continue; }
-        $members = [];
-        foreach ($assignAcc[$key] as $nm => $items) {
-            $u = array_values(array_unique(array_filter($items, function ($x) { return $x !== null && $x !== ''; })));
-            sort($u);
-            $members[] = ['name' => $nm, 'items' => $u];
-        }
-        usort($members, function ($a, $b) { return strcmp($a['name'], $b['name']); });
-        $admin['assign'][] = ['dept' => $label, 'members' => $members];
-    }
+    // ===== Course/event assignments keyed by user id (from assigned_to comma-list). The CEO view maps these onto our known BDE roster per department. =====
+    $assignById = [];
+    $res = $q("SELECT ru.id uid, c.course nm FROM `course` c JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(c.assigned_to,' ',''))>0 WHERE c.status=1 AND c.assigned_to<>''");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
+    $res = $q("SELECT ru.id uid, e.event_title nm FROM `Event` e JOIN `registered_users` ru ON FIND_IN_SET(ru.id, REPLACE(e.assigned_to,' ',''))>0 WHERE e.status=1 AND e.assigned_to<>''");
+    while ($res && ($row = mysqli_fetch_assoc($res))) { $assignById[(int) $row['uid']][] = (string) $row['nm']; }
+    foreach ($assignById as $k => $v) { $u = array_values(array_unique(array_filter($v, function ($x) { return $x !== null && $x !== ''; }))); sort($u); $assignById[$k] = $u; }
+    $admin['assignById'] = $assignById;
 } catch (\Throwable $e) { error_log('CEO Admin fetch: ' . $e->getMessage()); }
 
 // ---- Reports tab: monthly trends (virtual + international) + per-location breakdown. Money stored USD. ----
@@ -1282,19 +1260,24 @@ try {
         const stChip=st=>{const m={Pending:"amber","In Progress":"slate",Completed:"jade",Rejected:"coral"};return `<span class="chip ${m[st]||'slate'}">${esc(st)}</span>`;};
         const reqRows=rq.list.length?rq.list.slice(0,8).map(r=>`<tr><td><b>${esc(r.title)}</b><div style="font-size:11px;color:var(--muted)">${esc(r.type||'—')}</div></td><td>${esc(r.staff||'—')}</td><td class="num">${r.amount>0?kMoney(r.amount):'—'}</td><td>${stChip(r.status)}</td><td class="num">${esc(r.date)}</td></tr>`).join(""):'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No requests.</td></tr>';
         const stateChip=s=>s==="ready"?'<span class="chip jade">Ready</span>':s==="config"?'<span class="chip amber">Needs config</span>':'<span class="chip slate">Unassigned</span>';
-        const asg=A.assign||[];
-        const asgBody=asg.length?asg.map(g=>{
-          const mem=(g.members||[]).map(m=>`<tr><td style="vertical-align:top"><b>${esc(m.name)}</b></td><td>${(m.items||[]).map(c=>`<span class="chip slate" style="margin:2px 5px 2px 0;display:inline-block">${esc(c)}</span>`).join("")||'<span style="color:var(--muted)">—</span>'}</td><td class="num" style="vertical-align:top">${nf.format((m.items||[]).length)}</td></tr>`).join("");
-          return `<tr><td colspan="3" style="background:var(--surface2);font-weight:800;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${esc(g.dept)} · ${(g.members||[]).length} ${((g.members||[]).length===1)?'person':'people'}</td></tr>${mem}`;
-        }).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No course/event assignments configured yet.</td></tr>';
+        const abi=A.assignById||{};
+        const asgBody=(B.sbus||[]).filter(s=>!s.placeholder).map(s=>{
+          const reps=(s.reps||[]).filter(r=>r.id&&!r.manager);
+          if(!reps.length)return "";
+          const mem=reps.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(r=>{
+            const items=abi[r.id]||[];
+            return `<tr><td style="vertical-align:top;white-space:nowrap;padding-right:18px"><b>${esc(r.name)}</b></td><td style="color:var(--ink);font-size:12.5px;line-height:1.7">${items.length?items.map(esc).join(" · "):'<span style="color:var(--muted)">No active assignment</span>'}</td></tr>`;
+          }).join("");
+          return `<tr><td colspan="2" style="background:var(--surface2);font-weight:800;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${esc(s.name)} · ${reps.length} ${reps.length===1?'person':'people'}</td></tr>${mem}`;
+        }).filter(Boolean).join("")||'<tr><td colspan="2" style="text-align:center;color:var(--muted)">No team assignments.</td></tr>';
         const ml=esc(A.monthLabel||'this month');
         return `
           <div class="section-tag"><h3>Admin &amp; Requests</h3><span>Service requests and course intakes — ${ml}</span><div class="rule"></div></div>
           <section class="grid-2">${pendCard}${reqDonut}</section>
           <div class="section-tag"><h3>Requests</h3><span>${ml} · open queue on top</span><div class="rule"></div></div>
           <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Amount</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${reqRows}</tbody></table></div></div>
-          <div class="section-tag"><h3>Course &amp; event assignments by team</h3><span>Who's assigned to which course or event, grouped by department</span><div class="rule"></div></div>
-          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Team member</th><th>Assigned to</th><th>#</th></tr></thead><tbody>${asgBody}</tbody></table></div></div>`;
+          <div class="section-tag"><h3>Team assignments</h3><span>Each BDE and the courses/events they're assigned to, by department</span><div class="rule"></div></div>
+          <div class="card tight"><div class="table-wrap"><table><thead><tr><th>Team member</th><th>Assigned to</th></tr></thead><tbody>${asgBody}</tbody></table></div></div>`;
       }
 
       /* ---------- detail modals (attendance clock-ins, payroll payslips) ---------- */
