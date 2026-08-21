@@ -667,6 +667,31 @@ if (!defined('WA_INBOX_PAGE'))     { define('WA_INBOX_PAGE', 50); }
 if (!defined('WA_INBOX_MAX_ROWS')) { define('WA_INBOX_MAX_ROWS', 300); }
 
 /**
+ * Ceiling for a FILTERED tab.
+ *
+ * Only "All" is paginated. Every other tab is a working queue — the chats
+ * closing within the hour, the ones nobody has answered, the triage pool — and a
+ * rep works those to the bottom. Making somebody press "Load more" through a
+ * list they are trying to empty is the wrong shape entirely; they need to see
+ * how much is left.
+ *
+ * A ceiling still exists, because "all of it" and "however many there turn out
+ * to be" are different promises. It is high enough that no real queue reaches
+ * it, and when one does the page says so rather than silently truncating.
+ */
+if (!defined('WA_INBOX_FILTERED_MAX')) { define('WA_INBOX_FILTERED_MAX', 1000); }
+
+/**
+ * The most rows one request may return for a given tab.
+ *
+ * "All" is the whole inbox and grows for ever, so it pages. A filtered tab is
+ * bounded by its own predicate and is loaded whole.
+ */
+function wa_inbox_max_rows($filter) {
+    return $filter === 'all' ? (int)WA_INBOX_MAX_ROWS : (int)WA_INBOX_FILTERED_MAX;
+}
+
+/**
  * The SQL predicate for one filter tab, or '' for 'all'.
  *
  * Each mirrors exactly what the browser used to test on the loaded array, so the
@@ -804,8 +829,9 @@ function wa_inbox_rows($conn, $staffId, $isSupervisor, array $opts = []) {
     $filter = (string)($opts['filter'] ?? 'all');
     if (!in_array($filter, wa_inbox_filters(), true)) { $filter = 'all'; }
 
+    // The ceiling depends on the tab: "All" pages, everything else loads whole.
     $limit = (int)($opts['limit'] ?? WA_INBOX_PAGE);
-    $limit = max(1, min(WA_INBOX_MAX_ROWS, $limit));
+    $limit = max(1, min(wa_inbox_max_rows($filter), $limit));
 
     $where = wa_inbox_where($conn, $staffId, $isSupervisor, $opts);
     $order = wa_inbox_order_sql($filter);

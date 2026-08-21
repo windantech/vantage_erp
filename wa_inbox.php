@@ -141,7 +141,7 @@ $unreadTotal = (int)$counts['unread'];
                             <i class="bi bi-arrow-down-circle me-1"></i>Load more
                         </button>
                         <div id="waCap" class="small text-muted mt-2" style="display:none">
-                            Showing the most recent <?php echo (int)WA_INBOX_MAX_ROWS; ?>.
+                            Showing the most recent <span id="waCapN"><?php echo (int)WA_INBOX_PAGE; ?></span>.
                             Use a filter or the search box to narrow it down.
                         </div>
                     </div>
@@ -156,14 +156,24 @@ $unreadTotal = (int)$counts['unread'];
 (function () {
     var current = [];
     var currentFilter = 'all';
-    var PAGE     = <?php echo (int)WA_INBOX_PAGE; ?>;
-    var MAX_ROWS = <?php echo (int)WA_INBOX_MAX_ROWS; ?>;
+    var PAGE         = <?php echo (int)WA_INBOX_PAGE; ?>;
+    var MAX_ROWS     = <?php echo (int)WA_INBOX_MAX_ROWS; ?>;
+    var FILTERED_MAX = <?php echo (int)WA_INBOX_FILTERED_MAX; ?>;
     var limit    = PAGE;      // size of the window currently loaded
     var hasMore  = false;     // the server told us there is another page
+
+    /* Only "All" pages.
+       Every other tab is a queue somebody is working to the bottom — closing
+       soon, unread, triage — and asking them to press a button through a list
+       they are trying to empty is the wrong shape. Those load whole, and the
+       ceiling below is a backstop, not a page size. */
+    function paged() { return currentFilter === 'all'; }
+    function ceiling() { return paged() ? MAX_ROWS : FILTERED_MAX; }
     var rowsEl   = document.getElementById('waRows');
     var moreWrap = document.getElementById('waMoreWrap');
     var moreBtn  = document.getElementById('waMore');
     var capEl    = document.getElementById('waCap');
+    var capNEl   = document.getElementById('waCapN');
     var ofEl     = document.getElementById('waOf');
     var searchEl = document.getElementById('waSearch');
     var courseEl = document.getElementById('waCourse');
@@ -323,9 +333,16 @@ $unreadTotal = (int)$counts['unread'];
         rowsEl.innerHTML = html || '<tr><td colspan="7" class="text-center py-5 text-muted">'
             + '<i class="bi bi-inbox fs-1 d-block mb-3"></i>No matching conversations</tr>';
         countEl.textContent = list.length;
-        ofEl.textContent = hasMore ? ' of many' : '';
-        moreWrap.style.display = hasMore ? '' : 'none';
-        capEl.style.display = (limit >= MAX_ROWS) ? '' : 'none';
+        // "of many" and the Load more button belong to the paged tab only. On a
+        // filtered tab the number IS the answer to "how much is left?", so
+        // qualifying it would undercut the one thing it is there to say.
+        ofEl.textContent = (paged() && hasMore) ? ' of many' : '';
+        moreWrap.style.display = (paged() && hasMore) ? '' : 'none';
+        // The cap note still shows on a filtered tab, because a queue that has
+        // hit the ceiling is genuinely incomplete and the rep must know.
+        var atCeiling = (list.length >= ceiling()) || (!paged() && hasMore);
+        capEl.style.display = atCeiling ? '' : 'none';
+        if (atCeiling) { capNEl.textContent = ceiling(); }
         moreBtn.disabled = (limit >= MAX_ROWS);
         // The rows were just replaced, so the new badges are empty until the next
         // tick. Paint them now, or every poll flashes a blank badge for a second.
@@ -391,7 +408,9 @@ $unreadTotal = (int)$counts['unread'];
     /* Changing a filter resets the window: page four of "All" has nothing to do
        with page four of "Unread". */
     function refilter() {
-        limit = PAGE;
+        // Switching to a filtered tab asks for the whole queue in one request;
+        // switching back to All returns to a page.
+        limit = paged() ? PAGE : FILTERED_MAX;
         resetAlertBaseline();
         saveFilters();
         load(true);                        // the tab changed, so the totals may have too
@@ -455,7 +474,10 @@ $unreadTotal = (int)$counts['unread'];
     setInterval(tickCountdowns, 1000);
 
     restoreFilters();               // re-apply the filters you had this session
-    load(true);                     // first page + chip totals
+    // AFTER restoring: coming back from a chat onto the Triage tab must ask for
+    // the whole queue, not the fifty rows a page would have wanted.
+    limit = paged() ? PAGE : FILTERED_MAX;
+    load(true);                     // first rows + chip totals
 
     /* Rows stay live at six seconds. The totals sweep the whole inbox rather than
        one page, so they refresh every fifth poll instead — half a minute out of
