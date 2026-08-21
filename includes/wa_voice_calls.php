@@ -258,7 +258,35 @@ function wa_voice_call_by_call_id($conn, $callId) {
  * page is never to fetch it.
  */
 function wa_voice_calls_for_contact($conn, $contactId, $limit = 20) {
+    // A page render must survive the tables not existing.
+    //
+    // mysqli throws by default on PHP 8.1+, and the `@` in wa_voice_stmt()
+    // suppresses warnings, NOT exceptions — so querying a table that has not
+    // been created is an uncaught fatal, and a fatal part-way through a page is
+    // a blank screen with the sidebar already drawn and nothing in the log to
+    // say why. Which is exactly what opening a conversation did when the code
+    // was deployed ahead of db_schema/wa_voice_phase22.sql.
+    //
+    // Returning [] renders the thread exactly as it did before Phase 2.2, which
+    // is the correct behaviour for a CRM that has the code but not the tables.
+    try {
+        if (!wa_voice_calls_schema_available($conn)) { return []; }
+    } catch (Throwable $e) {
+        return [];
+    }
+
     $limit = max(1, min(50, (int)$limit));
+    try {
+        return wa_voice_calls_for_contact_unguarded($conn, $contactId, $limit);
+    } catch (Throwable $e) {
+        error_log('[wa-voice] thread card unavailable: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/** The actual read. Separated so the guard above is impossible to bypass by
+ *  accident and so a future reader has one obvious place to add to. */
+function wa_voice_calls_for_contact_unguarded($conn, $contactId, $limit) {
     $calls = wa_voice_fetch_all($conn,
         "SELECT `id`, `started_at`, `ended_at`, `duration_seconds`, `outcome`,
                 `summary`, `questions_answered`, `unresolved_questions`,
@@ -290,6 +318,13 @@ function wa_voice_calls_for_contact($conn, $contactId, $limit = 20) {
  * expects to see.
  */
 function wa_voice_programmes_for_calls($conn, array $voiceCallIds) {
+    // Called from the thread card, so it carries the same guarantee: a missing
+    // table renders an empty list rather than blanking the page.
+    try {
+        if (!wa_voice_calls_schema_available($conn)) { return []; }
+    } catch (Throwable $e) {
+        return [];
+    }
     $ids = [];
     foreach ($voiceCallIds as $id) { if ((int)$id > 0) { $ids[] = (int)$id; } }
     if (!$ids) { return []; }
