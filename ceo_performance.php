@@ -162,20 +162,20 @@ try {
     $finance['years'] = array_map('strval', array_keys($ys));
 
     // Top courses / events per year (JS aggregates to selected year)
-    $res = $q("SELECT YEAR(d.datee) y, c.course name, SUM(d.TransactionAmount) rev, COUNT(*) n
+    $res = $q("SELECT YEAR(d.datee) y, MONTH(d.datee) m, c.course name, SUM(d.TransactionAmount) rev, COUNT(*) n
                FROM `dpo_payment` d JOIN `course` c ON d.purpose=c.course_id
-               WHERE d.status=2 AND d.TransactionAmount>0 GROUP BY YEAR(d.datee), c.course");
+               WHERE d.status=2 AND d.TransactionAmount>0 GROUP BY YEAR(d.datee), MONTH(d.datee), c.course");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         if (!$row['y']) { continue; }
-        $finance['rev']['courses'][] = ['y' => (int) $row['y'], 'name' => (string) (($row['name'] ?? '') !== '' ? $row['name'] : 'Unknown course'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
+        $finance['rev']['courses'][] = ['y' => (int) $row['y'], 'm' => (int) $row['m'], 'name' => (string) (($row['name'] ?? '') !== '' ? $row['name'] : 'Unknown course'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
     }
-    $res = $q("SELECT YEAR(t.date_sent) y, COALESCE(e.location,'Unknown Event') loc, SUM(t.amount) rev, COUNT(*) n
+    $res = $q("SELECT YEAR(t.date_sent) y, MONTH(t.date_sent) m, COALESCE(e.location,'Unknown Event') loc, SUM(t.amount) rev, COUNT(*) n
                FROM `ticket_congress` t LEFT JOIN `Event` e ON t.event_id=e.event_id
                WHERE t.status=2 AND t.amount>0 AND NOT EXISTS (SELECT 1 FROM `dpo_payment` dp WHERE dp.token=t.confirmation AND dp.status=2)
-               GROUP BY YEAR(t.date_sent), e.location");
+               GROUP BY YEAR(t.date_sent), MONTH(t.date_sent), e.location");
     while ($res && ($row = mysqli_fetch_assoc($res))) {
         if (!$row['y']) { continue; }
-        $finance['rev']['events'][] = ['y' => (int) $row['y'], 'loc' => (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown Event'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
+        $finance['rev']['events'][] = ['y' => (int) $row['y'], 'm' => (int) $row['m'], 'loc' => (string) (($row['loc'] ?? '') !== '' ? $row['loc'] : 'Unknown Event'), 'rev' => (float) $row['rev'], 'n' => (int) $row['n']];
     }
 
     // ===== Expenses by category (USD) =====
@@ -579,7 +579,7 @@ try {
         sbus:<?php echo json_encode($ceo['sbus'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'; ?>
       };
       const periods=[{label:<?php echo json_encode(date('F Y', strtotime($ceo_to)), JSON_INVALID_UTF8_SUBSTITUTE) ?: '"This month"'; ?>,working:<?php echo (int) date('t', strtotime($ceo_to)); ?>,elapsed:<?php echo (int) max(1, min((int) date('j', strtotime($ceo_to)), (int) date('t', strtotime($ceo_to)))); ?>}];
-      const state={p:0,view:"command",role:"ceo",dept:0,emp:0,finYear:"all",finCur:"USD"};
+      const state={p:0,view:"command",role:"ceo",dept:0,emp:0,finYear:"month",finCur:"USD"};
 
       const nf=new Intl.NumberFormat("en-KE",{maximumFractionDigits:0});
       const kMoney=v=>{const a=Math.abs(v||0);if(a>=1e6)return "KES "+(v/1e6).toFixed(2).replace(/\.00$/,"")+"M";if(a>=1e3)return "KES "+Math.round(v/1e3)+"K";return "KES "+nf.format(Math.round(v||0));};
@@ -1126,16 +1126,17 @@ try {
       function fbar(label,usd,maxUsd,color){return `<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${label}</span><b>${fmoney(usd)}</b></div><div style="height:9px;border-radius:99px;background:var(--surface3)"><div style="width:${clamp(maxUsd?usd/maxUsd*100:0,0,100)}%;height:100%;border-radius:99px;background:${color}"></div></div></div>`;}
       const pctOf=(a,b)=>b>0?Math.round(a/b*100):0;
       // aggregate the revenue series for the selected year
+      function finNow(){const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1};}
+      function finMatch(x){const yr=state.finYear;if(yr==="all")return true;if(yr==="month"){const n=finNow();return +x.y===n.y&&+x.m===n.m;}return String(x.y)===String(yr);}
       function revAgg(){
-        const yr=state.finYear;
-        const ms=FIN.rev.months.filter(m=>yr==="all"||String(m.y)===String(yr));
+        const ms=FIN.rev.months.filter(finMatch);
         let v=0,i=0,c=0,vexp=0,iexp=0,vn=0,ic=0;
         ms.forEach(m=>{v+=m.v;i+=m.i;c+=m.c;vexp+=m.vexp;iexp+=m.iexp;vn+=m.vn;ic+=m.in;});
         return {months:ms,v:v,i:i,c:c,vexp:vexp,iexp:iexp,vn:vn,ic:ic,total:v+i+c,coll:v+i,exp:vexp+iexp};
       }
       function revTop(list,key){
-        const yr=state.finYear,agg={};
-        list.filter(x=>yr==="all"||String(x.y)===String(yr)).forEach(x=>{const k=x[key];if(!agg[k])agg[k]={name:k,rev:0,n:0};agg[k].rev+=x.rev;agg[k].n+=x.n;});
+        const agg={};
+        list.filter(finMatch).forEach(x=>{const k=x[key];if(!agg[k])agg[k]={name:k,rev:0,n:0};agg[k].rev+=x.rev;agg[k].n+=x.n;});
         return Object.values(agg).sort((a,b)=>b.rev-a.rev).slice(0,5);
       }
       // multi-series area+line SVG (Virtual vs International), currency-aware
@@ -1159,9 +1160,10 @@ try {
       function vFinance(){
         const F=FIN,exp=F.expenses,fee=F.fees,rem=F.remit,com=F.commission,pay=F.payroll,st=F.statutory,dis=F.disburse;
         const r=revAgg();
-        const yrLabel=state.finYear==="all"?"All time":state.finYear;
+        const fn=finNow();
+        const yrLabel=state.finYear==="all"?"All time":state.finYear==="month"?(MON[fn.m-1]+" "+fn.y):state.finYear;
         // ---- controls ----
-        const yopts=['<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
+        const yopts=['<option value="month"'+(state.finYear==="month"?" selected":"")+'>This month</option>','<option value="all"'+(state.finYear==="all"?" selected":"")+'>All years</option>'].concat(F.years.map(y=>`<option value="${y}"${String(state.finYear)===String(y)?" selected":""}>${y}</option>`)).join("");
         const controls=`<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div class="section-tag" style="margin:0;flex:1;min-width:240px"><h3>Financial dashboard</h3><span>Revenue, collection, cost and obligations — ${esc(yrLabel)}</span></div>
           <div style="display:flex;gap:10px;align-items:center">
@@ -1181,7 +1183,9 @@ try {
         const dsegs=[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]).filter(s=>s[1]>0);
         const dlegend=(r.total>0?[["Virtual (Courses)",r.v,"var(--jade)"],["International (Events)",r.i,"var(--brand)"]].concat(r.c>0?[["Custom income",r.c,"var(--slate)"]]:[]):[]).map(s=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="width:11px;height:11px;border-radius:3px;background:${s[2]};flex:0 0 auto"></span><span style="flex:1;font-size:12.5px">${s[0]}</span><b class="num" style="font-size:12.5px">${fmoney(s[1])}</b><span style="font-size:11px;color:var(--muted);width:38px;text-align:right">${pctOf(s[1],r.total)}%</span></div>`).join("")||'<p style="color:var(--muted);font-size:12.5px;margin:0">No revenue.</p>';
         const distCard=`<div class="card"><div class="chead"><h4>Revenue distribution</h4><span class="chip slate">${esc(yrLabel)}</span></div><div style="display:flex;flex-direction:column;align-items:center;gap:14px"><div>${hrDonut(dsegs,fmoney(r.total).replace(fsym(),""),(state.finCur==="KES"?"KSh":"USD")+" total")}</div><div style="width:100%">${dlegend}</div></div></div>`;
-        const trendCard=`<div class="card"><div class="chead"><h4>Monthly revenue trend</h4><div style="display:flex;gap:14px;font-size:11px"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--jade);border-radius:2px"></span>Virtual</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--brand);border-radius:2px"></span>International</span></div></div>${revTrendSVG(r.months)}</div>`;
+        const trendMonths=state.finYear==="month"?FIN.rev.months.filter(m=>+m.y===fn.y):r.months;
+        const trendTag=state.finYear==="month"?`<span class="chip slate" style="margin-left:8px">${fn.y}</span>`:"";
+        const trendCard=`<div class="card"><div class="chead"><h4>Monthly revenue trend${trendTag}</h4><div style="display:flex;gap:14px;font-size:11px"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--jade);border-radius:2px"></span>Virtual</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:3px;background:var(--brand);border-radius:2px"></span>International</span></div></div>${revTrendSVG(trendMonths)}</div>`;
         // ---- top courses / events ----
         const tc=revTop(F.rev.courses,"name"),te=revTop(F.rev.events,"loc");
         const courseRows=tc.length?tc.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td><span class="chip slate">${nf.format(c.n)}</span></td><td class="num">${fmoney(c.rev)}</td></tr>`).join(""):'<tr><td colspan="3" style="text-align:center;color:var(--muted)">No virtual course revenue.</td></tr>';
